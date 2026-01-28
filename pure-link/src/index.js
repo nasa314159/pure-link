@@ -1,8 +1,9 @@
 /**
- * Project PureLink - The "Robust" Edition
- * 1. String Escaping: Manual double-slashing (Proven stability)
- * 2. Image Engine: MathJax SVG (Proven vector quality)
- * 3. Sanitization: Active
+ * Project PureLink - The "JSON Tunnel" Edition
+ * Fixes: 
+ * 1. Backslash corruption (via JSON.stringify)
+ * 2. Template literal errors
+ * 3. iOS rendering (via MathJax SVG)
  */
 
 export default {
@@ -42,10 +43,9 @@ function generateHTML(data, slug) {
   const isLaTeX = data.type === 'latex';
   const pageTitle = isLaTeX ? "Scientific Note | PureLink" : "Link Preview | PureLink";
   
-  // ★ 核心修復：回到最原始、最有效的字串替換法
-  // 將資料庫裡的單斜線 "\" 變成雙斜線 "\\"
-  // 這樣傳給前端 JS 時，前端會收到 "i\\hbar"，JS 引擎解讀後就是 "i\hbar" (正確的 LaTeX)
-  const safeContent = data.content.replace(/\\/g, '\\\\');
+  // ★ 核心魔法：使用 JSON.stringify 安全地將後端資料封裝給前端 JS
+  // 這會自動處理所有的跳脫字元，保證 \frac 到了前端還是 \frac
+  const safeJsonData = JSON.stringify(data.content);
 
   return `
   <!DOCTYPE html>
@@ -54,12 +54,13 @@ function generateHTML(data, slug) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>${pageTitle}</title>
+    
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     
     <script>
       window.MathJax = {
         loader: { load: ['input/tex', 'output/svg'] },
-        svg: { fontCache: 'none' }, // 確保每個符號都是獨立路徑，避免下載時空白
+        svg: { fontCache: 'none' }, // 確保 SVG 獨立不依賴字型
         startup: { typeset: false }
       };
     </script>
@@ -70,6 +71,7 @@ function generateHTML(data, slug) {
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
       .card { background: var(--card); width: 100%; max-width: 420px; padding: 35px 25px; border-radius: 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.06); text-align: center; }
       .badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; background: #e5e5ea; color: var(--secondary); margin-bottom: 25px; text-transform: uppercase; }
+      
       .content { font-size: 1.15rem; margin-bottom: 30px; min-height: 80px; display: flex; justify-content: center; align-items: center; border-radius: 16px; transition: all 0.2s; position: relative; }
       .content.clickable { cursor: pointer; }
       .content.clickable:active { transform: scale(0.98); background: #f9f9f9; }
@@ -90,7 +92,7 @@ function generateHTML(data, slug) {
       
       <div class="content ${isLaTeX ? 'clickable' : ''}" 
            ${isLaTeX ? 'onclick="handleImageCopy()"' : ''}>
-        <div id="math-display" style="opacity: 0;">${data.content}</div>
+        <div id="math-display" style="opacity: 0;">Checking Physics...</div>
       </div>
 
       ${isLaTeX ? `
@@ -108,20 +110,40 @@ function generateHTML(data, slug) {
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script>
       const isWebKit = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes("Safari") && !navigator.userAgent.includes("Chrome"));
-      // 這裡接收到的 safeContent 已經有雙斜線了，JS 字串解析後會變回正確的單斜線 LaTeX
-      const formula = \`${safeContent}\`;
+      
+      // ★ 解鎖資料：這裡直接拿到最原始的字串，絕對不會有轉義問題
+      const formula = ${safeJsonData};
 
+      // 擴充 Unicode 映射表 (回應朋友的需求)
       function toUnicode(latex) {
-        let t = latex.replace(/\\\\frac\\{(.+?)\\}\\{(.+?)\\}/g, '($1)/($2)').replace(/\\frac\\{(.+?)\\}\\{(.+?)\\}/g, '($1)/($2)');
-        const m = { '\\\\hbar': 'ℏ', '\\\\partial': '∂', '\\\\Psi': 'Ψ', '\\\\hat{H}': 'Ĥ' };
-        for (const [k, v] of Object.entries(m)) t = t.replace(new RegExp(k.replace(/\\\\/g, '\\\\\\\\'), 'g'), v);
+        let t = latex;
+        // 1. 處理分數
+        t = t.replace(/\\\\frac\\{(.+?)\\}\\{(.+?)\\}/g, '($1)/($2)').replace(/\\frac\\{(.+?)\\}\\{(.+?)\\}/g, '($1)/($2)');
+        
+        // 2. 物理與數學符號映射
+        const m = { 
+          '\\\\hbar': 'ℏ', '\\\\partial': '∂', '\\\\Psi': 'Ψ', '\\\\hat{H}': 'Ĥ', 
+          '\\\\nabla': '∇', '\\\\cdot': '⋅', '\\\\times': '×', '\\\\rightarrow': '→',
+          '\\\\infty': '∞', '\\\\approx': '≈', '\\\\sum': '∑', '\\\\int': '∫',
+          '\\\\alpha': 'α', '\\\\beta': 'β', '\\\\theta': 'θ', '\\\\pi': 'π'
+        };
+        
+        // 3. 處理 lim, sin, cos 等函數文字
+        t = t.replace(/\\\\lim/g, 'lim').replace(/\\\\sin/g, 'sin').replace(/\\\\cos/g, 'cos');
+
+        for (const [k, v] of Object.entries(m)) {
+          // 處理雙斜線與單斜線的情況
+          t = t.replace(new RegExp(k.replace(/\\\\/g, '\\\\\\\\'), 'g'), v);
+          t = t.replace(new RegExp(k.replace(/\\\\/g, '\\\\'), 'g'), v);
+        }
+        
         return t.replace(/\\\\/g, '').replace(/[{}]/g, ' ').trim();
       }
 
       window.onload = () => {
         const el = document.getElementById('math-display');
         if (el && ${isLaTeX}) {
-          // KaTeX 渲染
+          // 顯示用：KaTeX
           katex.render(formula, el, { throwOnError: false, displayMode: true, trust: true });
           el.style.opacity = '1';
         }
@@ -135,24 +157,28 @@ function generateHTML(data, slug) {
         } catch (e) { showToast("⚠️ Copy blocked"); }
       }
 
-      // ★★★ MathJax SVG 引擎 (不變，因為它是對的) ★★★
+      // 匯出用：MathJax SVG 引擎
       async function generateHighResBlob() {
         if (!window.MathJax) throw new Error("MathJax loading");
         
-        // MathJax 會讀取正確的 formula (含有反斜線) 並轉為 SVG
+        // 產生 SVG
         const svgNode = await MathJax.tex2svgPromise(formula);
         const svgElement = svgNode.querySelector('svg');
         if (!svgElement) throw new Error("SVG failed");
 
+        // 放大倍率
         const scaleFactor = 4;
         const w = parseFloat(svgElement.getAttribute('width')) || 10;
         const h = parseFloat(svgElement.getAttribute('height')) || 10;
+        
+        // ex 轉 px (MathJax 預設單位是 ex)
         const pixelW = w * 8 * scaleFactor; 
         const pixelH = h * 8 * scaleFactor;
         
         svgElement.setAttribute('width', pixelW + "px");
         svgElement.setAttribute('height', pixelH + "px");
         
+        // 繪製 Canvas
         const canvas = document.createElement('canvas');
         canvas.width = pixelW + 60;
         canvas.height = pixelH + 60;
@@ -183,7 +209,6 @@ function generateHTML(data, slug) {
           }
           return;
         }
-        
         showToast("🎨 Rendering...");
         try {
           const blob = await generateHighResBlob();
