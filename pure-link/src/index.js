@@ -1,8 +1,8 @@
 /**
- * Project PureLink - The "Ironclad" Edition
- * 1. Base64 Data Transport (Prevents backslash corruption)
- * 2. MathJax Standalone SVG (Prevents blank images)
- * 3. Robust Sanitization
+ * Project PureLink - The "Robust" Edition
+ * 1. String Escaping: Manual double-slashing (Proven stability)
+ * 2. Image Engine: MathJax SVG (Proven vector quality)
+ * 3. Sanitization: Active
  */
 
 export default {
@@ -38,19 +38,14 @@ function sanitize(u) {
   } catch (e) { return u; }
 }
 
-// 輔助函式：處理 Unicode 字串的 Base64 編碼
-function toBase64(str) {
-  try {
-    return btoa(unescape(encodeURIComponent(str)));
-  } catch (e) { return ""; }
-}
-
 function generateHTML(data, slug) {
   const isLaTeX = data.type === 'latex';
   const pageTitle = isLaTeX ? "Scientific Note | PureLink" : "Link Preview | PureLink";
   
-  // ★ 核心修復 1: 使用 Base64 傳輸資料，避開所有反斜線轉義地獄
-  const base64Content = toBase64(data.content);
+  // ★ 核心修復：回到最原始、最有效的字串替換法
+  // 將資料庫裡的單斜線 "\" 變成雙斜線 "\\"
+  // 這樣傳給前端 JS 時，前端會收到 "i\\hbar"，JS 引擎解讀後就是 "i\hbar" (正確的 LaTeX)
+  const safeContent = data.content.replace(/\\/g, '\\\\');
 
   return `
   <!DOCTYPE html>
@@ -64,10 +59,7 @@ function generateHTML(data, slug) {
     <script>
       window.MathJax = {
         loader: { load: ['input/tex', 'output/svg'] },
-        svg: { 
-          fontCache: 'none', // ★ 核心修復 2: 禁止字體快取，強制將文字轉為純路徑，解決空白圖片問題
-          scale: 1.5 
-        },
+        svg: { fontCache: 'none' }, // 確保每個符號都是獨立路徑，避免下載時空白
         startup: { typeset: false }
       };
     </script>
@@ -86,8 +78,9 @@ function generateHTML(data, slug) {
       
       .copy-group { display: flex; gap: 8px; justify-content: center; margin-top: 25px; flex-wrap: wrap; }
       .copy-btn { flex: 1; min-width: 80px; padding: 12px; border: 1px solid #d1d1d6; border-radius: 14px; background: white; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 4px; }
+      .copy-btn.success { border-color: #34c759; color: #34c759; background: #f2fff5; }
       .footer-text { color: var(--secondary); font-size: 11px; margin-top: 25px; font-weight: 500; opacity: 0.8; }
-      #toast { visibility: hidden; min-width: 200px; background: rgba(28,28,30,0.95); color: #fff; text-align: center; border-radius: 50px; padding: 12px; position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); font-size: 13px; z-index: 1000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+      #toast { visibility: hidden; min-width: 220px; background: rgba(28,28,30,0.95); color: #fff; text-align: center; border-radius: 50px; padding: 12px; position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); font-size: 13px; z-index: 1000; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
       #toast.show { visibility: visible; opacity: 1; }
     </style>
   </head>
@@ -97,7 +90,7 @@ function generateHTML(data, slug) {
       
       <div class="content ${isLaTeX ? 'clickable' : ''}" 
            ${isLaTeX ? 'onclick="handleImageCopy()"' : ''}>
-        <div id="math-display" style="opacity: 0;">Loading...</div>
+        <div id="math-display" style="opacity: 0;">${data.content}</div>
       </div>
 
       ${isLaTeX ? `
@@ -114,15 +107,10 @@ function generateHTML(data, slug) {
 
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script>
-      // 解碼後端傳來的 Base64，還原最純淨的 LaTeX 字串
-      let rawFormula = "";
-      try {
-        rawFormula = decodeURIComponent(escape(atob("${base64Content}")));
-      } catch(e) { rawFormula = "Error loading data"; }
-
       const isWebKit = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes("Safari") && !navigator.userAgent.includes("Chrome"));
+      // 這裡接收到的 safeContent 已經有雙斜線了，JS 字串解析後會變回正確的單斜線 LaTeX
+      const formula = \`${safeContent}\`;
 
-      // Unicode 轉換邏輯
       function toUnicode(latex) {
         let t = latex.replace(/\\\\frac\\{(.+?)\\}\\{(.+?)\\}/g, '($1)/($2)').replace(/\\frac\\{(.+?)\\}\\{(.+?)\\}/g, '($1)/($2)');
         const m = { '\\\\hbar': 'ℏ', '\\\\partial': '∂', '\\\\Psi': 'Ψ', '\\\\hat{H}': 'Ĥ' };
@@ -133,41 +121,38 @@ function generateHTML(data, slug) {
       window.onload = () => {
         const el = document.getElementById('math-display');
         if (el && ${isLaTeX}) {
-          // 顯示用 KaTeX (因為它最美觀)
-          katex.render(rawFormula, el, { throwOnError: false, displayMode: true });
+          // KaTeX 渲染
+          katex.render(formula, el, { throwOnError: false, displayMode: true, trust: true });
           el.style.opacity = '1';
         }
       };
 
       async function copyText(btn, mode) {
         try {
-          const text = mode === 'unicode' ? toUnicode(rawFormula) : rawFormula;
+          const text = mode === 'unicode' ? toUnicode(formula) : formula;
           await navigator.clipboard.writeText(text);
           showFeedback(btn, "✅ Copied");
         } catch (e) { showToast("⚠️ Copy blocked"); }
       }
 
-      // ★★★ 向量輸出引擎 ★★★
+      // ★★★ MathJax SVG 引擎 (不變，因為它是對的) ★★★
       async function generateHighResBlob() {
         if (!window.MathJax) throw new Error("MathJax loading");
         
-        // 1. 使用 MathJax 生成 SVG (fontCache: 'none' 確保所有字體都變成線條)
-        const svgNode = await MathJax.tex2svgPromise(rawFormula);
+        // MathJax 會讀取正確的 formula (含有反斜線) 並轉為 SVG
+        const svgNode = await MathJax.tex2svgPromise(formula);
         const svgElement = svgNode.querySelector('svg');
         if (!svgElement) throw new Error("SVG failed");
 
-        // 2. 調整 SVG 尺寸 (放大 4 倍以獲得視網膜級解析度)
         const scaleFactor = 4;
         const w = parseFloat(svgElement.getAttribute('width')) || 10;
         const h = parseFloat(svgElement.getAttribute('height')) || 10;
-        // ex, em 單位轉換 (粗略估計 1ex ~ 8px)
         const pixelW = w * 8 * scaleFactor; 
         const pixelH = h * 8 * scaleFactor;
         
         svgElement.setAttribute('width', pixelW + "px");
         svgElement.setAttribute('height', pixelH + "px");
         
-        // 3. 繪製到 Canvas (白底)
         const canvas = document.createElement('canvas');
         canvas.width = pixelW + 60;
         canvas.height = pixelH + 60;
@@ -180,7 +165,6 @@ function generateHTML(data, slug) {
         
         return new Promise((resolve, reject) => {
           img.onload = () => {
-            // 置中繪製
             ctx.drawImage(img, 30, 30, pixelW, pixelH);
             canvas.toBlob(resolve, 'image/png', 1.0);
           };
