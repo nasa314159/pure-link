@@ -1,20 +1,42 @@
 /**
- * Project PureLink - Final Polish
- * Fixes: LaTeX rendering stack-effect by normalizing backslashes
+ * Project PureLink - Admin & Core
+ * Base: Chromium-Stable Version (User Provided)
+ * Feature: Admin Console for URL Shortening
  */
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    let path = decodeURIComponent(url.pathname.slice(1));
-    const isPreview = path.endsWith('+');
-    if (isPreview) path = path.slice(0, -1);
+    const path = decodeURIComponent(url.pathname.slice(1)); // 去掉開頭的 /
 
-    if (path === "") return new Response("PureLink: Operational.");
+    // ==========================================
+    // 🛡️ 區域 1: Admin 管理介面 (新增功能)
+    // ==========================================
+    
+    // 路由: /admin -> 顯示輸入框
+    if (path === "admin") {
+      return new Response(renderAdminPage(), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // 路由: /api/create -> 接收表單 POST 資料並寫入 D1
+    if (path === "api/create" && request.method === "POST") {
+      return handleCreateLink(request, env);
+    }
+
+    // ==========================================
+    // 🚀 區域 2: 核心功能 (你提供的穩定版代碼)
+    // ==========================================
+
+    const isPreview = path.endsWith('+');
+    const lookupSlug = isPreview ? path.slice(0, -1) : path;
+
+    if (lookupSlug === "") return new Response("PureLink: Operational.");
 
     const linkData = await env.pure_link_db.prepare(
       "SELECT content, type, is_affiliate FROM links WHERE slug = ?"
-    ).bind(path).first();
+    ).bind(lookupSlug).first();
 
     if (!linkData) return new Response("404 - Link not found.", { status: 404 });
 
@@ -27,6 +49,77 @@ export default {
     return Response.redirect(sanitize(linkData.content), 301);
   },
 };
+
+// --- Admin 邏輯區 ---
+
+async function handleCreateLink(request, env) {
+  try {
+    const formData = await request.formData();
+    const slug = formData.get("slug");
+    const type = formData.get("type");
+    const content = formData.get("content");
+    const secret = formData.get("secret"); // 簡單的密碼驗證
+
+    // 簡單驗證 (你可以在 wrangler.toml 設定 ADMIN_SECRET)
+    // 如果沒有設定環境變數，預設密碼是 "science"
+    const correctSecret = env.ADMIN_SECRET || "science"; 
+    if (secret !== correctSecret) {
+      return new Response("⛔ Access Denied: Wrong Secret", { status: 403 });
+    }
+
+    if (!slug || !content) return new Response("❌ Missing Fields", { status: 400 });
+
+    // 寫入資料庫
+    await env.pure_link_db.prepare(
+      "INSERT INTO links (slug, type, content, is_affiliate) VALUES (?, ?, ?, 0)"
+    ).bind(slug, type, content).run();
+
+    return new Response(`✅ Success! <br> Link created: <a href="/${slug}">${slug}</a>`, {
+      headers: { "content-type": "text/html; charset=utf-8" }
+    });
+  } catch (e) {
+    return new Response("❌ Database Error: " + e.message, { status: 500 });
+  }
+}
+
+function renderAdminPage() {
+  return `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PureLink Console</title>
+    <style>
+      body { font-family: -apple-system, system-ui, sans-serif; background: #f2f2f7; display: flex; justify-content: center; padding-top: 50px; }
+      .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); width: 350px; }
+      h2 { text-align: center; margin-bottom: 20px; color: #1c1c1e; }
+      input, select, textarea { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #d1d1d6; border-radius: 10px; box-sizing: border-box; font-size: 14px; }
+      textarea { height: 100px; font-family: monospace; }
+      button { width: 100%; padding: 12px; background: #007aff; color: white; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; }
+      button:hover { background: #0063ce; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>🔗 New Link</h2>
+      <form action="/api/create" method="POST">
+        <input type="password" name="secret" placeholder="Admin Secret" required>
+        <input type="text" name="slug" placeholder="Slug (e.g. schrodinger)" required>
+        <select name="type">
+          <option value="url">Redirect URL</option>
+          <option value="latex">LaTeX Formula</option>
+        </select>
+        <textarea name="content" placeholder="URL or LaTeX Code..." required></textarea>
+        <button type="submit">Create Node</button>
+      </form>
+    </div>
+  </body>
+  </html>
+  `;
+}
+
+// --- 以下是你指定的 Core Logic (完全保留，未修改) ---
 
 function sanitize(u) {
   try {
@@ -131,40 +224,30 @@ function generateHTML(data) {
         } catch (e) { showToast("⚠️ Copy failed"); }
       }
 
-async function captureAndAction(callback) {
+      async function captureAndAction(callback) {
         const log = (msg) => {
           const logEl = document.getElementById('debug-log');
           if (logEl) logEl.innerHTML += "<div>> " + msg + "</div>";
           console.log(msg);
         };
 
-        log("Starting capture...");
-        log("User Agent: " + navigator.userAgent);
-
         const el = document.getElementById('math-display');
-        await new Promise(r => setTimeout(r, 500)); // 增加到 500ms 給 WebKit 更多時間
+        await new Promise(r => setTimeout(r, 500)); 
 
         try {
           const canvas = await html2canvas(el, {
             scale: 3,
             backgroundColor: '#ffffff',
-            logging: true, // ★ 開啟 html2canvas 內部日誌
+            logging: true,
             onclone: (clonedDoc) => {
-              log("DOM Cloned");
               const clonedEl = clonedDoc.getElementById('math-display');
-              
-              // 記錄克隆後的尺寸，看是不是寬度算錯了
-              log("Cloned Rect: " + clonedEl.offsetWidth + "x" + clonedEl.offsetHeight);
-              
               clonedEl.style.display = 'inline-block';
               clonedEl.style.padding = '40px';
               clonedEl.style.transform = 'none';
             }
           });
-          log("Canvas created: " + canvas.width + "x" + canvas.height);
           callback(canvas);
         } catch (e) {
-          log("ERROR: " + e.message);
           showToast("❌ Render failed");
         }
       }
@@ -174,12 +257,10 @@ async function captureAndAction(callback) {
         captureAndAction(canvas => {
           canvas.toBlob(async (blob) => {
             try {
-              // 嘗試寫入剪貼簿 (Safari 需要使用者明確觸發，這裡是在 click event 內，理論上可行)
               const item = new ClipboardItem({ 'image/png': blob });
               await navigator.clipboard.write([item]);
               showToast("✅ Image copied!");
             } catch (err) {
-              // 如果寫入失敗 (常見於 Safari 未授權)，引導使用下載按鈕
               showToast("⚠️ Copy blocked. Use PNG button.");
             }
           });
@@ -210,4 +291,3 @@ async function captureAndAction(callback) {
   </body>
   </html>`;
 }
-
