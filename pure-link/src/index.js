@@ -1,10 +1,13 @@
 /**
- * Project PureLink - Admin 9.3 (Smart Logic)
- * Improvements:
- * 1. Looser URL Regex (Accepts "google.com" without http)
- * 2. Unicode Math Detection (Triggers Card Mode for symbols like ℏ, ∂)
- * 3. Fixed Reader Mode Scrolling (CSS overflow fix)
- * 4. 200-char Threshold strictly enforced
+ * Project PureLink - Admin 9.5 (Layout & Regex Repair)
+ * Fixes:
+ * 1. Layout: Enforced word-wrap similar to MS Word.
+ * - content width restricted.
+ * - 'overflow-wrap: anywhere' handles continuous strings.
+ * - 'pre-wrap' preserves manual line breaks.
+ * 2. URL Logic: Strict full-string matching.
+ * - "Hello google.com" -> Text.
+ * - "google.com" -> URL.
  */
 
 export default {
@@ -23,6 +26,7 @@ export default {
     const linkData = await env.pure_link_db.prepare("SELECT content, type FROM links WHERE slug = ?").bind(lookupSlug).first();
     if (!linkData) return new Response("404 - Link not found.", { status: 404 });
 
+    // 只要是 latex 類型，就進入卡片渲染 (包含純文字)
     if (isPreview || linkData.type === 'latex') {
       return new Response(generateHTML(linkData, lookupSlug), { headers: { "content-type": "text/html; charset=utf-8" } });
     }
@@ -45,15 +49,16 @@ async function handleCreateLink(request, env) {
   try {
     const formData = await request.formData();
     let slug = formData.get("slug").trim();
-    let content = formData.get("content");
+    let content = formData.get("content"); // 保留原始輸入
     const secret = formData.get("secret");
     let type = formData.get("type");
 
-    if (secret !== (env.ADMIN_SECRET || "science")) return new Response(JSON.stringify({ success: false, msg: "⛔ Wrong Secret" }), { status: 403 });
+    if (secret !== (env.ADMIN_SECRET || "science")) return new Response(JSON.stringify({ success: false, msg: "⛔ Access Denied" }), { status: 403 });
 
-    content = content.replace(/\r\n/g, '\n').trim(); // 統一換行符
+    // 標準化換行：將 \r\n 轉為 \n，確保計數與顯示一致
+    content = content.replace(/\r\n/g, '\n').trim();
 
-    if (content.length > 2000) return new Response(JSON.stringify({ success: false, msg: `❌ Too long (${content.length}/2000)` }), { status: 400 });
+    if (content.length > 2000) return new Response(JSON.stringify({ success: false, msg: `❌ Content too long (${content.length}/2000)` }), { status: 400 });
 
     if (!slug) {
       slug = Math.random().toString(36).substring(2, 8);
@@ -64,22 +69,23 @@ async function handleCreateLink(request, env) {
     const existing = await env.pure_link_db.prepare("SELECT 1 FROM links WHERE slug = ?").bind(slug).first();
     if (existing) return new Response(JSON.stringify({ success: false, msg: "⚠️ Slug taken" }), { status: 409 });
 
-    // ★ 9.3 核心：更聰明的後端判斷
     if (type === "auto") {
-      // 1. URL 寬容判斷：有 http 開頭，或者看起來像 domain (xxx.com) 且沒有換行
-      const isUrl = /^https?:\/\//i.test(content) || (/^[\w-]+\.[\w-]+(\/[\w- ./?%&=]*)?$/i.test(content) && !content.includes('\n'));
+      // ★ 9.5 嚴格 URL 判斷：必須全字匹配 ★
+      // ^ 和 $ 確保了內容 "只能" 是網址，不能包含其他文字
+      // 允許 google.com (補 https) 或 https://google.com
+      const strictUrlPattern = /^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/i;
       
-      // 2. Unicode 數學判斷：包含 LaTeX 指令 OR 常見數學 Unicode (ℏ, ∂, Ψ, Σ, ∫, →, etc.)
-      const hasMath = /[\\]|[\u0370-\u03FF\u2200-\u22FF\u2100-\u214F]/.test(content);
-      
-      // 3. 程式碼判斷
-      const isCode = /\b(function|return|const|let|import|def|class|if|else|console)\b/.test(content);
+      const isUrl = strictUrlPattern.test(content);
+      const hasMath = /[\\]|[\u0370-\u03FF\u2100-\u214F\u2200-\u22FF]/.test(content); // 寬容的數學符號偵測
 
-      if (isUrl) type = "url";
-      else type = "latex"; // Math, Text, Code 都歸類為 latex 以便渲染
+      if (isUrl) {
+        type = "url";
+      } else {
+        // 只要不是純網址，一律當作 latex (文字/公式/代碼) 處理
+        type = "latex";
+      }
     }
 
-    // 如果判定為 URL 但沒有 http，自動補上
     if (type === "url" && !/^https?:\/\//i.test(content)) content = "https://" + content;
 
     await env.pure_link_db.prepare("INSERT INTO links (slug, type, content, is_affiliate) VALUES (?, ?, ?, 0)").bind(slug, type, content).run();
@@ -112,7 +118,7 @@ function renderAdminPage() {
       input.invalid { border-color: var(--danger); }
       textarea { min-height: 120px; font-family: monospace; resize: vertical; }
       button { width: 100%; padding: 16px; background: var(--accent); color: white; border: none; border-radius: 16px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-      button:disabled { opacity: 0.5; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
       #char-count { font-size: 10px; color: #8e8e93; text-align: right; margin-top: -15px; margin-bottom: 15px; display: block; }
       #char-count.limit { color: var(--danger); font-weight: bold; }
       .badge { padding: 4px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; background: #e5e5ea; color: #8e8e93; }
@@ -154,12 +160,13 @@ function renderAdminPage() {
         cC.innerText = val.length + "/2000";
         cC.style.color = val.length >= 2000 ? "#ff3b30" : "#8e8e93";
         
-        // ★ 前端寬容判斷顯示 ★
-        const isUrl = /^https?:\/\//i.test(val) || (/^[\w-]+\.[\w-]+/.test(val) && !val.includes('\\n'));
-        const isMath = /[\\\u0370-\u03FF\u2200-\u22FF]/.test(val); // Backslash or Greek or Operators
+        // ★ 前端同步嚴格 URL 判斷 ★
+        // 必須全字匹配，且不能包含空格或換行 (除了前後空白已被 trim)
+        const strictUrl = /^(https?:\\/\\/)?([\\da-z\\.-]+)\\.([a-z\\.]{2,6})([\\/\\w \\.-]*)*\\/?$/i.test(val.trim());
+        const hasMath = /[\\\u0370-\u03FF\u2200-\u22FF]/.test(val);
         
-        if (isUrl) { tB.innerText = 'URL'; tB.className = 'badge url'; }
-        else if (isMath) { tB.innerText = 'MATH'; tB.className = 'badge latex'; }
+        if (strictUrl) { tB.innerText = 'URL'; tB.className = 'badge url'; }
+        else if (hasMath) { tB.innerText = 'MATH'; tB.className = 'badge latex'; }
         else { tB.innerText = 'TEXT'; tB.className = 'badge'; }
       };
 
@@ -179,20 +186,33 @@ function renderAdminPage() {
         btn.disabled = true; btn.innerText = "Processing...";
         const res = await fetch('/api/create', { method: 'POST', body: new FormData(e.target) });
         const j = await res.json();
-        if(j.success) { document.getElementById('result-url').innerText = j.fullUrl; document.getElementById('result-url').href = j.fullUrl; document.getElementById('result-card').style.display='block'; e.target.style.display='none'; }
-        else { alert(j.msg); btn.disabled = false; btn.innerText = "Create Node"; }
+        if(j.success) { 
+            document.getElementById('result-url').innerText = j.fullUrl; 
+            document.getElementById('result-url').href = j.fullUrl; 
+            document.getElementById('result-card').style.display='block'; 
+            document.getElementById('create-form').style.display='none'; 
+        }
+        else { 
+            alert(j.msg); 
+            btn.disabled = false; btn.innerText = "Create Node"; 
+        }
       };
-      function copyResult(b) { navigator.clipboard.writeText(document.getElementById('result-url').innerText); const o = b.innerText; b.innerText = "Copied!"; setTimeout(() => b.innerText = o, 2000); }
+
+      function copyResult(b) { 
+          navigator.clipboard.writeText(document.getElementById('result-url').innerText); 
+          const o = b.innerText; b.innerText = "Copied!"; 
+          setTimeout(() => b.innerText = o, 2000); 
+      }
     </script>
   </body>
   </html>`;
 }
 
-// ★★★ 核心渲染 (Reader Scroll + Unicode Math Fix) ★★★
+// ★★★ 核心渲染 (Layout Repair) ★★★
 function generateHTML(data, slug) {
   const content = data.content;
   const safeContent = JSON.stringify(content);
-  // ★ 嚴格 200 字分界
+  // 保持 200 字分流
   const isReaderMode = content.length > 200;
   
   return `
@@ -207,48 +227,54 @@ function generateHTML(data, slug) {
       :root { --bg: #f2f2f7; --card: #ffffff; --text: #1c1c1e; --secondary: #8e8e93; }
       body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
       
-      /* 卡片容器：長文時增加寬度 */
       .card { background: var(--card); width: 100%; max-width: ${isReaderMode ? '800px' : '480px'}; padding: ${isReaderMode ? '30px' : '40px 30px'}; border-radius: 30px; box-shadow: 0 20px 40px rgba(0,0,0,0.08); text-align: center; display: flex; flex-direction: column; max-height: 90vh; }
       
       .badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 700; background: #e5e5ea; color: var(--secondary); margin-bottom: 25px; align-self: center; text-transform: uppercase; }
       
-      /* ★ Reader Mode 樣式修復：強制 Scroll ★ */
-      .content-wrapper {
-        width: 100%;
-        margin-bottom: 25px;
-        ${isReaderMode ? 
-          'background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 15px; text-align: left; overflow-y: auto; max-height: 500px; border: 1px solid #333;' : 
-          'display: flex; justify-content: center; align-items: center; min-height: 80px;'
-        }
+      /* ★ 核心修復區 ★ */
+      .content-wrapper { 
+        width: 100%; position: relative; margin-bottom: 25px; 
+        ${isReaderMode ? 'overflow-y: auto; text-align: left; background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 15px; border: 1px solid #333;' : ''}
       }
 
       .content { 
-        font-size: ${isReaderMode ? '14px' : '1.2rem'};
-        font-family: ${isReaderMode ? '"SF Mono", monospace' : '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'};
-        white-space: pre-wrap; /* 保留換行 */
-        word-break: break-word; /* 防止長字串撐爆 */
+        /* 限制最大寬度，強迫換行 */
+        max-width: 100%; 
+        font-size: 1.2rem;
+        min-height: 60px; 
+        
+        /* 1. 保留使用者輸入的換行 */
+        white-space: pre-wrap; 
+        
+        /* 2. 像 Word 一樣斷字 (解決 dddd 問題) */
+        word-break: break-word; 
+        overflow-wrap: anywhere; 
+        
         line-height: 1.6;
-        width: 100%;
+        ${isReaderMode ? 'font-family: "SF Mono", monospace; font-size: 14px;' : 'text-align: center; color: var(--text);'}
       }
       
       .copy-group { display: flex; gap: 10px; justify-content: center; margin-top: auto; }
-      .btn { flex: 1; padding: 12px; border: 1px solid #d1d1d6; border-radius: 14px; background: white; cursor: pointer; font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; }
-      .btn.success { border-color: #34c759; color: #34c759; background: #f2fff5; }
-      .footer-text { color: var(--secondary); font-size: 11px; margin-top: 25px; opacity: 0.6; }
+      .copy-btn { flex: 1; padding: 12px; border: 1px solid #d1d1d6; border-radius: 14px; background: white; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text); display: flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; }
+      .copy-btn:active { transform: scale(0.96); background: #f2f2f7; }
+      .copy-btn.success { border-color: #34c759; color: #34c759; background: #f2fff5; }
+      
+      .footer-text { color: var(--secondary); font-size: 11px; margin-top: 25px; font-weight: 500; opacity: 0.6; }
     </style>
   </head>
   <body>
     <div class="card">
-      <div class="badge">${isReaderMode ? 'READER MODE' : 'SCIENTIFIC NOTE'}</div>
+      <div class="badge">${isReaderMode ? 'READER MODE' : 'PURELINK NODE'}</div>
       
       <div class="content-wrapper">
         <div class="content" id="main-content"></div>
       </div>
       
       <div class="copy-group">
-        <button class="btn" onclick="copyText(this)">📋 Text</button>
-        ${!isReaderMode ? `<button class="btn" id="png-btn" onclick="downloadImage(this)">📥 PNG</button>` : ''}
+        <button class="copy-btn" onclick="copyText(this)">📋 Text</button>
+        ${!isReaderMode ? `<button class="copy-btn" onclick="downloadImage(this)">📥 PNG</button>` : ''}
       </div>
+
       <div class="footer-text">PureLink Knowledge Node</div>
     </div>
 
@@ -256,38 +282,50 @@ function generateHTML(data, slug) {
     <script defer src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <script>
       const raw = ${safeContent};
-      // 偵測程式碼關鍵字
       const isCode = /\\b(function|return|const|var|if|else)\\b/.test(raw);
 
       window.onload = () => {
         const el = document.getElementById('main-content');
         try {
-          // 如果是長文或代碼，直接當純文字顯示
           if (${isReaderMode} || isCode) throw 'skip';
-          
-          // ★ KaTeX 渲染：支援 LaTeX 指令和 Unicode 數學符號
-          // trust: true 允許更多指令，throwOnError: true 讓它報錯以便 Fallback
+          // KaTeX 渲染
           katex.render(raw, el, { displayMode: true, trust: true, throwOnError: true });
         } catch (e) {
-          el.innerText = raw; // Fallback 為純文字
+          // 純文字顯示 (自動應用 CSS 換行規則)
+          el.innerText = raw;
         }
       };
 
       async function copyText(btn) {
-        await navigator.clipboard.writeText(raw);
-        const old = btn.innerText; btn.innerText = "✅ Copied!"; btn.classList.add('success');
-        setTimeout(() => { btn.innerText = old; btn.classList.remove('success'); }, 2000);
+        try {
+          await navigator.clipboard.writeText(raw);
+          const old = btn.innerText; btn.innerText = "✅ Copied!"; btn.classList.add('success');
+          setTimeout(() => { btn.innerText = old; btn.classList.remove('success'); }, 2000);
+        } catch (e) {}
       }
 
       async function downloadImage(btn) {
         const oldHtml = btn.innerHTML;
-        btn.style.opacity = "0.5"; btn.style.pointerEvents = "none";
+        btn.style.opacity = "0.6"; btn.style.pointerEvents = "none";
+
         try {
-          const canvas = await html2canvas(document.querySelector('.card'), { scale: 3, backgroundColor: '#ffffff' });
-          const a = document.createElement('a'); a.download = 'purelink_snap.png'; a.href = canvas.toDataURL(); a.click();
+          const card = document.querySelector('.card');
+          await new Promise(r => setTimeout(r, 200));
+          
+          const canvas = await html2canvas(card, { scale: 3, backgroundColor: '#ffffff', logging: false });
+          const link = document.createElement('a');
+          link.download = 'purelink_snap.png';
+          link.href = canvas.toDataURL("image/png");
+          link.click();
+
           btn.innerHTML = "✅ Saved"; btn.classList.add('success'); btn.style.opacity = "1";
-        } catch (e) { btn.innerText = "❌ Error"; }
-        finally { setTimeout(() => { btn.innerHTML = oldHtml; btn.classList.remove('success'); btn.style.pointerEvents = "auto"; btn.style.opacity = "1"; }, 2000); }
+        } catch (e) {
+            btn.innerHTML = "❌ Error";
+        } finally {
+            setTimeout(() => {
+                btn.innerHTML = oldHtml; btn.classList.remove('success'); btn.style.opacity = "1"; btn.style.pointerEvents = "auto";
+            }, 2000);
+        }
       }
     </script>
   </body>
