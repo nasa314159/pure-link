@@ -1,13 +1,16 @@
 import { normalizeCreateInput, ValidationError } from './content.js';
+import { enforceWriteProtection } from './abuse.js';
+import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text } from './http.js';
-import { renderCardPage, renderFormulaPage, renderHomePage, renderManagePage, renderNotFoundPage, renderUrlPreview } from './pages.js';
+import { renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNotFoundPage, renderReportPage, renderUrlPreview } from './pages.js';
 import { createLinkRepository } from './repository.js';
+import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, context) {
     try {
-      return await routeRequest(request, env);
+      return await routeRequest(request, env, context);
     } catch (error) {
       if (error instanceof ValidationError) {
         return json({ error: error.message, field: error.field || null }, { status: 400 });
@@ -18,17 +21,21 @@ export default {
   },
 };
 
-export async function routeRequest(request, env) {
+export async function routeRequest(request, env, context) {
   const requestUrl = new URL(request.url);
   const path = safePathname(requestUrl.pathname);
   const repository = createLinkRepository(env.pure_link_db);
 
   if (request.method === 'GET' && path === '') {
     const nonce = createSlug() + createSlug();
-    return html(renderHomePage(nonce), {}, { scriptNonce: nonce });
+    const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
+    return html(renderHomePage(nonce, turnstileSiteKey), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
   }
   if (request.method === 'GET' && path === 'robots.txt') {
     return text('User-agent: *\nDisallow: /\n', { headers: { 'cache-control': 'public, max-age=3600' } });
+  }
+  if (request.method === 'GET' && (path === 'privacy' || path === 'terms' || path === 'transparency')) {
+    return html(renderLegalPage(path));
   }
 
   if (request.method === 'GET' && path.startsWith('assets/')) {
@@ -37,7 +44,11 @@ export async function routeRequest(request, env) {
   }
 
   if (request.method === 'POST' && (path === 'api/links' || path === 'api/create')) {
-    return createLink(request, requestUrl, repository);
+    return createLink(request, requestUrl, repository, env, context);
+  }
+
+  if (request.method === 'POST' && path === 'api/reports') {
+    return submitReport(request, requestUrl, env, context);
   }
 
   if (request.method === 'DELETE' && path.startsWith('api/links/')) {
@@ -52,6 +63,14 @@ export async function routeRequest(request, env) {
     return html(renderManagePage(slug, nonce), {}, { scriptNonce: nonce });
   }
 
+  if (request.method === 'GET' && path.startsWith('report/')) {
+    const slug = path.slice('report/'.length);
+    if (!slug || slug.includes('/')) return html(renderNotFoundPage(), { status: 404 });
+    const nonce = createSlug() + createSlug();
+    const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
+    return html(renderReportPage(slug, nonce, turnstileSiteKey), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
+  }
+
   if (request.method !== 'GET' || path.includes('/')) return html(renderNotFoundPage(), { status: 404 });
 
   const isPreview = path.endsWith('+');
@@ -62,15 +81,32 @@ export async function routeRequest(request, env) {
   if (!isAvailable(link)) return html(renderNotFoundPage(), { status: 404 });
 
   if (link.content_type === 'url') {
+    recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: isPreview ? 'preview' : 'open', contentType: 'url' });
     return isPreview ? html(renderUrlPreview(link)) : redirect(link.content, 302);
   }
-  if (link.content_type === 'formula') return html(renderFormulaPage(link));
-  if (link.content_type === 'card') return html(renderCardPage(link));
+  if (link.content_type === 'formula') {
+    recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'formula' });
+    return html(renderFormulaPage(link));
+  }
+  if (link.content_type === 'card') {
+    recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'card' });
+    return html(renderCardPage(link));
+  }
   return html(renderNotFoundPage(), { status: 404 });
 }
 
-async function createLink(request, requestUrl, repository) {
+async function createLink(request, requestUrl, repository, env, context) {
   const input = await readCreateInput(request);
+  const protectionResponse = await enforceWriteProtection({
+    request,
+    requestUrl,
+    env,
+    db: env.pure_link_db,
+    action: 'create',
+    token: input.turnstileToken || input['cf-turnstile-response'],
+    context,
+  });
+  if (protectionResponse) return protectionResponse;
   const normalized = normalizeCreateInput(input);
   const managementToken = createManagementToken();
   const managementTokenHash = await hashManagementToken(managementToken);
@@ -90,6 +126,7 @@ async function createLink(request, requestUrl, repository) {
     try {
       await repository.create({ ...normalized, slug, managementTokenHash });
       const origin = requestUrl.origin;
+      recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'create', contentType: normalized.contentType });
       return json({
         slug,
         url: `${origin}/${slug}`,
@@ -104,6 +141,27 @@ async function createLink(request, requestUrl, repository) {
   }
 
   return json({ error: 'Could not allocate a unique link. Please try again.' }, { status: 503 });
+}
+
+async function submitReport(request, requestUrl, env, context) {
+  const input = await readCreateInput(request);
+  const protectionResponse = await enforceWriteProtection({
+    request,
+    requestUrl,
+    env,
+    db: env.pure_link_db,
+    action: 'report',
+    token: input.turnstileToken || input['cf-turnstile-response'],
+    context,
+  });
+  if (protectionResponse) return protectionResponse;
+
+  const report = normalizeReportInput(input);
+  const exists = await createLinkRepository(env.pure_link_db).exists(report.slug);
+  if (!exists) return json({ error: 'This PureLink could not be found.' }, { status: 404 });
+  await storeReport(env.pure_link_db, report);
+  recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'report', contentType: 'none' });
+  return json({ received: true, reference: report.id }, { status: 201 });
 }
 
 async function deleteLink(request, slug, repository) {

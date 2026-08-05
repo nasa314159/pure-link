@@ -19,7 +19,10 @@ export function html(markup, init = {}, options = {}) {
   headers.set('content-type', 'text/html; charset=utf-8');
   const scriptSources = ["'self'"];
   if (options.scriptNonce) scriptSources.push(`'nonce-${options.scriptNonce}'`);
-  const scriptPolicy = `; script-src ${scriptSources.join(' ')}; connect-src 'self'`;
+  if (options.turnstile) scriptSources.push('https://challenges.cloudflare.com');
+  const turnstilePolicy = options.turnstile ? '; frame-src https://challenges.cloudflare.com' : '';
+  const connectSources = options.turnstile ? "'self' https://challenges.cloudflare.com" : "'self'";
+  const scriptPolicy = `; script-src ${scriptSources.join(' ')}; connect-src ${connectSources}${turnstilePolicy}`;
   headers.set('content-security-policy', `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${scriptPolicy}`);
   applyBaseHeaders(headers);
   return new Response(markup, { ...init, headers });

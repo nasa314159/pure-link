@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderHomePage, renderManagePage } from '../src/pages.js';
+import { renderHomePage, renderManagePage, renderReportPage } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -13,10 +13,23 @@ describe('interactive pages', () => {
     expect(() => new Function(script)).not.toThrow();
   });
 
+  it('loads Turnstile as a regular deferred script', () => {
+    const html = renderHomePage('test-nonce', 'site-key');
+    expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');
+    expect(html).not.toContain('type="module" src="https://challenges.cloudflare.com');
+  });
+
   it('emits a syntactically valid anonymous management script', () => {
     const html = renderManagePage('safe-slug', 'manage-nonce');
     const script = extractScript(html);
     expect(html).toContain('nonce="manage-nonce"');
+    expect(() => new Function(script)).not.toThrow();
+  });
+
+  it('emits a syntactically valid report form script', () => {
+    const html = renderReportPage('reported-link', 'report-nonce');
+    const script = extractScript(html);
+    expect(html).toContain('reported-link');
     expect(() => new Function(script)).not.toThrow();
   });
 });

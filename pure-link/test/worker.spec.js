@@ -7,7 +7,7 @@ describe('PureLink worker', () => {
 
   beforeEach(() => {
     db = new MemoryD1();
-    env = { pure_link_db: db };
+    env = { pure_link_db: db, APP_ENV: 'test' };
   });
 
   it('serves the local MVP status page with privacy headers', async () => {
@@ -16,6 +16,24 @@ describe('PureLink worker', () => {
     expect(await response.text()).toContain('清楚地分享');
     expect(response.headers.get('referrer-policy')).toBe('no-referrer');
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
+  });
+
+  it('serves privacy, terms, and transparency disclosures', async () => {
+    for (const path of ['privacy', 'terms', 'transparency']) {
+      const response = await worker.fetch(new Request(`https://pure.test/${path}`), env);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('MVP 說明版本');
+    }
+  });
+
+  it('fails closed for public writes when abuse protection is not configured', async () => {
+    const response = await worker.fetch(new Request('https://pure.test/api/links', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contentType: 'card', content: 'Do not create this' }),
+    }), { pure_link_db: db });
+    expect(response.status).toBe(503);
+    expect(db.links.size).toBe(0);
   });
 
   it('creates, redirects, and previews a URL', async () => {
@@ -90,6 +108,23 @@ describe('PureLink worker', () => {
     expect(first.response.status).toBe(201);
     expect(duplicate.response.status).toBe(409);
   });
+
+  it('accepts a report for an existing PureLink', async () => {
+    const created = await createLink(env, { contentType: 'card', content: 'Report test', slug: 'report-me' });
+    expect(created.response.status).toBe(201);
+
+    const reportPage = await worker.fetch(new Request('https://pure.test/report/report-me'), env);
+    expect(reportPage.status).toBe(200);
+    expect(await reportPage.text()).toContain('協助我們保持這裡乾淨');
+
+    const response = await worker.fetch(new Request('https://pure.test/api/reports', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slug: 'report-me', category: 'phishing', details: 'Suspicious destination.' }),
+    }), env);
+    expect(response.status).toBe(201);
+    expect(db.reports).toHaveLength(1);
+  });
 });
 
 async function createLink(env, body) {
@@ -104,6 +139,7 @@ async function createLink(env, body) {
 class MemoryD1 {
   constructor() {
     this.links = new Map();
+    this.reports = [];
   }
 
   prepare(sql) {
@@ -160,6 +196,11 @@ class MemoryStatement {
         return { success: true, meta: { changes: 0 } };
       }
       this.db.links.delete(slug);
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith('INSERT INTO reports')) {
+      const [id, slug, category, details] = this.values;
+      this.db.reports.push({ id, slug, category, details, status: 'new' });
       return { success: true, meta: { changes: 1 } };
     }
     throw new Error(`Unsupported run query: ${this.sql}`);
