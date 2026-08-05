@@ -13,7 +13,7 @@ describe('PureLink worker', () => {
   it('serves the local MVP status page with privacy headers', async () => {
     const response = await worker.fetch(new Request('https://pure.test/'), env);
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('Share clearly');
+    expect(await response.text()).toContain('清楚地分享');
     expect(response.headers.get('referrer-policy')).toBe('no-referrer');
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
   });
@@ -33,7 +33,7 @@ describe('PureLink worker', () => {
     const management = await worker.fetch(new Request(created.body.managementUrl), env);
     expect(management.status).toBe(200);
     expect(await management.text()).toContain('Keep this access safe');
-    expect(management.headers.get('content-security-policy')).toContain("script-src 'nonce-");
+    expect(management.headers.get('content-security-policy')).toMatch(/script-src 'self' 'nonce-[^']+'/);
 
     const redirect = await worker.fetch(new Request(created.body.url, { redirect: 'manual' }), env);
     expect(redirect.status).toBe(302);
@@ -58,6 +58,7 @@ describe('PureLink worker', () => {
     expect(body).not.toContain('</script><script>alert(1)</script>');
     expect(body).toContain('&lt;/script&gt;');
     expect(body).toContain('theme-night');
+    expect(body).toContain('下載 PNG');
   });
 
   it('deletes anonymous content only with its management token', async () => {

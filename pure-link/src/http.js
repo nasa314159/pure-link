@@ -17,8 +17,10 @@ export function json(data, init = {}) {
 export function html(markup, init = {}, options = {}) {
   const headers = new Headers(init.headers);
   headers.set('content-type', 'text/html; charset=utf-8');
-  const scriptPolicy = options.scriptNonce ? `; script-src 'nonce-${options.scriptNonce}'; connect-src 'self'` : '';
-  headers.set('content-security-policy', `default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${scriptPolicy}`);
+  const scriptSources = ["'self'"];
+  if (options.scriptNonce) scriptSources.push(`'nonce-${options.scriptNonce}'`);
+  const scriptPolicy = `; script-src ${scriptSources.join(' ')}; connect-src 'self'`;
+  headers.set('content-security-policy', `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${scriptPolicy}`);
   applyBaseHeaders(headers);
   return new Response(markup, { ...init, headers });
 }

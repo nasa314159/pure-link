@@ -23,9 +23,17 @@ export async function routeRequest(request, env) {
   const path = safePathname(requestUrl.pathname);
   const repository = createLinkRepository(env.pure_link_db);
 
-  if (request.method === 'GET' && path === '') return html(renderHomePage());
+  if (request.method === 'GET' && path === '') {
+    const nonce = createSlug() + createSlug();
+    return html(renderHomePage(nonce), {}, { scriptNonce: nonce });
+  }
   if (request.method === 'GET' && path === 'robots.txt') {
     return text('User-agent: *\nDisallow: /\n', { headers: { 'cache-control': 'public, max-age=3600' } });
+  }
+
+  if (request.method === 'GET' && path.startsWith('assets/')) {
+    if (!env.ASSETS) return text('Asset not found.', { status: 404 });
+    return env.ASSETS.fetch(request);
   }
 
   if (request.method === 'POST' && (path === 'api/links' || path === 'api/create')) {
