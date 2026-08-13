@@ -65,7 +65,7 @@ describe('interactive pages', () => {
     expect(html).toContain('privacy-friendly URL shortener for clean short links');
     expect(html).toContain('<meta name="robots" content="index, follow">');
     expect(html).toContain('<link rel="canonical" href="https://no-no.uk/">');
-    expect(html).toContain('<meta property="og:image" content="https://no-no.uk/og.png">');
+    expect(html).toContain('<meta property="og:image" content="https://no-no.uk/og.png?v=1">');
     expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
     expect(html).not.toContain('name="keywords"');
   });

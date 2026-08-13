@@ -978,14 +978,14 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
   <meta property="og:type" content="website">
   <meta property="og:title" content="${escapeHtml(title)}">
   <meta property="og:description" content="${escapeHtml(description)}">
-  <meta property="og:image" content="https://no-no.uk/og.png">
+  <meta property="og:image" content="https://no-no.uk/og.png?v=1">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   ${canonicalUrl ? `<meta property="og:url" content="${escapeHtml(canonicalUrl)}">` : ''}
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escapeHtml(title)}">
   <meta name="twitter:description" content="${escapeHtml(description)}">
-  <meta name="twitter:image" content="https://no-no.uk/og.png">
+  <meta name="twitter:image" content="https://no-no.uk/og.png?v=1">
   <title>${escapeHtml(title)}</title>
   ${canonicalMarkup}
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
