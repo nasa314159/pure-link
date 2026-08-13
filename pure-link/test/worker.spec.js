@@ -57,6 +57,12 @@ describe('PureLink worker', () => {
     expect(sitemapBody).toContain('<loc>https://no-no.uk/ai-credits</loc>');
     expect(sitemapBody).not.toContain('/account');
     expect(sitemapBody).not.toContain('/manage/');
+
+    for (const path of ['', 'robots.txt', 'sitemap.xml', 'privacy']) {
+      const head = await worker.fetch(new Request(`https://pure.test/${path}`, { method: 'HEAD' }), env);
+      expect(head.status).toBe(200);
+      expect(await head.text()).toBe('');
+    }
   });
 
   it('fails closed for public writes when abuse protection is not configured', async () => {
