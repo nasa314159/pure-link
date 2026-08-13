@@ -264,7 +264,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         const trimmed = value.trim();
         if (!trimmed) return null;
         if (/^(?:https?:\\/\\/)?[^\\s/]+\\.[^\\s/]{2,}(?:\\/[^\\s]*)?$/i.test(trimmed)) return 'url';
-        if (/\\\\(?:begin|end|frac|sqrt|sum|int|lim|left|right|text|mathrm|mathbf|mathbb|partial|nabla)\\b|[∂∫∑√∞≈≠≤≥±×÷∇]|\\$[^$]+\\$/.test(trimmed)) return 'formula';
+        if (/\\\\(?:begin|end|frac|sqrt|sum|int|lim|left|right|text|mathrm|mathbf|mathbb|partial|nabla)\\b|[_^](?:\\{[^}]*\\}|[A-Za-z0-9])|[∂∫∑√∞≈≠≤≥±×÷∇]|\\$[^$]+\\$/.test(trimmed)) return 'formula';
         return 'card';
       }
 

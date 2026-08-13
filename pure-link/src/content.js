@@ -65,8 +65,9 @@ export function suggestContentType(value) {
   } catch {}
 
   const latexCommand = /\\(?:begin|end|frac|sqrt|sum|int|lim|left|right|text|mathrm|mathbf|mathbb|partial|nabla)\b/;
+  const latexScript = /[_^](?:\{[^}]*\}|[A-Za-z0-9])/;
   const mathSymbols = /[∂∫∑√∞≈≠≤≥±×÷∇]|(?:\$[^$]+\$)/;
-  return latexCommand.test(content) || mathSymbols.test(content) ? 'formula' : 'card';
+  return latexCommand.test(content) || latexScript.test(content) || mathSymbols.test(content) ? 'formula' : 'card';
 }
 
 export function normalizeUrl(value, cleanTracking = false, trackingRules = {}) {

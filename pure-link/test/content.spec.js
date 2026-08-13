@@ -42,6 +42,7 @@ describe('content validation', () => {
   it('suggests without changing the user selection', () => {
     expect(suggestContentType('example.com')).toBe('url');
     expect(suggestContentType('Energy is $E=mc^2$.')).toBe('formula');
+    expect(suggestContentType('C_{}^{}')).toBe('formula');
     expect(suggestContentType('Thank you for being here.')).toBe('card');
   });
 
