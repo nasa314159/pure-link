@@ -877,7 +877,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .custom-formula-item button { width: auto; min-height: 2.5rem; border: 0; border-radius: 0; background: white; }
     .custom-formula-item [data-custom-formula-insert] { padding: .5rem .8rem; font-family: Georgia, serif; font-weight: 800; }
     .custom-formula-item [data-custom-formula-remove] { padding: .5rem .65rem; border-left: 1px solid var(--line); color: var(--muted); }
-    .custom-formula-status { color: #8f2f2a !important; }
+    .custom-formula-status[data-error="true"] { color: #8f2f2a; }
     .symbol-groups { display: grid; gap: .55rem; }
     .symbol-group { display: flex; flex-wrap: wrap; gap: .4rem; }
     .symbol-group button { width: auto; min-width: 2.55rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .7rem; background: white; color: var(--ink); font-family: ui-serif, Georgia, serif; font-size: .88rem; }

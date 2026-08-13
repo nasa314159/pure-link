@@ -112,7 +112,7 @@ function setCustomStatus(message, isError = true) {
   if (!customStatus) return;
   customStatus.textContent = message;
   customStatus.hidden = false;
-  customStatus.style.color = isError ? '' : 'var(--muted)';
+  customStatus.dataset.error = String(isError);
 }
 
 function selectCategory(category) {
