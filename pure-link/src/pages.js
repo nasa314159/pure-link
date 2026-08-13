@@ -10,6 +10,7 @@ const FORMULA_SHORTCUT_GROUPS = [
     ariaLabel: 'Common math',
     shortcuts: [
       ['□/□', '\\frac{}{}', 3, 'fraction template'], ['a/b', '\\frac{a}{b}', 0, 'example fraction'], ['x²', '^2', 0, 'square'], ['xⁿ', '^', 0, 'power'], ['√x', '\\sqrt{}', 1, 'square root'], ['∛x', '\\sqrt[3]{}', 1, 'cube root'], ['ⁿ√x', '\\sqrt[n]{}', 1, 'nth root'],
+      ['Cₙʳ', 'C_{}^{}', 4, 'combination with subscript and superscript'], ['Pₙʳ', 'P_{}^{}', 4, 'permutation with subscript and superscript'],
       ['d⁄dx', '\\frac{d}{dx}', 0, 'derivative'], ['d²⁄dx²', '\\frac{d^2}{dx^2}', 0, 'second derivative'], ['∫', '\\int ', 0, 'indefinite integral'], ['∫ₐᵇ', '\\int_{}^{}', 4, 'definite integral'],
       ['Σ', '\\sum_{}^{}', 4, 'sum'], ['lim', '\\lim_{}', 1, 'limit'], ['[x;y]', '\\begin{bmatrix}  \\\\  \\end{bmatrix}', 16, 'column vector'], ['[a b;c d]', '\\begin{bmatrix}  &  \\\\  &  \\end{bmatrix}', 21, 'two by two matrix'],
     ],
@@ -33,7 +34,7 @@ const FORMULA_SHORTCUT_GROUPS = [
       ['d⁄dx', '\\frac{d}{dx}', 0, 'derivative'], ['d²⁄dx²', '\\frac{d^2}{dx^2}', 0, 'second derivative'], ['∂⁄∂x', '\\frac{\\partial}{\\partial x}', 0, 'partial derivative'], ['∂²⁄∂x²', '\\frac{\\partial^2}{\\partial x^2}', 0, 'second partial derivative'], ['∂²⁄∂x∂y', '\\frac{\\partial^2}{\\partial x\\partial y}', 0, 'mixed partial derivative'],
       ['∫', '\\int '], ['∬', '\\iint '], ['∭', '\\iiint '], ['∫ₐᵇ', '\\int_{}^{}', 4, 'definite integral'], ['∬ₐᵇ', '\\int_{}^{}\\int_{}^{}', 14, 'double definite integral'], ['∭ₐᵇ', '\\int_{}^{}\\int_{}^{}\\int_{}^{}', 24, 'triple definite integral'],
       ['Σ', '\\sum_{}^{}', 4, 'sum'], ['Π', '\\prod_{}^{}', 4, 'product'], ['lim', '\\lim_{}', 1, 'limit'], ['lim₋', '\\lim_{x\\to a^-}', 0, 'left limit'], ['lim₊', '\\lim_{x\\to a^+}', 0, 'right limit'], ['lim∞', '\\lim_{x\\to\\infty}', 0, 'limit at infinity'],
-      ['∇', '\\nabla'], ['∂', '\\partial'], ['δ', '\\delta'], ['ℒ', '\\mathcal{L}\\{  \\}', 3, 'Laplace transform'], ['ℒ⁻¹', '\\mathcal{L}^{-1}\\{  \\}', 3, 'inverse Laplace transform'], ['ℱ', '\\mathcal{F}\\{  \\}', 3, 'Fourier transform'], ['ℱ⁻¹', '\\mathcal{F}^{-1}\\{  \\}', 3, 'inverse Fourier transform'],
+      ['∇', '\\nabla'], ['∂', '\\partial'], ['δ', '\\delta'], ['□', '\\Box', 0, 'd Alembert operator'], ['Ĥ', '\\hat{H}', 0, 'Hamiltonian operator'], ['ℒ', '\\mathcal{L}\\{  \\}', 3, 'Laplace transform'], ['ℒ⁻¹', '\\mathcal{L}^{-1}\\{  \\}', 3, 'inverse Laplace transform'], ['ℱ', '\\mathcal{F}\\{  \\}', 3, 'Fourier transform'], ['ℱ⁻¹', '\\mathcal{F}^{-1}\\{  \\}', 3, 'inverse Fourier transform'],
     ],
   },
   {
@@ -137,6 +138,17 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
             <div class="formula-tools" id="formula-tools" hidden>
               <div class="formula-tool-heading"><strong>數學快捷輸入</strong><span>每個按鍵只插入 LaTeX；右側會立即預覽。</span></div>
               ${renderFormulaShortcutPalette()}
+              <details class="custom-formula-shortcuts">
+                <summary>＋ 自訂公式快捷鍵</summary>
+                <p>只儲存在這個瀏覽器，不會上傳到 PureLink。最多 24 個。</p>
+                <div class="custom-formula-fields">
+                  <label><span>按鍵名稱</span><input id="custom-formula-label" maxlength="12" placeholder="例如：Ĥ"></label>
+                  <label><span>插入的 LaTeX</span><input id="custom-formula-latex" maxlength="200" placeholder="例如：\\hat{H}"></label>
+                  <button type="button" id="add-custom-formula">加入</button>
+                </div>
+                <p class="custom-formula-status" id="custom-formula-status" role="status" hidden></p>
+                <div class="custom-formula-list" id="custom-formula-list" aria-label="自訂公式快捷鍵"></div>
+              </details>
             </div>
 
             <div class="conditional-options" id="url-options">
@@ -853,6 +865,19 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .formula-category-tabs { display: flex; gap: .4rem; margin: 0 -.1rem .75rem; padding: .1rem; overflow-x: auto; scrollbar-width: thin; }
     .formula-category-tabs button { width: auto; flex: 0 0 auto; min-height: 2.35rem; padding: .48rem .78rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--muted); font-size: .75rem; }
     .formula-category-tabs button[aria-selected="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+    .custom-formula-shortcuts { margin-top: .9rem; padding-top: .8rem; border-top: 1px solid var(--line); }
+    .custom-formula-shortcuts summary { cursor: pointer; font-weight: 800; }
+    .custom-formula-shortcuts > p { margin: .45rem 0 .75rem; color: var(--muted); font-size: .76rem; }
+    .custom-formula-fields { display: grid; grid-template-columns: minmax(7rem, .55fr) minmax(12rem, 1.45fr) auto; gap: .55rem; align-items: end; }
+    .custom-formula-fields label { display: grid; gap: .3rem; color: var(--muted); font-size: .72rem; }
+    .custom-formula-fields input { min-height: 2.65rem; }
+    .custom-formula-fields button { width: auto; min-height: 2.65rem; padding: .55rem 1rem; }
+    .custom-formula-list { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .75rem; }
+    .custom-formula-item { display: inline-flex; align-items: stretch; border: 1px solid var(--line); border-radius: .8rem; overflow: hidden; background: white; }
+    .custom-formula-item button { width: auto; min-height: 2.5rem; border: 0; border-radius: 0; background: white; }
+    .custom-formula-item [data-custom-formula-insert] { padding: .5rem .8rem; font-family: Georgia, serif; font-weight: 800; }
+    .custom-formula-item [data-custom-formula-remove] { padding: .5rem .65rem; border-left: 1px solid var(--line); color: var(--muted); }
+    .custom-formula-status { color: #8f2f2a !important; }
     .symbol-groups { display: grid; gap: .55rem; }
     .symbol-group { display: flex; flex-wrap: wrap; gap: .4rem; }
     .symbol-group button { width: auto; min-width: 2.55rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .7rem; background: white; color: var(--ink); font-family: ui-serif, Georgia, serif; font-size: .88rem; }
@@ -952,7 +977,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .theme-mist .card-export { background: #e6f0ed; }
     .theme-night .card-export { background: #1b252b; }
     @media (max-width: 46rem) { .content-workspace.formula-mode { grid-template-columns: 1fr; } .formula-preview { margin-top: 0; } }
-    @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
+    @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .custom-formula-fields { grid-template-columns: 1fr; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
   </style>
 </head>
 <body>${body}${scriptMarkup}${externalScriptMarkup}</body>

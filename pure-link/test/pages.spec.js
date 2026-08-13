@@ -23,6 +23,12 @@ describe('interactive pages', () => {
     expect(html).toContain('>∂ ∫</button>');
     expect(html).toContain('>□/□</button>');
     expect(html).toContain('data-formula-insert="\\frac{a}{b}"');
+    expect(html).toContain('data-formula-insert="C_{}^{}"');
+    expect(html).toContain('data-formula-insert="P_{}^{}"');
+    expect(html).toContain('data-formula-insert="\\Box"');
+    expect(html).toContain('data-formula-insert="\\hat{H}"');
+    expect(html).toContain('id="custom-formula-list"');
+    expect(html).toContain('只儲存在這個瀏覽器，不會上傳到 PureLink');
     expect(html).not.toContain('>微積分</button>');
     expect(html).not.toContain('>分數</button>');
     expect(html).toContain('/assets/formula-editor.js');
