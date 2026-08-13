@@ -71,7 +71,7 @@ export async function routeRequest(request, env, context) {
     return html(renderReportPage(slug, nonce, turnstileSiteKey), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
   }
 
-  if (request.method !== 'GET' || path.includes('/')) return html(renderNotFoundPage(), { status: 404 });
+  if (!['GET', 'HEAD'].includes(request.method) || path.includes('/')) return html(renderNotFoundPage(), { status: 404 });
 
   const isPreview = path.endsWith('+');
   const slug = isPreview ? path.slice(0, -1) : path;
@@ -81,15 +81,15 @@ export async function routeRequest(request, env, context) {
   if (!isAvailable(link)) return html(renderNotFoundPage(), { status: 404 });
 
   if (link.content_type === 'url') {
-    recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: isPreview ? 'preview' : 'open', contentType: 'url' });
+    if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: isPreview ? 'preview' : 'open', contentType: 'url' });
     return isPreview ? html(renderUrlPreview(link)) : redirect(link.content, 302);
   }
   if (link.content_type === 'formula') {
-    recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'formula' });
+    if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'formula' });
     return html(renderFormulaPage(link));
   }
   if (link.content_type === 'card') {
-    recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'card' });
+    if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'card' });
     return html(renderCardPage(link));
   }
   return html(renderNotFoundPage(), { status: 404 });

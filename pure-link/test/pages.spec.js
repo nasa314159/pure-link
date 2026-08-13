@@ -16,6 +16,7 @@ describe('interactive pages', () => {
   it('loads Turnstile as a regular deferred script', () => {
     const html = renderHomePage('test-nonce', 'site-key');
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');
+    expect(html).toContain('window.turnstile?.reset();');
     expect(html).not.toContain('type="module" src="https://challenges.cloudflare.com');
   });
 

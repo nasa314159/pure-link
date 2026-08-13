@@ -57,6 +57,10 @@ describe('PureLink worker', () => {
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get('location')).toBe('https://example.com/shop?ref=friend');
 
+    const headRedirect = await worker.fetch(new Request(created.body.url, { method: 'HEAD', redirect: 'manual' }), env);
+    expect(headRedirect.status).toBe(302);
+    expect(headRedirect.headers.get('location')).toBe('https://example.com/shop?ref=friend');
+
     const preview = await worker.fetch(new Request(created.body.previewUrl), env);
     const previewHtml = await preview.text();
     expect(previewHtml).toContain('example.com');

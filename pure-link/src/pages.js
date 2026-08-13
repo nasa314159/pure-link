@@ -221,6 +221,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
       document.getElementById('create-another').addEventListener('click', () => {
         latestResult = null;
         form.reset();
+        window.turnstile?.reset();
         selectType('url');
         form.hidden = false;
         resultPanel.hidden = true;
