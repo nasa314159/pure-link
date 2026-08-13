@@ -3,7 +3,7 @@ import { renderFormulaContent } from './formula.js';
 
 const PLATFORM_NOTICE = '透過 PureLink 分享的內容與外部網站由建立者提供，不代表 PureLink 的立場、推薦、背書或安全保證。';
 
-export function renderHomePage(nonce, turnstileSiteKey = '') {
+export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false) {
   const turnstileWidget = turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="create"></div></div>`
     : '';
@@ -35,9 +35,33 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
               <button class="type-tab" type="button" data-type="card" aria-pressed="false"><span>✦</span>小卡</button>
             </div>
 
-            <label class="field-label" for="content">內容</label>
-            <textarea id="content" name="content" maxlength="4096" placeholder="example.com" required></textarea>
-            <div class="field-meta"><span id="content-help">我們會補上 HTTPS，但不會暗中改寫網址。</span><span id="character-count">0 / 4096</span></div>
+            <div class="content-workspace" id="content-workspace">
+              <div class="content-input-pane">
+                <label class="field-label" for="content">內容</label>
+                <textarea id="content" name="content" maxlength="4096" placeholder="example.com" required></textarea>
+                <div class="field-meta"><span id="content-help">我們會補上 HTTPS，但不會暗中改寫網址。</span><span id="character-count">0 / 4096</span></div>
+              </div>
+              <aside class="formula-preview" id="formula-live-preview" aria-label="公式即時預覽" hidden>
+                <span class="preview-label">即時預覽</span>
+                <p id="formula-preview-empty">輸入 LaTeX 或 Unicode 數學符號後，這裡會立即排版。</p>
+                <div id="formula-preview-rendered" class="formula-preview-rendered" hidden></div>
+              </aside>
+            </div>
+
+            <div class="formula-tools" id="formula-tools" hidden>
+              <div class="formula-tool-heading"><strong>常用數學輸入</strong><span>點選插入；也可直接輸入 Unicode 或 LaTeX。</span></div>
+              <div class="symbol-groups">
+                <div class="symbol-group" aria-label="基本運算">
+                  <button type="button" data-formula-insert="+">＋</button><button type="button" data-formula-insert="−">−</button><button type="button" data-formula-insert="×">×</button><button type="button" data-formula-insert="÷">÷</button><button type="button" data-formula-insert="±">±</button><button type="button" data-formula-insert="≠">≠</button><button type="button" data-formula-insert="≈">≈</button><button type="button" data-formula-insert="≤">≤</button><button type="button" data-formula-insert="≥">≥</button>
+                </div>
+                <div class="symbol-group" aria-label="代數與分析">
+                  <button type="button" data-formula-insert="²">x²</button><button type="button" data-formula-insert="ⁿ">xⁿ</button><button type="button" data-formula-insert="\\frac{}{}" data-cursor-back="3">a/b</button><button type="button" data-formula-insert="\\sqrt{}" data-cursor-back="1">√</button><button type="button" data-formula-insert="∑">∑</button><button type="button" data-formula-insert="∫">∫</button><button type="button" data-formula-insert="∂">∂</button><button type="button" data-formula-insert="∞">∞</button><button type="button" data-formula-insert="→">→</button>
+                </div>
+                <div class="symbol-group" aria-label="希臘字母">
+                  <button type="button" data-formula-insert="α">α</button><button type="button" data-formula-insert="β">β</button><button type="button" data-formula-insert="γ">γ</button><button type="button" data-formula-insert="Δ">Δ</button><button type="button" data-formula-insert="θ">θ</button><button type="button" data-formula-insert="λ">λ</button><button type="button" data-formula-insert="μ">μ</button><button type="button" data-formula-insert="π">π</button><button type="button" data-formula-insert="σ">σ</button><button type="button" data-formula-insert="φ">φ</button><button type="button" data-formula-insert="ω">ω</button><button type="button" data-formula-insert="Ω">Ω</button>
+                </div>
+              </div>
+            </div>
 
             <div class="conditional-options" id="url-options">
               <label class="check-row"><input type="checkbox" name="cleanTracking" value="true"><span><strong>清理常見追蹤參數</strong><small>建立前移除 utm、fbclid 等已知參數。</small></span></label>
@@ -57,7 +81,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
 
             <details class="advanced-options">
               <summary>自訂短連結</summary>
-              <label class="field-label" for="slug">pure.link/</label>
+              <label class="field-label" for="slug">no-no.uk/</label>
               <input id="slug" name="slug" maxlength="30" pattern="[A-Za-z0-9_-]+" placeholder="留白就會安全地自動產生">
             </details>
 
@@ -73,7 +97,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
             <a class="result-url" id="result-url" href=""></a>
             <div class="result-actions">
               <button class="create-button" type="button" data-copy-target="result-url">複製分享連結</button>
-              <a class="secondary-link" id="preview-link" href="" hidden>查看 + 預覽</a>
+              <a class="secondary-link" id="preview-link" href="" hidden></a>
             </div>
             <div class="recovery-box">
               <strong>請保存匿名管理憑證</strong>
@@ -89,7 +113,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
 
         <footer class="home-footer">
           <p>內容由建立者提供，不代表 PureLink 的立場、推薦或安全保證。</p>
-          <nav aria-label="服務資訊"><a href="/privacy">隱私說明</a><a href="/terms">使用與內容規範</a><a href="/transparency">透明度</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">GitHub 原始碼</a></nav>
+          <nav aria-label="服務資訊">${googleAuthConfigured ? '<a href="/account">我的 PureLink</a>' : ''}<a href="/privacy">隱私說明</a><a href="/terms">使用與內容規範</a><a href="/transparency">透明度</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">GitHub 原始碼</a></nav>
         </footer>
       </main>
     `,
@@ -102,6 +126,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
       const suggestion = document.getElementById('suggestion');
       const urlOptions = document.getElementById('url-options');
       const cardOptions = document.getElementById('card-options');
+      const formulaTools = document.getElementById('formula-tools');
+      const contentWorkspace = document.getElementById('content-workspace');
       const errorBox = document.getElementById('form-error');
       const submitButton = document.getElementById('create-button');
       const resultPanel = document.getElementById('result-panel');
@@ -126,8 +152,11 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
         contentHelp.textContent = copy.help;
         urlOptions.hidden = type !== 'url';
         cardOptions.hidden = type !== 'card';
+        formulaTools.hidden = type !== 'formula';
+        contentWorkspace.classList.toggle('formula-mode', type === 'formula');
         updateCount();
         updateSuggestion();
+        document.dispatchEvent(new CustomEvent('purelink:typechange', { detail: { type } }));
       }
 
       function suggestedType(value) {
@@ -184,6 +213,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
           const previewLink = document.getElementById('preview-link');
           previewLink.hidden = !result.previewUrl;
           previewLink.href = result.previewUrl || '';
+          previewLink.textContent = result.previewLabel || '查看分享內容';
           form.hidden = true;
           resultPanel.hidden = false;
           resultPanel.focus();
@@ -211,7 +241,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
       });
 
       document.getElementById('download-recovery').addEventListener('click', () => {
-        const text = 'PureLink 匿名管理憑證\\n\\n' + latestResult.managementUrl + '\\n\\n請妥善保管；PureLink 無法恢復遺失的匿名憑證。\\n';
+        const typeName = ({ url: '網址', formula: '公式', card: '小卡' })[latestResult.contentType] || '內容';
+        const text = 'PureLink 匿名管理與分享資訊\\n\\n內容類型：' + typeName + '\\n分享／查看內容：\\n' + latestResult.url + '\\n\\n私人管理地址（請勿分享）：\\n' + latestResult.managementUrl + '\\n\\n分享連結可交給接收者；管理地址只留給建立者。PureLink 無法恢復遺失的匿名管理憑證。\\n';
         const anchor = document.createElement('a');
         anchor.download = 'purelink-' + latestResult.slug + '-recovery.txt';
         anchor.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text);
@@ -231,7 +262,10 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
       selectType('url');
     `,
     nonce,
-    externalScript: turnstileSiteKey ? 'https://challenges.cloudflare.com/turnstile/v0/api.js' : '',
+    externalScripts: [
+      '/assets/formula-editor.js',
+      turnstileSiteKey ? 'https://challenges.cloudflare.com/turnstile/v0/api.js' : '',
+    ],
   });
 }
 
@@ -273,15 +307,16 @@ export function renderFormulaPage(link) {
         <a class="wordmark" href="/">PureLink</a>
         <article class="panel content-panel">
           <div class="share-export formula-export" id="share-export">
-            <p class="eyebrow">PURELINK · FORMULA</p>
+            <p class="eyebrow" data-export-brand>PURELINK · FORMULA</p>
             <div class="shared-content formula-rendered">${renderFormulaContent(link.content)}</div>
           </div>
+          <label class="export-brand-option"><input type="checkbox" data-export-brand-toggle checked><span><strong>PNG 加入「PURELINK · FORMULA」</strong><small>可隨時取消；分享內容本身不受影響。</small></span></label>
           <div class="content-actions">
             <button class="secondary-button" type="button" data-copy-content>複製原始內容</button>
             <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-formula.png">下載 PNG</button>
           </div>
           <details class="source-details">
-            <summary>查看原始 LaTeX</summary>
+            <summary>查看原始輸入（LaTeX／Unicode）</summary>
             <pre class="formula-source">${escapeHtml(link.content)}</pre>
           </details>
           <textarea id="raw-content" hidden>${escapeHtml(link.content)}</textarea>
@@ -305,10 +340,11 @@ export function renderCardPage(link) {
         <a class="wordmark" href="/">PureLink</a>
         <article class="panel content-panel card-panel">
           <div class="share-export card-export" id="share-export">
-            <p class="eyebrow">PURELINK · A SMALL CARD</p>
+            <p class="eyebrow" data-export-brand>PURELINK · A SMALL CARD</p>
             <p class="shared-content card-copy">${escapeHtml(link.content)}</p>
             ${signature}
           </div>
+          <label class="export-brand-option"><input type="checkbox" data-export-brand-toggle checked><span><strong>PNG 加入「PURELINK · A SMALL CARD」</strong><small>可隨時取消；小卡內容本身不受影響。</small></span></label>
           <div class="content-actions">
             <button class="secondary-button" type="button" data-copy-content>複製文字</button>
             <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-card.png">下載 PNG</button>
@@ -409,6 +445,7 @@ export function renderLegalPage(page) {
         ['我們保存的內容', '你主動建立的網址、公式或小卡，以及必要的設定、建立時間、狀態與不可逆的匿名管理憑證雜湊。管理憑證本身只交給建立者，PureLink 無法替匿名使用者找回。'],
         ['最低限度統計', '只按日期、功能類型與國家或地區代碼累加總數，用來估計人數、成本與服務狀況；不保存原始 IP，也不建立個人瀏覽歷程。未知地區統一記為 ZZ。'],
         ['防止濫用', '公開寫入會使用 Turnstile 驗證，並以原始 IP、時間窗與伺服器密鑰產生不可逆的短期速率限制代碼。代碼只用於限制惡意大量請求，逾期後清除。'],
+        ['自願登入', '完全不登入仍可建立與管理匿名內容。若你自願使用 Google 登入，PureLink 會保存 Google 提供的穩定帳號識別碼、電子郵件、顯示名稱，以及登入工作階段的不可逆雜湊，用來跨裝置顯示你主動連結的內容；不保存 Google 密碼或長期存取權杖。'],
         ['我們刻意不做的事', '不販售資料、不投放行為廣告、不做跨站追蹤、不建立個人興趣檔案，也不把使用內容拿去訓練模型。瀏覽器與網路供應商仍會在傳輸請求時接觸必要的網路資料。'],
         ['刪除與聯絡', '匿名建立者可用管理地址永久刪除內容；遺失管理憑證時無法驗證建立者身分。若內容涉及安全、隱私或權利問題，可從內容頁使用回報功能。'],
       ],
@@ -430,7 +467,7 @@ export function renderLegalPage(page) {
       title: '能被檢查，才配得上「不追蹤」。',
       intro: 'PureLink 的承諾不只是一句文案：產品設計、資料欄位與防濫用方式都以可公開檢視為方向。',
       sections: [
-        ['目前的資料邊界', '內容資料庫保存分享內容、設定與匿名管理雜湊；統計資料庫只保存每日聚合數字；速率限制只保存短期不可逆代碼；檢舉不要求姓名或電子郵件。'],
+        ['目前的資料邊界', '內容資料庫保存分享內容、設定與匿名管理雜湊；自願登入者另保存最低限度 Google 帳號資料與工作階段雜湊；統計資料庫只保存每日聚合數字；速率限制只保存短期不可逆代碼；檢舉不要求姓名或電子郵件。'],
         ['人類驗證的定位', 'Turnstile 只保護建立與檢舉等公開寫入，不阻擋一般人閱讀內容。它是防止機器大量濫用的安全措施，不是建立會員身分或追蹤閱讀者。'],
         ['開源與驗證', '正式發布時將公開程式、資料結構、部署說明與製作歷程，讓任何人能檢查承諾、提出問題或自行部署。版本與政策有實質變更時，也應在公開紀錄中留下痕跡。'],
         ['目前限制', '這是仍在驗證中的 MVP。自訂網域、正式監控、事件處理流程與定期透明度報告，會在正式上線前或依服務規模逐步完成。'],
@@ -457,25 +494,39 @@ export function renderLegalPage(page) {
   });
 }
 
-export function renderManagePage(slug, nonce) {
+export function renderManagePage(link, nonce, user = null, googleAuthConfigured = false) {
+  const slug = link.slug;
   const safeSlugScript = JSON.stringify(slug).replaceAll('<', '\\u003c');
+  const accountAccess = Boolean(user && link.owner_user_id === user.id);
+  const contentTypeName = ({ url: '網址', formula: '公式', card: '小卡' })[link.content_type] || '內容';
+  const accountPanel = user
+    ? `<div class="account-connect"><p>已使用 Google 登入：<strong>${escapeHtml(user.email)}</strong></p>${accountAccess ? '<p>這個 PureLink 已保存在你的帳號。</p>' : '<button class="secondary-button" id="claim-link" type="button">把這個 PureLink 加入我的帳號</button>'}<a href="/account">查看我的 PureLink</a></div>`
+    : googleAuthConfigured
+      ? `<div class="account-connect"><strong>想跨裝置管理？</strong><p>匿名憑證仍可直接使用；也可以自願連結 Google 帳號，之後從其他裝置登入找回。</p><a class="google-link" href="/auth/google?returnTo=${encodeURIComponent(`/manage/${slug}`)}">使用 Google 繼續</a></div>`
+      : '';
   return documentShell({
-    title: 'Manage your PureLink',
-    description: 'Manage an anonymous PureLink using its private management credential.',
+    title: '管理你的 PureLink',
+    description: '使用匿名管理憑證或自願連結的帳號管理 PureLink。',
     robots: 'noindex, nofollow, noarchive',
     body: `
       <main class="page">
         <a class="wordmark" href="/">PureLink</a>
         <article class="panel manage-panel">
-          <p class="eyebrow">ANONYMOUS MANAGEMENT</p>
-          <h1 class="manage-title">Keep this access safe.</h1>
-          <p class="lede manage-lede">PureLink does not know who created this link. Save this management address now; it cannot be recovered if both this browser and your copy are lost.</p>
-          <div class="manage-actions" id="manage-actions" hidden>
-            <button class="secondary-button" id="copy-management" type="button">Copy management address</button>
-            <button class="secondary-button" id="download-recovery" type="button">Download recovery file</button>
-            <button class="danger-button" id="delete-link" type="button">Delete this PureLink</button>
+          <p class="eyebrow">PRIVATE MANAGEMENT</p>
+          <h1 class="manage-title">管理這個 PureLink。</h1>
+          <p class="lede manage-lede">匿名憑證本身就是管理權限，不需要強迫登入；請不要把這個管理地址交給別人。</p>
+          <div class="managed-content-card">
+            <span>${escapeHtml(contentTypeName)}</span>
+            <strong>/${escapeHtml(slug)}</strong>
+            <a class="primary-link" href="/${escapeHtml(slug)}">查看分享內容</a>
           </div>
-          <p class="notice" id="management-status" role="status">Checking this browser for management access…</p>
+          ${accountPanel}
+          <div class="manage-actions" id="manage-actions" hidden>
+            <button class="secondary-button" id="copy-management" type="button">複製管理地址</button>
+            <button class="secondary-button" id="download-recovery" type="button">下載恢復檔案</button>
+            <button class="danger-button" id="delete-link" type="button">刪除這個 PureLink</button>
+          </div>
+          <p class="notice" id="management-status" role="status">正在確認管理權限…</p>
         </article>
       </main>
     `,
@@ -485,30 +536,56 @@ export function renderManagePage(slug, nonce) {
       const fragmentToken = location.hash.slice(1);
       if (fragmentToken) localStorage.setItem(storageKey, fragmentToken);
       const token = fragmentToken || localStorage.getItem(storageKey) || '';
+      const accountAccess = ${accountAccess};
       const actions = document.getElementById('manage-actions');
       const status = document.getElementById('management-status');
+      const copyManagement = document.getElementById('copy-management');
+      const downloadRecovery = document.getElementById('download-recovery');
       const canonicalAddress = location.origin + '/manage/' + encodeURIComponent(slug) + '#' + token;
 
-      if (token) {
+      copyManagement.hidden = !token;
+      downloadRecovery.hidden = !token;
+
+      if (token || accountAccess) {
         actions.hidden = false;
-        status.textContent = 'Management access is available on this device.';
+        status.textContent = accountAccess ? '已透過你的 Google 帳號取得管理權限。' : '此裝置已有匿名管理權限。';
       } else {
-        status.textContent = 'No management credential was found. PureLink cannot recover an anonymous credential.';
+        status.textContent = '找不到匿名管理憑證。若曾連結 Google 帳號，請先登入；未連結的匿名憑證無法恢復。';
       }
 
-      document.getElementById('copy-management').addEventListener('click', async (event) => {
+      copyManagement.addEventListener('click', async (event) => {
         await navigator.clipboard.writeText(canonicalAddress);
         const button = event.currentTarget;
-        button.textContent = 'Copied';
-        setTimeout(() => { button.textContent = 'Copy management address'; }, 1600);
+        button.textContent = '已複製';
+        setTimeout(() => { button.textContent = '複製管理地址'; }, 1600);
       });
 
-      document.getElementById('download-recovery').addEventListener('click', () => {
-        const recoveryText = 'PureLink anonymous management credential\\n\\n' + canonicalAddress + '\\n\\nKeep this file private. PureLink cannot recover this credential.\\n';
+      downloadRecovery.addEventListener('click', () => {
+        const recoveryText = 'PureLink 匿名管理與分享資訊\\n\\n內容類型：${contentTypeName}\\n分享／查看內容：\\n' + location.origin + '/' + encodeURIComponent(slug) + '\\n\\n私人管理地址（請勿分享）：\\n' + canonicalAddress + '\\n\\n分享連結可交給接收者；管理地址只留給建立者。\\n';
         const anchor = document.createElement('a');
         anchor.download = 'purelink-' + slug + '-recovery.txt';
         anchor.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(recoveryText);
         anchor.click();
+      });
+
+      document.getElementById('claim-link')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        if (!token) {
+          status.textContent = '需要先用原本的匿名管理地址開啟此頁，才能綁定帳號。';
+          return;
+        }
+        button.disabled = true;
+        const response = await fetch('/api/links/' + encodeURIComponent(slug) + '/claim', {
+          method: 'POST',
+          headers: { authorization: 'Bearer ' + token },
+        });
+        if (response.ok) {
+          button.replaceWith(document.createTextNode('已加入你的帳號。'));
+          status.textContent = '之後可在任何裝置使用 Google 登入管理。';
+        } else {
+          button.disabled = false;
+          status.textContent = '帳號連結失敗，請重新開啟完整管理地址後再試。';
+        }
       });
 
       let deleteArmed = false;
@@ -516,30 +593,53 @@ export function renderManagePage(slug, nonce) {
         const button = event.currentTarget;
         if (!deleteArmed) {
           deleteArmed = true;
-          button.textContent = 'Press again to permanently delete';
-          setTimeout(() => { deleteArmed = false; button.textContent = 'Delete this PureLink'; }, 5000);
+          button.textContent = '再按一次，永久刪除';
+          setTimeout(() => { deleteArmed = false; button.textContent = '刪除這個 PureLink'; }, 5000);
           return;
         }
 
         button.disabled = true;
         const response = await fetch('/api/links/' + encodeURIComponent(slug), {
           method: 'DELETE',
-          headers: { authorization: 'Bearer ' + token },
+          headers: token ? { authorization: 'Bearer ' + token } : {},
         });
         if (response.ok) {
           localStorage.removeItem(storageKey);
           actions.hidden = true;
           history.replaceState(null, '', location.pathname);
-          status.textContent = 'This PureLink has been permanently deleted.';
+          status.textContent = '這個 PureLink 已永久刪除。';
         } else {
           button.disabled = false;
           deleteArmed = false;
-          button.textContent = 'Delete this PureLink';
-          status.textContent = 'Deletion failed. Check the management address and try again.';
+          button.textContent = '刪除這個 PureLink';
+          status.textContent = '刪除失敗，請確認管理地址或帳號權限。';
         }
       });
     `,
     nonce,
+  });
+}
+
+export function renderAccountPage(user, links) {
+  const rows = links.length
+    ? links.map((link) => `<li><div><span>${escapeHtml(({ url: '網址', formula: '公式', card: '小卡' })[link.content_type] || '內容')}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">查看</a><a href="/manage/${escapeHtml(link.slug)}">管理</a></li>`).join('')
+    : '<li class="empty-account">還沒有連結到這個帳號的 PureLink。</li>';
+  return documentShell({
+    title: '我的 PureLink',
+    description: '跨裝置管理自願連結到 Google 帳號的 PureLink。',
+    robots: 'noindex, nofollow, noarchive',
+    body: `
+      <main class="page account-page">
+        <a class="wordmark" href="/">PureLink</a>
+        <article class="panel account-panel">
+          <p class="eyebrow">YOUR PURELINKS</p>
+          <h1 class="manage-title">你好，${escapeHtml(user.display_name || user.email)}。</h1>
+          <p class="lede manage-lede">只有你主動連結或登入後建立的內容會出現在這裡。匿名建立仍然可以完全不登入。</p>
+          <ul class="account-links">${rows}</ul>
+          <form action="/auth/logout" method="post"><button class="secondary-button" type="submit">登出</button></form>
+        </article>
+      </main>
+    `,
   });
 }
 
@@ -559,13 +659,12 @@ export function renderNotFoundPage() {
   });
 }
 
-function documentShell({ title, description, body, robots = 'noindex, nofollow', script = '', nonce = '', externalScript = '' }) {
+function documentShell({ title, description, body, robots = 'noindex, nofollow', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
-  const externalScriptMarkup = externalScript
-    ? externalScript.startsWith('https://challenges.cloudflare.com/')
-      ? `<script src="${escapeHtml(externalScript)}" async defer></script>`
-      : `<script type="module" src="${escapeHtml(externalScript)}"></script>`
-    : '';
+  const scripts = [externalScript, ...externalScripts].filter(Boolean);
+  const externalScriptMarkup = scripts.map((source) => source.startsWith('https://challenges.cloudflare.com/')
+    ? `<script src="${escapeHtml(source)}" async defer></script>`
+    : `<script type="module" src="${escapeHtml(source)}"></script>`).join('');
   return `<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -578,6 +677,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
   <style>
     :root { color-scheme: light; --ink: #17231f; --muted: #65716b; --line: #dce3df; --paper: #f7f8f5; --surface: rgba(255,255,255,.88); --green: #235c48; }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     body { margin: 0; min-height: 100vh; color: var(--ink); background: radial-gradient(circle at 15% 5%, #e4f0e8 0, transparent 28rem), var(--paper); font-family: ui-rounded, "SF Pro Rounded", "Avenir Next", system-ui, sans-serif; }
     a { color: inherit; }
     .home, .page { width: min(calc(100% - 2rem), 58rem); min-height: 100vh; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; }
@@ -607,6 +707,19 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .field-meta { display: flex; justify-content: space-between; gap: 1rem; margin-top: .5rem; color: var(--muted); font-size: .74rem; line-height: 1.45; }
     .field-meta span:first-child { max-width: 38rem; }
     .field-meta span:last-child { white-space: nowrap; }
+    .content-workspace.formula-mode { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, .85fr); gap: 1rem; align-items: stretch; }
+    .content-input-pane { min-width: 0; }
+    .formula-preview { min-height: 11rem; margin-top: 1.75rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: #f8fbf9; overflow: auto; }
+    .preview-label { display: block; margin-bottom: .75rem; color: var(--green); font-size: .7rem; font-weight: 750; letter-spacing: .12em; }
+    .formula-preview p { margin: 1.5rem 0; color: var(--muted); font-size: .82rem; line-height: 1.6; }
+    .formula-preview-rendered { min-height: 7rem; display: flex; flex-direction: column; justify-content: center; overflow: auto; line-height: 1.8; }
+    .formula-tools { margin: .4rem 0 1.2rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: #f8fbf9; }
+    .formula-tool-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; font-size: .78rem; }
+    .formula-tool-heading span { color: var(--muted); }
+    .symbol-groups { display: grid; gap: .55rem; }
+    .symbol-group { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .symbol-group button { width: auto; min-width: 2.55rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .7rem; background: white; color: var(--ink); font-family: ui-serif, Georgia, serif; font-size: 1rem; }
+    .symbol-group button:hover, .symbol-group button:focus-visible { border-color: var(--green); background: #edf5f1; }
     .conditional-options { margin-top: 1.25rem; padding: .25rem 1rem; border: 1px solid var(--line); border-radius: 1.15rem; }
     .check-row { display: flex; align-items: flex-start; gap: .8rem; padding: .9rem 0; border-bottom: 1px solid var(--line); cursor: pointer; }
     .check-row:last-child { border-bottom: 0; }
@@ -656,6 +769,10 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .formula-export { min-height: 14rem; display: flex; flex-direction: column; justify-content: center; }
     .card-export { min-height: 20rem; display: flex; flex-direction: column; justify-content: center; }
     .content-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: 1rem; }
+    .export-brand-option { display: flex; gap: .7rem; margin-top: 1rem; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 1rem; cursor: pointer; }
+    .export-brand-option input { margin-top: .15rem; accent-color: var(--green); }
+    .export-brand-option span { display: grid; gap: .2rem; }
+    .export-brand-option small { color: var(--muted); line-height: 1.45; }
     .card-copy { font-family: ui-serif, "New York", Georgia, serif; font-size: clamp(1.35rem, 4vw, 2.2rem); line-height: 1.7; }
     .signature { margin: 1.5rem 0 0; color: var(--muted); text-align: right; }
     .notice { margin: 2.5rem 0 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
@@ -671,6 +788,17 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .legal-sections p { margin: .7rem 0 0; color: var(--muted); line-height: 1.8; }
     .legal-updated { margin: 2.5rem 0 0; color: var(--muted); font-size: .75rem; }
     .manage-actions { display: grid; gap: .75rem; }
+    .managed-content-card { display: grid; grid-template-columns: auto 1fr auto; gap: .8rem; align-items: center; margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: #f8fbf9; }
+    .managed-content-card span { color: var(--muted); font-size: .75rem; }
+    .managed-content-card .primary-link { padding: .7rem 1rem; }
+    .account-connect { display: grid; gap: .7rem; margin: 1rem 0 1.5rem; padding: 1rem; border-radius: 1.2rem; background: #edf5f1; }
+    .account-connect p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .google-link { display: flex; justify-content: center; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: white; text-decoration: none; font-weight: 700; }
+    .account-links { display: grid; gap: .7rem; margin: 0 0 1.5rem; padding: 0; list-style: none; }
+    .account-links li { display: grid; grid-template-columns: 1fr auto auto; gap: .8rem; align-items: center; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; }
+    .account-links li div { display: grid; gap: .2rem; }
+    .account-links li span { color: var(--muted); font-size: .72rem; }
+    .account-links .empty-account { display: block; color: var(--muted); }
     button { width: 100%; padding: .95rem 1.1rem; border-radius: 999px; font: inherit; font-weight: 700; cursor: pointer; }
     button:disabled { cursor: wait; opacity: .55; }
     .secondary-button { border: 1px solid var(--line); background: transparent; color: var(--ink); }
@@ -679,7 +807,8 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .theme-night { color-scheme: dark; --paper: #141b20; --surface: rgba(28,38,44,.92); --ink: #edf4f0; --muted: #a8b7b0; --line: #3a4843; --green: #91cbb4; }
     .theme-mist .card-export { background: #e6f0ed; }
     .theme-night .card-export { background: #1b252b; }
-    @media (max-width: 38rem) { .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading { display: grid; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions { grid-template-columns: 1fr; } }
+    @media (max-width: 46rem) { .content-workspace.formula-mode { grid-template-columns: 1fr; } .formula-preview { margin-top: 0; } }
+    @media (max-width: 38rem) { .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
   </style>
 </head>
 <body>${body}${scriptMarkup}${externalScriptMarkup}</body>

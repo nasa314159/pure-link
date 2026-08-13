@@ -50,7 +50,7 @@ describe('PureLink worker', () => {
 
     const management = await worker.fetch(new Request(created.body.managementUrl), env);
     expect(management.status).toBe(200);
-    expect(await management.text()).toContain('Keep this access safe');
+    expect(await management.text()).toContain('查看分享內容');
     expect(management.headers.get('content-security-policy')).toMatch(/script-src 'self' 'nonce-[^']+'/);
 
     const redirect = await worker.fetch(new Request(created.body.url, { redirect: 'manual' }), env);
@@ -81,6 +81,15 @@ describe('PureLink worker', () => {
     expect(body).toContain('&lt;/script&gt;');
     expect(body).toContain('theme-night');
     expect(body).toContain('下載 PNG');
+  });
+
+  it('uses the configured public origin and links formula previews to the rendered content', async () => {
+    env.PUBLIC_ORIGIN = 'https://no-no.uk';
+    const created = await createLink(env, { contentType: 'formula', content: 'x² + y²' });
+    expect(created.body.url).toBe(`https://no-no.uk/${created.body.slug}`);
+    expect(created.body.previewUrl).toBe(created.body.url);
+    expect(created.body.previewLabel).toBe('查看公式');
+    expect(created.body.contentType).toBe('formula');
   });
 
   it('deletes anonymous content only with its management token', async () => {
@@ -175,7 +184,7 @@ class MemoryStatement {
 
   async run() {
     if (this.sql.startsWith('INSERT INTO links')) {
-      const [slug, contentType, content, signature, theme, isAffiliate, managementTokenHash] = this.values;
+      const [slug, contentType, content, signature, theme, isAffiliate, managementTokenHash, ownerUserId] = this.values;
       if (this.db.links.has(slug)) throw new Error('UNIQUE constraint failed: links.slug');
       const timestamp = '2026-08-06 00:00:00';
       this.db.links.set(slug, {
@@ -186,6 +195,7 @@ class MemoryStatement {
         theme,
         is_affiliate: isAffiliate,
         management_token_hash: managementTokenHash,
+        owner_user_id: ownerUserId,
         status: 'active',
         created_at: timestamp,
         updated_at: timestamp,

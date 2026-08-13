@@ -11,8 +11,15 @@
 		"enabled": true
 	},
 	"vars": {
-		"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL"
+		"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL",
+		"PUBLIC_ORIGIN": "https://no-no.uk"
 	},
+	"routes": [
+		{
+			"pattern": "no-no.uk",
+			"custom_domain": true
+		}
+	],
 	"d1_databases": [
 		{
 			"binding": "pure_link_db",
@@ -29,7 +36,8 @@
 		"staging": {
 			"name": "pure-link-staging",
 			"vars": {
-				"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL"
+				"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL",
+				"PUBLIC_ORIGIN": "https://no-no.uk"
 			},
 			"d1_databases": [
 				{
@@ -40,7 +48,7 @@
 			],
 			"routes": [
 				{
-					"pattern": "staging.no-no.uk",
+					"pattern": "no-no.uk",
 					"custom_domain": true
 				}
 			]

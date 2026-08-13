@@ -5,7 +5,7 @@ export function createLinkRepository(db) {
     async findBySlug(slug) {
       return db.prepare(`
         SELECT slug, content_type, content, signature, theme, is_affiliate,
-               management_token_hash, status, created_at, updated_at, expires_at
+               management_token_hash, owner_user_id, status, created_at, updated_at, expires_at
         FROM links
         WHERE slug = ?
       `).bind(slug).first();
@@ -20,8 +20,8 @@ export function createLinkRepository(db) {
       return db.prepare(`
         INSERT INTO links (
           slug, content_type, content, signature, theme, is_affiliate,
-          management_token_hash, status, created_at, updated_at, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
+          management_token_hash, owner_user_id, status, created_at, updated_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)
       `).bind(
         link.slug,
         link.contentType,
@@ -30,6 +30,7 @@ export function createLinkRepository(db) {
         link.theme,
         link.isAffiliate ? 1 : 0,
         link.managementTokenHash,
+        link.ownerUserId || null,
       ).run();
     },
 
@@ -39,6 +40,26 @@ export function createLinkRepository(db) {
         WHERE slug = ? AND management_token_hash = ?
       `).bind(slug, managementTokenHash).run();
     },
+
+    async deleteOwned(slug, ownerUserId) {
+      return db.prepare('DELETE FROM links WHERE slug = ? AND owner_user_id = ?')
+        .bind(slug, ownerUserId).run();
+    },
+
+    async claim(slug, managementTokenHash, ownerUserId) {
+      return db.prepare(`
+        UPDATE links SET owner_user_id = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE slug = ? AND management_token_hash = ?
+      `).bind(ownerUserId, slug, managementTokenHash).run();
+    },
+
+    async listByOwner(ownerUserId) {
+      const result = await db.prepare(`
+        SELECT slug, content_type, content, signature, theme, status, created_at
+        FROM links WHERE owner_user_id = ?
+        ORDER BY created_at DESC LIMIT 200
+      `).bind(ownerUserId).all();
+      return result?.results || [];
+    },
   };
 }
-

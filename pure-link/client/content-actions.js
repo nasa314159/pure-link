@@ -2,6 +2,12 @@ import { toPng } from 'html-to-image';
 
 const rawContent = document.getElementById('raw-content');
 const captureTarget = document.getElementById('share-export');
+const brandToggle = document.querySelector('[data-export-brand-toggle]');
+const exportBrand = document.querySelector('[data-export-brand]');
+
+brandToggle?.addEventListener('change', () => {
+  exportBrand.hidden = !brandToggle.checked;
+});
 
 document.querySelector('[data-copy-content]')?.addEventListener('click', async (event) => {
   const button = event.currentTarget;

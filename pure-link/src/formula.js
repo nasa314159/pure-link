@@ -26,7 +26,7 @@ export function renderFormulaContent(source) {
 }
 
 function renderMath(expression, displayMode) {
-  return katex.renderToString(expression, {
+  return katex.renderToString(normalizeFormulaExpression(expression), {
     displayMode,
     output: 'html',
     throwOnError: false,
@@ -35,7 +35,32 @@ function renderMath(expression, displayMode) {
   });
 }
 
+export function normalizeFormulaExpression(expression) {
+  let normalized = String(expression);
+  const symbols = new Map([
+    ['−', '-'], ['×', '\\times '], ['÷', '\\div '], ['±', '\\pm '], ['∓', '\\mp '], ['√', '\\sqrt '],
+    ['≤', '\\le '], ['≥', '\\ge '], ['≠', '\\ne '], ['≈', '\\approx '],
+    ['≡', '\\equiv '], ['∞', '\\infty '], ['∂', '\\partial '], ['∇', '\\nabla '],
+    ['∑', '\\sum '], ['∏', '\\prod '], ['∫', '\\int '], ['∈', '\\in '],
+    ['∉', '\\notin '], ['⊂', '\\subset '], ['⊆', '\\subseteq '], ['∪', '\\cup '],
+    ['∩', '\\cap '], ['→', '\\to '], ['←', '\\leftarrow '], ['↔', '\\leftrightarrow '],
+    ['⇒', '\\Rightarrow '], ['⇔', '\\Leftrightarrow '], ['π', '\\pi '], ['θ', '\\theta '],
+    ['λ', '\\lambda '], ['μ', '\\mu '], ['σ', '\\sigma '], ['φ', '\\phi '],
+    ['ω', '\\omega '], ['Δ', '\\Delta '], ['Ω', '\\Omega '],
+  ]);
+  for (const [symbol, latex] of symbols) normalized = normalized.replaceAll(symbol, latex);
+
+  normalized = normalized.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿ]+/g, (value) => `^{${mapScript(value, true)}}`);
+  normalized = normalized.replace(/[₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ]+/g, (value) => `_{${mapScript(value, false)}}`);
+  return normalized;
+}
+
+function mapScript(value, superscript) {
+  const from = superscript ? '⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿ' : '₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ';
+  const to = superscript ? '0123456789+-=()n' : '0123456789+-=()aehijklmnoprstuvx';
+  return [...value].map((character) => to[from.indexOf(character)] || character).join('');
+}
+
 function formatText(value) {
   return escapeHtml(value).replaceAll('\n', '<br>');
 }
-

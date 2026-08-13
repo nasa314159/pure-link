@@ -5,10 +5,10 @@
 PureLink 是一個安靜、簡潔、可被驗證其隱私承諾的分享工具。MVP 把三件事做好：
 
 - 短網址：接收者可在網址後加上 `+`，先看完整目的地與推薦／分潤揭露。
-- LaTeX：支援純公式、文字混合公式、複製原始內容與下載 PNG。
+- 公式：支援 LaTeX、常見 Unicode 數學輸入、文字混合公式、符號面板、即時預覽、複製原始內容與下載 PNG。
 - 短文小卡：一段話、可選署名，以及紙白、薄霧、夜色三種主題。
 
-任何人都能閱讀與建立。Auto 只提出內容類型建議，不會替使用者做不可見的決定。匿名建立者會收到唯一管理地址；PureLink 只保存憑證雜湊，因此遺失後無法找回。
+任何人都能閱讀與建立。Auto 只提出內容類型建議，不會替使用者做不可見的決定。匿名建立者會收到唯一管理地址；PureLink 只保存憑證雜湊，因此遺失後無法找回。自願使用 Google 登入者可跨裝置管理主動連結的內容；匿名管理仍不要求登入。
 
 ## 本機執行
 
@@ -43,6 +43,9 @@ npx wrangler deploy --dry-run
 - `TURNSTILE_SITE_KEY`：可公開的 Turnstile site key。
 - `TURNSTILE_SECRET_KEY`：使用 `wrangler secret put` 設定。
 - `RATE_LIMIT_SECRET`：至少 32 個隨機位元組，使用 `wrangler secret put` 設定。
+- `GOOGLE_CLIENT_ID`：Google OAuth 網頁應用程式用戶端 ID。
+- `GOOGLE_CLIENT_SECRET`：使用 `wrangler secret put` 設定。
+- Google OAuth 授權重新導向 URI：`https://no-no.uk/auth/google/callback`。
 
 請勿把真實密鑰提交到 Git。可複製 `.dev.vars.example` 為 `.dev.vars` 做本機設定。
 

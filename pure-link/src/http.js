@@ -35,10 +35,12 @@ export function text(body, init = {}) {
   return new Response(body, { ...init, headers });
 }
 
-export function redirect(location, status = 302) {
-  const headers = new Headers({ location, 'cache-control': 'no-store' });
+export function redirect(location, status = 302, init = {}) {
+  const headers = new Headers(init.headers);
+  headers.set('location', location);
+  headers.set('cache-control', 'no-store');
   applyBaseHeaders(headers);
-  return new Response(null, { status, headers });
+  return new Response(null, { ...init, status, headers });
 }
 
 export function noContent(init = {}) {

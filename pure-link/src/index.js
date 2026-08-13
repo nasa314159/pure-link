@@ -1,8 +1,9 @@
 import { normalizeCreateInput, ValidationError } from './content.js';
+import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requireSameOrigin, startGoogleAuth } from './auth.js';
 import { enforceWriteProtection } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text } from './http.js';
-import { renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNotFoundPage, renderReportPage, renderUrlPreview } from './pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNotFoundPage, renderReportPage, renderUrlPreview } from './pages.js';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
@@ -29,7 +30,7 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'GET' && path === '') {
     const nonce = createSlug() + createSlug();
     const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
-    return html(renderHomePage(nonce, turnstileSiteKey), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
+    return html(renderHomePage(nonce, turnstileSiteKey, isGoogleAuthConfigured(env)), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
   }
   if (request.method === 'GET' && path === 'robots.txt') {
     return text('User-agent: *\nDisallow: /\n', { headers: { 'cache-control': 'public, max-age=3600' } });
@@ -43,6 +44,18 @@ export async function routeRequest(request, env, context) {
     return env.ASSETS.fetch(request);
   }
 
+  if (request.method === 'GET' && path === 'auth/google') return startGoogleAuth(request, env);
+  if (request.method === 'GET' && path === 'auth/google/callback') return finishGoogleAuth(request, env);
+  if (request.method === 'POST' && path === 'auth/logout') {
+    if (!requireSameOrigin(request, env)) return json({ error: 'Invalid request origin.' }, { status: 403 });
+    return logout(request, env);
+  }
+  if (request.method === 'GET' && path === 'account') {
+    const user = await getCurrentUser(request, env);
+    if (!user) return redirect('/auth/google?returnTo=/account');
+    return html(renderAccountPage(user, await repository.listByOwner(user.id)));
+  }
+
   if (request.method === 'POST' && (path === 'api/links' || path === 'api/create')) {
     return createLink(request, requestUrl, repository, env, context);
   }
@@ -53,14 +66,23 @@ export async function routeRequest(request, env, context) {
 
   if (request.method === 'DELETE' && path.startsWith('api/links/')) {
     const slug = path.slice('api/links/'.length);
-    return deleteLink(request, slug, repository);
+    return deleteLink(request, slug, repository, env);
+  }
+
+  if (request.method === 'POST' && path.startsWith('api/links/') && path.endsWith('/claim')) {
+    if (!requireSameOrigin(request, env)) return json({ error: 'Invalid request origin.' }, { status: 403 });
+    const slug = path.slice('api/links/'.length, -'/claim'.length);
+    return claimLink(request, slug, repository, env);
   }
 
   if (request.method === 'GET' && path.startsWith('manage/')) {
     const slug = path.slice('manage/'.length);
     if (!slug || slug.includes('/')) return html(renderNotFoundPage(), { status: 404 });
+    const link = await repository.findBySlug(slug);
+    if (!isAvailable(link)) return html(renderNotFoundPage(), { status: 404 });
     const nonce = createSlug() + createSlug();
-    return html(renderManagePage(slug, nonce), {}, { scriptNonce: nonce });
+    const user = await getCurrentUser(request, env);
+    return html(renderManagePage(link, nonce, user, isGoogleAuthConfigured(env)), {}, { scriptNonce: nonce });
   }
 
   if (request.method === 'GET' && path.startsWith('report/')) {
@@ -124,13 +146,16 @@ async function createLink(request, requestUrl, repository, env, context) {
     }
 
     try {
-      await repository.create({ ...normalized, slug, managementTokenHash });
-      const origin = requestUrl.origin;
+      const user = await getCurrentUser(request, env);
+      await repository.create({ ...normalized, slug, managementTokenHash, ownerUserId: user?.id || null });
+      const origin = publicOrigin(requestUrl, env);
       recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'create', contentType: normalized.contentType });
       return json({
         slug,
+        contentType: normalized.contentType,
         url: `${origin}/${slug}`,
-        previewUrl: normalized.contentType === 'url' ? `${origin}/${slug}+` : null,
+        previewUrl: normalized.contentType === 'url' ? `${origin}/${slug}+` : `${origin}/${slug}`,
+        previewLabel: normalized.contentType === 'url' ? '查看 + 預覽' : normalized.contentType === 'formula' ? '查看公式' : '查看小卡',
         managementUrl: `${origin}/manage/${slug}#${managementToken}`,
         managementToken,
       }, { status: 201 });
@@ -164,15 +189,34 @@ async function submitReport(request, requestUrl, env, context) {
   return json({ received: true, reference: report.id }, { status: 201 });
 }
 
-async function deleteLink(request, slug, repository) {
+async function deleteLink(request, slug, repository, env) {
   const authorization = request.headers.get('authorization') || '';
   const match = authorization.match(/^Bearer\s+([A-Za-z0-9_-]{40,})$/i);
-  if (!match) return json({ error: 'A valid management token is required.' }, { status: 401 });
-
-  const managementTokenHash = await hashManagementToken(match[1]);
-  const result = await repository.delete(slug, managementTokenHash);
+  let result;
+  if (match) {
+    const managementTokenHash = await hashManagementToken(match[1]);
+    result = await repository.delete(slug, managementTokenHash);
+  } else {
+    if (!requireSameOrigin(request, env)) return json({ error: 'Invalid request origin.' }, { status: 403 });
+    const user = await getCurrentUser(request, env);
+    if (!user) return json({ error: 'A valid management token or account is required.' }, { status: 401 });
+    result = await repository.deleteOwned(slug, user.id);
+  }
   const changes = Number(result?.meta?.changes ?? result?.changes ?? 0);
   if (changes < 1) return json({ error: 'The link or management token was not found.' }, { status: 404 });
+  return noContent();
+}
+
+async function claimLink(request, slug, repository, env) {
+  const user = await getCurrentUser(request, env);
+  if (!user) return json({ error: 'Sign in before linking this PureLink.' }, { status: 401 });
+  const authorization = request.headers.get('authorization') || '';
+  const match = authorization.match(/^Bearer\s+([A-Za-z0-9_-]{40,})$/i);
+  if (!match) return json({ error: 'The anonymous management credential is required.' }, { status: 401 });
+  const managementTokenHash = await hashManagementToken(match[1]);
+  const result = await repository.claim(slug, managementTokenHash, user.id);
+  const changes = Number(result?.meta?.changes ?? result?.changes ?? 0);
+  if (changes < 1) return json({ error: 'The PureLink or management credential was not found.' }, { status: 404 });
   return noContent();
 }
 
@@ -199,4 +243,8 @@ function safePathname(pathname) {
 
 function isUniqueConstraintError(error) {
   return /unique|constraint/i.test(String(error?.message || error));
+}
+
+function publicOrigin(requestUrl, env) {
+  return String(env.PUBLIC_ORIGIN || requestUrl.origin).replace(/\/$/, '');
 }

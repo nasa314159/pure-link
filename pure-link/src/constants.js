@@ -13,6 +13,8 @@ export const RESERVED_SLUGS = new Set([
   '',
   'api',
   'admin',
+  'account',
+  'auth',
   'manage',
   'privacy',
   'terms',
@@ -20,4 +22,3 @@ export const RESERVED_SLUGS = new Set([
   'robots.txt',
   'favicon.ico',
 ]);
-

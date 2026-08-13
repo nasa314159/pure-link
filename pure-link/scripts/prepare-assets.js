@@ -17,8 +17,11 @@ await writeFile(
 await cp(resolve(katexSource, 'fonts'), resolve(katexDestination, 'fonts'), { recursive: true });
 
 await build({
-  entryPoints: [resolve(projectRoot, 'client/content-actions.js')],
-  outfile: resolve(assetsRoot, 'content-actions.js'),
+  entryPoints: {
+    'content-actions': resolve(projectRoot, 'client/content-actions.js'),
+    'formula-editor': resolve(projectRoot, 'client/formula-editor.js'),
+  },
+  outdir: assetsRoot,
   bundle: true,
   format: 'esm',
   platform: 'browser',
