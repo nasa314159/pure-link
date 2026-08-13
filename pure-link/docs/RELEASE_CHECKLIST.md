@@ -14,15 +14,16 @@
 
 ## B. 上線前必須由維護者完成
 
-- [ ] 選定正式網域與 Cloudflare 帳號／zone。
-- [ ] 建立 Turnstile widget，設定 site key 與 secret key。
+- [x] 選定並註冊正式網域 `no-no.uk`。
+- [x] 建立 Managed Turnstile widget，允許 `no-no.uk` 與 `staging.no-no.uk`。
 - [ ] 產生獨立的 `RATE_LIMIT_SECRET`，不得沿用其他服務密鑰。
 - [ ] 在遠端 D1 先備份，再依序套用 `migrations/0000` 至 `0002`。
+- [x] 建立與正式環境隔離的 `pure-link-staging` D1。
 - [ ] 在 staging 驗證建立、預覽、跳轉、公式、小卡、PNG、檢舉與刪除。
 - [ ] 驗證手機、鍵盤操作、錯誤畫面與 Turnstile 無障礙流程。
 - [ ] 確認 Cloudflare 日誌／觀測設定、可存取人員與保存期限符合公開隱私說明。
 - [ ] 建立檢舉處理者、檢視頻率與緊急下架流程。
-- [ ] 選定開源授權並加入 `LICENSE`。
+- [x] 選定 MIT 開源授權並加入 `LICENSE`。
 - [ ] 補上公開原始碼、製作歷程與安靜的自願支持連結。
 
 ## C. 發布順序

@@ -3,11 +3,18 @@
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/nasa314159/pure-link.git"
+	},
+	"homepage": "https://no-no.uk",
 	"scripts": {
 		"assets:prepare": "node scripts/prepare-assets.js",
 		"predeploy": "npm run assets:prepare",
 		"predev": "npm run assets:prepare",
 		"deploy": "wrangler deploy",
+		"deploy:staging": "wrangler deploy --env staging",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
 		"test": "vitest --config vitest.unit.config.js",

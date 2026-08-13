@@ -10,6 +10,9 @@
 	"observability": {
 		"enabled": true
 	},
+	"vars": {
+		"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL"
+	},
 	"d1_databases": [
 		{
 			"binding": "pure_link_db",
@@ -21,6 +24,27 @@
 		"directory": "./public",
 		"binding": "ASSETS",
 		"run_worker_first": true
+	},
+	"env": {
+		"staging": {
+			"name": "pure-link-staging",
+			"vars": {
+				"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL"
+			},
+			"d1_databases": [
+				{
+					"binding": "pure_link_db",
+					"database_name": "pure-link-staging",
+					"database_id": "aed1b3d7-e32b-4636-b01d-5995d63d82a0"
+				}
+			],
+			"routes": [
+				{
+					"pattern": "staging.no-no.uk",
+					"custom_domain": true
+				}
+			]
+		}
 	}
 	/**
 	 * Smart Placement

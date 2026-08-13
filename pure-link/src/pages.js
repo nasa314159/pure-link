@@ -89,7 +89,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '') {
 
         <footer class="home-footer">
           <p>內容由建立者提供，不代表 PureLink 的立場、推薦或安全保證。</p>
-          <nav aria-label="服務資訊"><a href="/privacy">隱私說明</a><a href="/terms">使用與內容規範</a><a href="/transparency">透明度</a></nav>
+          <nav aria-label="服務資訊"><a href="/privacy">隱私說明</a><a href="/terms">使用與內容規範</a><a href="/transparency">透明度</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">GitHub 原始碼</a></nav>
         </footer>
       </main>
     `,

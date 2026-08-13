@@ -1,5 +1,7 @@
 # PureLink
 
+[no-no.uk](https://no-no.uk) · [GitHub](https://github.com/nasa314159/pure-link)
+
 PureLink 是一個安靜、簡潔、可被驗證其隱私承諾的分享工具。MVP 把三件事做好：
 
 - 短網址：接收者可在網址後加上 `+`，先看完整目的地與推薦／分潤揭露。
@@ -70,6 +72,6 @@ PureLink 的應用資料分成四類：
 
 產品邊界與上線清單見 `docs/PRODUCT.md` 與 `docs/RELEASE_CHECKLIST.md`。
 
-## 開源狀態
+## 開源授權
 
-程式預計在正式發布時開源。正式對外前仍需由維護者選定並加入開源授權條款；在 `LICENSE` 出現之前，原始碼仍受原作者著作權保護。
+PureLink 採用 [MIT License](LICENSE)。它允許任何人檢查、使用、修改與自行部署，條件是保留原始著作權與授權聲明。選擇 MIT 是為了讓個人、學校、社群與小型專案都能低摩擦地享受與延續成果。
