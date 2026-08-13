@@ -36,6 +36,16 @@ npx wrangler deploy --dry-run
 
 `npm run assets:prepare` 會把 KaTeX 字型、樣式與 PNG 匯出程式整理到 `public/assets`。瀏覽器端不依賴 CDN。
 
+## iOS 分享捷徑
+
+第一版不開放能繞過 Turnstile 的匿名直寫 API。iPhone／iPad 捷徑可以從分享表單接收網址，將它做 URL 編碼後開啟：
+
+```text
+https://no-no.uk/#url=[捷徑輸入]
+```
+
+PureLink 會自動把網址帶入建立頁，使用者仍能檢查目的地、選擇清理規則並親自確認建立。網址放在 `#` 後方，因此開啟頁面時不會先被當成伺服器查詢參數送出。
+
 ## 正式環境設定
 
 公開寫入採 fail-closed：缺少下列設定時，建立與檢舉 API 會回覆 503，而不是取消防護。

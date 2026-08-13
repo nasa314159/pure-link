@@ -9,7 +9,7 @@ const FORMULA_SHORTCUT_GROUPS = [
     label: '★',
     ariaLabel: 'Common math',
     shortcuts: [
-      ['a⁄b', '\\frac{}{}', 3, 'fraction'], ['x²', '^2', 0, 'square'], ['xⁿ', '^', 0, 'power'], ['√x', '\\sqrt{}', 1, 'square root'], ['∛x', '\\sqrt[3]{}', 1, 'cube root'], ['ⁿ√x', '\\sqrt[n]{}', 1, 'nth root'],
+      ['□/□', '\\frac{}{}', 3, 'fraction template'], ['a/b', '\\frac{a}{b}', 0, 'example fraction'], ['x²', '^2', 0, 'square'], ['xⁿ', '^', 0, 'power'], ['√x', '\\sqrt{}', 1, 'square root'], ['∛x', '\\sqrt[3]{}', 1, 'cube root'], ['ⁿ√x', '\\sqrt[n]{}', 1, 'nth root'],
       ['d⁄dx', '\\frac{d}{dx}', 0, 'derivative'], ['d²⁄dx²', '\\frac{d^2}{dx^2}', 0, 'second derivative'], ['∫', '\\int ', 0, 'indefinite integral'], ['∫ₐᵇ', '\\int_{}^{}', 4, 'definite integral'],
       ['Σ', '\\sum_{}^{}', 4, 'sum'], ['lim', '\\lim_{}', 1, 'limit'], ['[x;y]', '\\begin{bmatrix}  \\\\  \\end{bmatrix}', 16, 'column vector'], ['[a b;c d]', '\\begin{bmatrix}  &  \\\\  &  \\end{bmatrix}', 21, 'two by two matrix'],
     ],
@@ -141,6 +141,14 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
             <div class="conditional-options" id="url-options">
               <label class="check-row"><input type="checkbox" name="cleanTracking" value="true"><span><strong>清理常見追蹤參數</strong><small>建立前移除 utm、fbclid 等已知參數。</small></span></label>
+              <details class="tracking-rules">
+                <summary>自訂本次清理規則</summary>
+                <p>只套用於這次建立，不會保存到瀏覽器或帳號；保留名單優先於移除名單。</p>
+                <label class="field-label" for="tracking-remove">另外移除（逗號或空格分隔）</label>
+                <input id="tracking-remove" name="trackingRemove" maxlength="512" placeholder="例如：campaign_id, ref_*">
+                <label class="field-label" for="tracking-keep">始終保留（逗號或空格分隔）</label>
+                <input id="tracking-keep" name="trackingKeep" maxlength="512" placeholder="例如：utm_source, ref_code">
+              </details>
               <label class="check-row"><input type="checkbox" name="isAffiliate" value="true"><span><strong>這可能是推薦或分潤連結</strong><small>會在 + 預覽頁誠實告知接收者。</small></span></label>
             </div>
 
@@ -170,11 +178,14 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           <section class="result-panel" id="result-panel" aria-live="polite" hidden>
             <p class="eyebrow">READY</p>
             <h2>你的 PureLink 準備好了。</h2>
+            <span class="result-label">分享網址（可直接開啟）</span>
             <a class="result-url" id="result-url" href=""></a>
             <div class="result-actions">
               <button class="create-button" type="button" data-copy-target="result-url">複製分享連結</button>
               <a class="secondary-link" id="preview-link" href="" hidden></a>
+              <button class="secondary-button" id="share-result" type="button" hidden>分享</button>
             </div>
+            <p class="copy-status" id="result-status" role="status"></p>
             <div class="recovery-box">
               <strong>請保存匿名管理憑證</strong>
               <p>PureLink 不知道你是誰。若這個瀏覽器與你的備份都遺失，我們無法替你找回刪除權限。</p>
@@ -207,6 +218,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       const errorBox = document.getElementById('form-error');
       const submitButton = document.getElementById('create-button');
       const resultPanel = document.getElementById('result-panel');
+      const resultStatus = document.getElementById('result-status');
+      const shareResult = document.getElementById('share-result');
       let latestResult = null;
 
       const typeCopy = {
@@ -290,6 +303,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           previewLink.hidden = !result.previewUrl;
           previewLink.href = result.previewUrl || '';
           previewLink.textContent = result.previewLabel || '查看分享內容';
+          shareResult.hidden = !navigator.share;
+          resultStatus.textContent = '';
           form.hidden = true;
           resultPanel.hidden = false;
           resultPanel.focus();
@@ -303,18 +318,47 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       });
 
       document.querySelector('[data-copy-target="result-url"]').addEventListener('click', async (event) => {
-        await navigator.clipboard.writeText(latestResult.url);
         const button = event.currentTarget;
-        button.textContent = '已複製';
+        const copied = await copyText(latestResult.url);
+        button.textContent = copied ? '已複製' : '複製失敗';
+        resultStatus.textContent = copied ? '已複製：' + latestResult.url : '瀏覽器不允許自動複製，請手動選取上方完整網址。';
         setTimeout(() => { button.textContent = '複製分享連結'; }, 1600);
       });
 
+      shareResult.addEventListener('click', async () => {
+        try {
+          await navigator.share({ title: 'PureLink', text: 'Just share.', url: latestResult.url });
+          resultStatus.textContent = '已開啟系統分享選單：' + latestResult.url;
+        } catch (error) {
+          if (error.name !== 'AbortError') resultStatus.textContent = '無法開啟分享選單，仍可複製上方網址。';
+        }
+      });
+
       document.getElementById('copy-management').addEventListener('click', async (event) => {
-        await navigator.clipboard.writeText(latestResult.managementUrl);
         const button = event.currentTarget;
-        button.textContent = '已複製';
+        const copied = await copyText(latestResult.managementUrl);
+        button.textContent = copied ? '已複製' : '複製失敗';
         setTimeout(() => { button.textContent = '複製管理地址'; }, 1600);
       });
+
+      async function copyText(value) {
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(value);
+            return true;
+          }
+        } catch {}
+        const fallback = document.createElement('textarea');
+        fallback.value = value;
+        fallback.setAttribute('readonly', '');
+        fallback.style.position = 'fixed';
+        fallback.style.opacity = '0';
+        document.body.append(fallback);
+        fallback.select();
+        const copied = document.execCommand('copy');
+        fallback.remove();
+        return copied;
+      }
 
       document.getElementById('download-recovery').addEventListener('click', () => {
         const typeName = ({ url: '網址', formula: '公式', card: '小卡' })[latestResult.contentType] || '內容';
@@ -335,7 +379,15 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         content.focus();
       });
 
+      const shortcutInput = new URLSearchParams(location.hash.slice(1)).get('url');
       selectType('url');
+      if (shortcutInput) {
+        content.value = shortcutInput;
+        updateCount();
+        updateSuggestion();
+        history.replaceState(null, '', location.pathname + location.search);
+        content.focus();
+      }
     `,
     nonce,
     externalScripts: [
@@ -806,6 +858,10 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .symbol-group button { width: auto; min-width: 2.55rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .7rem; background: white; color: var(--ink); font-family: ui-serif, Georgia, serif; font-size: .88rem; }
     .symbol-group button:hover, .symbol-group button:focus-visible { border-color: var(--green); background: #edf5f1; }
     .conditional-options { margin-top: 1.25rem; padding: .25rem 1rem; border: 1px solid var(--line); border-radius: 1.15rem; }
+    .tracking-rules { padding: .85rem 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+    .tracking-rules summary { cursor: pointer; color: var(--ink); font-size: .8rem; font-weight: 700; }
+    .tracking-rules p { margin: .65rem 0; font-size: .74rem; line-height: 1.55; }
+    .tracking-rules .field-label { margin-top: .75rem; }
     .check-row { display: flex; align-items: flex-start; gap: .8rem; padding: .9rem 0; border-bottom: 1px solid var(--line); cursor: pointer; }
     .check-row:last-child { border-bottom: 0; }
     .check-row input { margin-top: .2rem; accent-color: var(--green); }
@@ -827,8 +883,11 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .turnstile-wrap { display: flex; justify-content: center; margin: 1rem 0; }
     .form-error { padding: .85rem 1rem; border-radius: 1rem; background: #fff0ee; color: #8a322c; font-size: .85rem; }
     .result-panel h2 { margin-bottom: 1.25rem; }
+    .result-label { display: block; margin-bottom: .45rem; color: var(--muted); font-size: .72rem; font-weight: 700; }
     .result-url { display: block; padding: 1rem; border-radius: 1rem; background: #edf2ef; font-family: ui-monospace, "SFMono-Regular", monospace; overflow-wrap: anywhere; }
-    .result-actions, .recovery-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: .8rem; }
+    .result-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin-top: .8rem; }
+    .recovery-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: .8rem; }
+    .copy-status { min-height: 1.2rem; margin: .55rem 0 0; color: var(--muted); font-size: .72rem; overflow-wrap: anywhere; }
     .secondary-link { display: flex; align-items: center; justify-content: center; padding: .95rem 1.1rem; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; font-weight: 700; }
     .recovery-box { margin-top: 2rem; padding: 1.2rem; border: 1px solid #d8ceb0; border-radius: 1.2rem; background: #fffaf0; }
     .recovery-box p { margin: .5rem 0; color: #6d654f; font-size: .82rem; line-height: 1.55; }

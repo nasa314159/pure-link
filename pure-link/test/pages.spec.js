@@ -21,10 +21,16 @@ describe('interactive pages', () => {
     expect(html).toContain('data-formula-insert="\\Omega"');
     expect(html).toContain('aria-label="Calculus"');
     expect(html).toContain('>∂ ∫</button>');
-    expect(html).toContain('>a⁄b</button>');
+    expect(html).toContain('>□/□</button>');
+    expect(html).toContain('data-formula-insert="\\frac{a}{b}"');
     expect(html).not.toContain('>微積分</button>');
     expect(html).not.toContain('>分數</button>');
     expect(html).toContain('/assets/formula-editor.js');
+    expect(html).toContain('自訂本次清理規則');
+    expect(html).toContain("new URLSearchParams(location.hash.slice(1)).get('url')");
+    expect(html).toContain('navigator.share');
+    expect(html).toContain("document.execCommand('copy')");
+    expect(html).toContain('瀏覽器不允許自動複製');
     expect(() => new Function(script)).not.toThrow();
   });
 
