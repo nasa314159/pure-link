@@ -18,6 +18,15 @@ describe('PureLink worker', () => {
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
   });
 
+  it('shows the persistent sign-in entry when Google OAuth is configured', async () => {
+    env.GOOGLE_CLIENT_ID = 'test-client';
+    env.GOOGLE_CLIENT_SECRET = 'test-secret';
+    const response = await worker.fetch(new Request('https://pure.test/'), env);
+    const body = await response.text();
+    expect(body).toContain('class="account-entry"');
+    expect(body).toContain('href="/auth/google?returnTo=%2F"');
+  });
+
   it('serves privacy, terms, and transparency disclosures', async () => {
     for (const path of ['privacy', 'terms', 'transparency']) {
       const response = await worker.fetch(new Request(`https://pure.test/${path}`), env);

@@ -78,7 +78,7 @@ function renderFormulaShortcutPalette() {
   return `<div class="formula-category-tabs" role="tablist" aria-label="Math shortcut categories">${tabs}</div><div class="symbol-groups">${panels}</div>`;
 }
 
-export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '') {
+export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '', user = null) {
   const turnstileWidget = turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="create"></div></div>`
     : '';
@@ -87,10 +87,14 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
     : authStatus
       ? '<div class="auth-notice" role="status"><strong>這次登入沒有完成。</strong><span>沒有建立任何帳戶工作階段，請重新嘗試。</span><a href="/account">重新登入</a></div>'
       : '';
+  const accountEntry = googleAuthConfigured
+    ? `<nav class="account-entry" aria-label="帳戶"><a href="${user ? '/account' : '/auth/google?returnTo=%2F'}"${user ? '' : ' aria-label="使用 Google 登入"'}>${user ? '我的 PureLink' : '登入'}</a></nav>`
+    : '';
   return documentShell({
     title: 'PureLink — 安靜地分享',
     description: '以簡潔、尊重隱私的方式分享網址、數學公式或一張短文小卡。',
     body: `
+      ${accountEntry}
       <main class="home creator-home">
         <header class="hero">
           <p class="eyebrow">PURELINK</p>
@@ -761,6 +765,9 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .status { display: inline-flex; align-items: center; gap: .65rem; margin-top: 3rem; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--muted); font-size: .86rem; }
     .status-dot { width: .55rem; height: .55rem; border-radius: 50%; background: #37a875; box-shadow: 0 0 0 .25rem #dff3e9; }
     .creator-home { width: min(calc(100% - 2rem), 68rem); gap: 4rem; }
+    .account-entry { position: fixed; z-index: 20; top: max(1rem, env(safe-area-inset-top)); right: max(1rem, env(safe-area-inset-right)); }
+    .account-entry a { display: inline-flex; align-items: center; justify-content: center; min-height: 2.7rem; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.9); box-shadow: 0 .65rem 2rem rgba(35,62,50,.1); color: var(--ink); text-decoration: none; font-size: .82rem; font-weight: 750; backdrop-filter: blur(18px); }
+    .account-entry a:hover, .account-entry a:focus-visible { border-color: var(--green); background: white; }
     .hero { padding-top: 3rem; }
     .creator-panel { width: 100%; }
     .auth-notice { width: 100%; display: flex; align-items: center; gap: .7rem 1rem; flex-wrap: wrap; padding: .9rem 1rem; border: 1px solid #d8ceb0; border-radius: 1rem; background: #fffaf0; color: #6d654f; font-size: .8rem; line-height: 1.5; }
@@ -886,7 +893,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .theme-mist .card-export { background: #e6f0ed; }
     .theme-night .card-export { background: #1b252b; }
     @media (max-width: 46rem) { .content-workspace.formula-mode { grid-template-columns: 1fr; } .formula-preview { margin-top: 0; } }
-    @media (max-width: 38rem) { .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
+    @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
   </style>
 </head>
 <body>${body}${scriptMarkup}${externalScriptMarkup}</body>

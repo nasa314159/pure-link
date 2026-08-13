@@ -41,6 +41,17 @@ describe('interactive pages', () => {
     expect(html).toContain('href="/account">重新登入');
   });
 
+  it('keeps a sign-in entry in the top-right corner', () => {
+    const signedOut = renderHomePage('test-nonce', '', true);
+    const signedIn = renderHomePage('test-nonce', '', true, '', { email: 'person@example.com' });
+    expect(signedOut).toContain('class="account-entry"');
+    expect(signedOut).toContain('href="/auth/google?returnTo=%2F"');
+    expect(signedOut).toContain('>登入</a>');
+    expect(signedIn).toContain('href="/account"');
+    expect(signedIn).toContain('>我的 PureLink</a>');
+    expect(signedIn).not.toContain('href="/auth/google?returnTo=%2F"');
+  });
+
   it('loads Turnstile as a regular deferred script', () => {
     const html = renderHomePage('test-nonce', 'site-key');
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');
