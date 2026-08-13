@@ -3,6 +3,7 @@ import {
   CREEM_PRODUCT_300_ID,
   createCheckout,
   handleCreemWebhook,
+  isCheckoutConfigured,
   verifyCreemSignature,
 } from '../src/billing.js';
 
@@ -20,6 +21,7 @@ describe('Creem billing', () => {
         pure_link_db: db,
         CREEM_API_KEY: 'secret-api-key',
         CREEM_WEBHOOK_SECRET: 'webhook-secret',
+        CREEM_LIVE_CHECKOUT_ENABLED: 'true',
         PUBLIC_ORIGIN: 'https://no-no.uk',
       },
       fetchImplementation,
@@ -37,6 +39,17 @@ describe('Creem billing', () => {
       metadata: { purelink_user_id: 'user-1', purelink_credits: 300 },
     });
     expect(JSON.stringify(db)).not.toContain('secret-api-key');
+  });
+
+  it('keeps live checkout closed until merchant approval is explicitly enabled', () => {
+    const env = {
+      CREEM_API_KEY: 'secret-api-key',
+      CREEM_WEBHOOK_SECRET: 'webhook-secret',
+      CREEM_PRODUCT_300_ID,
+    };
+    expect(isCheckoutConfigured(env)).toBe(false);
+    expect(isCheckoutConfigured({ ...env, CREEM_LIVE_CHECKOUT_ENABLED: 'false' })).toBe(false);
+    expect(isCheckoutConfigured({ ...env, CREEM_LIVE_CHECKOUT_ENABLED: 'true' })).toBe(true);
   });
 
   it('verifies the raw request body with HMAC-SHA256', async () => {
