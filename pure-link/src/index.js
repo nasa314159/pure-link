@@ -2,7 +2,7 @@ import { normalizeCreateInput, ValidationError } from './content.js';
 import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requireSameOrigin, startGoogleAuth } from './auth.js';
 import { enforceWriteProtection } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
-import { html, json, noContent, redirect, text } from './http.js';
+import { html, json, noContent, redirect, text, xml } from './http.js';
 import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNotFoundPage, renderReportPage, renderUrlPreview } from './pages.js';
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { createLinkRepository } from './repository.js';
@@ -40,7 +40,23 @@ export async function routeRequest(request, env, context) {
     return html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
   }
   if (request.method === 'GET' && path === 'robots.txt') {
-    return text('User-agent: *\nDisallow: /\n', { headers: { 'cache-control': 'public, max-age=3600' } });
+    const origin = publicOrigin(requestUrl, env);
+    return text([
+      'User-agent: *',
+      'Allow: /',
+      'Disallow: /account',
+      'Disallow: /auth/',
+      'Disallow: /manage/',
+      'Disallow: /report/',
+      'Disallow: /api/',
+      `Sitemap: ${origin}/sitemap.xml`,
+      '',
+    ].join('\n'), { headers: { 'cache-control': 'public, max-age=3600' } });
+  }
+  if (request.method === 'GET' && path === 'sitemap.xml') {
+    return xml(renderSitemap(publicOrigin(requestUrl, env)), {
+      headers: { 'cache-control': 'public, max-age=3600, stale-while-revalidate=86400' },
+    });
   }
   if (request.method === 'GET' && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
     return html(renderLegalPage(path));
@@ -303,4 +319,10 @@ function isUniqueConstraintError(error) {
 
 function publicOrigin(requestUrl, env) {
   return String(env.PUBLIC_ORIGIN || requestUrl.origin).replace(/\/$/, '');
+}
+
+function renderSitemap(origin) {
+  const paths = ['', 'privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'];
+  const urls = paths.map((path) => `  <url><loc>${origin}/${path}</loc></url>`).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }

@@ -35,6 +35,13 @@ export function text(body, init = {}) {
   return new Response(body, { ...init, headers });
 }
 
+export function xml(body, init = {}) {
+  const headers = new Headers(init.headers);
+  headers.set('content-type', 'application/xml; charset=utf-8');
+  applyBaseHeaders(headers);
+  return new Response(body, { ...init, headers });
+}
+
 export function redirect(location, status = 302, init = {}) {
   const headers = new Headers(init.headers);
   headers.set('location', location);
