@@ -16,14 +16,14 @@ PureLink 是一個安靜、簡潔、可被驗證其隱私承諾的分享工具�
 
 ```sh
 npm install
-npx wrangler d1 migrations apply pure-link-db --local
+npx wrangler d1 migrations apply pure-link-production --local
 npm run dev
 ```
 
 第一次建立本機資料庫時，也可用完整結構：
 
 ```sh
-npx wrangler d1 execute pure-link-db --local --file schema.sql
+npx wrangler d1 execute pure-link-production --local --file schema.sql
 ```
 
 測試與部署前檢查：
