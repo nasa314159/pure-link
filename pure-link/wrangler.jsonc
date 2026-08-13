@@ -23,8 +23,8 @@
 	"d1_databases": [
 		{
 			"binding": "pure_link_db",
-			"database_name": "pure-link-db",
-			"database_id": "efa7df74-cdf9-4c09-8e70-43537ea55053"
+			"database_name": "pure-link-production",
+			"database_id": "4bfcfb5c-1ce7-4fcb-8686-5f32b8412f46"
 		}
 	],
 	"assets": {
