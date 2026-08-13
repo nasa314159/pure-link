@@ -1,84 +1,104 @@
-<div align="center">
+# PureLink
 
-<p><strong>PURELINK</strong></p>
+**Just share.**<br>
+No ads. No needless data.
 
-# Just share.
+[Use PureLink](https://no-no.uk) · [繁體中文版](README.zh-Hant.md)
 
-### No ads. No needless data.
+PureLink is a quiet, open-source sharing tool whose privacy promises can be inspected rather than merely trusted. Its MVP focuses on three things:
 
-[使用 PureLink](https://no-no.uk) · [了解隱私設計](https://no-no.uk/privacy) · [查看透明度說明](https://no-no.uk/transparency)
+- **Short links:** recipients can append `+` to inspect the complete destination and any referral or affiliate disclosure before continuing.
+- **Formulas:** LaTeX and common Unicode math input, mixed text and formulas, browser-local custom shortcuts, live preview, source copying, and PNG export. Signed-in users may optionally turn a natural-language description into an editable LaTeX draft with Cloudflare Workers AI.
+- **Small cards:** one short message, an optional signature, and three quiet themes.
 
-</div>
+Anyone can read and create without an account. Auto mode only suggests a content type; it never makes an invisible choice for the user. Anonymous creators receive a unique management URL. PureLink stores only its credential hash, so a lost anonymous credential cannot be recovered. Google sign-in is optional and exists only for cross-device management of content a user chooses to attach to an account.
 
-## PureLink 是什麼？
+## Run locally
 
-PureLink 是一個安靜、簡潔，而且能被驗證其隱私承諾的分享工具。
+Requirements: Node.js 20+ and npm. Run the following commands from the application directory.
 
-它的建立目的不是增加停留時間、廣告曝光或資料蒐集，而是把日常分享中三件常見卻不夠方便的事做好：讓網址更容易判斷、讓數學表達更容易閱讀，也讓一段簡短的話能被溫柔地送出去。
+```sh
+cd pure-link
+npm install
+npx wrangler d1 migrations apply pure-link-production --local
+npm run dev
+```
 
-任何人都可以閱讀與建立，不必先註冊。Google 登入只提供自願的跨裝置保存與管理，不會成為使用門檻。
+For a new local database, the complete schema can also be applied directly:
 
-## 可以做什麼？
+```sh
+npx wrangler d1 execute pure-link-production --local --file schema.sql
+```
 
-| 功能 | 用途 |
-| --- | --- |
-| **短網址** | 建立簡潔連結；在短網址後加上 `+`，可先查看完整目的地及推薦／分潤揭露。 |
-| **公式分享** | 輸入 LaTeX 或常見 Unicode 數學符號，即時預覽排版結果，並可複製原始內容或下載 PNG；登入者也可選擇用 Cloudflare Workers AI 將一句描述轉成可編輯 LaTeX 草稿。 |
-| **短文小卡** | 分享一段話、可選署名與三種安靜主題，不把它變成另一套社群貼文工具。 |
+Checks before deployment:
 
-介面會清楚提供「網址／公式／小卡」三種選擇。自動判斷只會提出建議，不會替使用者做不可見的決定。
+```sh
+npm test -- --run
+npm run assets:prepare
+npx wrangler deploy --dry-run
+```
 
-## 為什麼建立 PureLink？
+`npm run assets:prepare` bundles the self-hosted KaTeX assets and the browser-side PNG export code into `public/assets`. Content tools do not depend on a third-party CDN.
 
-網路原本是讓人自由連結、表達與交換知識的公共空間，但許多現代工具把分享和追蹤、廣告、帳號門檻綁在一起。PureLink 想證明：一個實用的網路服務，也可以少知道一點、少打擾一點，並讓承諾接受公開檢查。
+## iOS share shortcut
 
-我們衡量成功的方式不是註冊數或使用者黏著度，而是：
+The first release does not expose an anonymous write API that could bypass Turnstile. An iPhone or iPad Shortcut can receive a URL from the share sheet, URL-encode it, and open:
 
-- 使用者能快速完成分享。
-- 接收者在前往外部網站前，有機會知道自己將看到什麼。
-- 核心功能對任何人保持可用，不以登入或付款作為入口門檻。
-- 服務只處理維持運作、防止濫用與估算成本所必需的最低限度資料。
-- 程式碼、資料邊界與重要產品決策能被任何人檢查。
+```text
+https://no-no.uk/#url=[Shortcut Input]
+```
 
-## 隱私承諾
+PureLink fills the creation form while still letting the user inspect the destination, choose cleanup rules, and explicitly confirm creation. Because the URL is placed after `#`, it is not sent to the server as a query parameter when the page first opens.
 
-- 不投放行為廣告。
-- 不做跨網站追蹤，不建立個人興趣檔案，也不販售資料。
-- 不把分享內容用於模型訓練。
-- AI 公式生成只在使用者主動送出時將描述傳給 Cloudflare Workers AI；PureLink 不保存描述或結果，只記錄每日使用次數。
-- 不保存原始 IP 瀏覽歷程；分析僅保留成本與服務研究所需的每日聚合資訊。
-- 匿名管理憑證只保存不可逆雜湊。憑證遺失後，PureLink 無法替建立者恢復，也不設人工冒領後門。
-- 防濫用驗證只保護建立、檢舉等寫入操作，不追蹤一般閱讀者。
+## Production configuration
 
-完整邊界請閱讀網站的[隱私說明](https://no-no.uk/privacy)與[透明度頁面](https://no-no.uk/transparency)。原始碼公開，讓「不追蹤」不只是一句行銷文字。
+Public writes fail closed. If required protection is missing, creation and reporting return `503` instead of silently disabling safeguards.
 
-## 匿名使用與自願登入
+- `TURNSTILE_SITE_KEY`: public Turnstile site key.
+- `TURNSTILE_SECRET_KEY`: set with `wrangler secret put`.
+- `RATE_LIMIT_SECRET`: at least 32 random bytes, set with `wrangler secret put`.
+- `GOOGLE_CLIENT_ID`: Google OAuth web client ID.
+- `GOOGLE_CLIENT_SECRET`: set with `wrangler secret put`.
+- Google OAuth redirect URI: `https://no-no.uk/auth/google/callback`.
+- Workers AI binding: `AI`, already declared in `wrangler.jsonc`; no API key belongs in the repository.
 
-匿名建立者會得到一個唯一的管理地址，可用來管理或永久刪除內容。只要妥善保存，它不需要帳號也能使用。
+Never commit real secrets. Copy `.dev.vars.example` to `.dev.vars` for local development.
 
-希望跨裝置保存內容的使用者可以自願使用 Google 登入。登入後建立的 PureLink 會列在帳戶頁面；既有匿名內容也能由持有管理憑證的人主動加入帳戶。匿名使用始終是第一級功能。
+## Privacy design
 
-## 願景
+| Category | Stored data | Purpose / lifetime |
+| --- | --- | --- |
+| Shared content | Content, type, settings, status, timestamps, and management-credential hash | Delivery and anonymous deletion |
+| Daily analytics | Date, action, content type, country code, and aggregate count | Cost and service health; no raw IP or personal browsing history |
+| Rate limiting | Short-lived HMAC identifier, count, and expiry | Prevent automated abuse; removed after expiry |
+| Reports | Category, minimal optional details, status, and timestamps | Content-safety review; no name or email required |
+| Daily AI allowance | Account, date, and count | Five daily generations for regular accounts and 100 for the operator; prompts and results are not stored |
 
-PureLink 希望成為一項人人都能使用、理解、檢查與自行部署的網路公共工具：
+PureLink does not serve behavioral advertising, track people across sites, sell data, build interest profiles, or train models on shared content. See [`/privacy`](https://no-no.uk/privacy), [`/terms`](https://no-no.uk/terms), and [`/transparency`](https://no-no.uk/transparency) for the complete public disclosures.
 
-- 核心分享功能長期保持簡潔、低干擾與低門檻。
-- 隱私聲明與實際程式、資料庫和供應商設定保持一致。
-- 自願支持用於服務成本、學習與未來硬體開發，而不是換取免受干擾的權利。
-- 未來功能只有在不破壞核心承諾時才加入；加密連結、Passkey 與付費能力都必須先完成威脅模型和責任邊界。
+## AI credits and payment boundary
 
-## 專案狀態與驗證
+Signed-in accounts receive five free AI formula drafts per day. Optional extra credits are one-time digital purchases, not subscriptions: US$5 for 300, US$10 for 800, or US$20 for 2,000 generations. Credits are delivered only after confirmed payment, are tied to the account that started checkout, and do not expire while the AI formula service continues to operate.
 
-PureLink MVP 已部署於 [no-no.uk](https://no-no.uk)，目前涵蓋三種內容建立、網址透明預覽、匿名管理與刪除、自願 Google 登入、寫入防濫用、內容檢舉，以及最低限度的聚合統計。
+Creem acts as merchant of record only for AI formula credit purchases. Voluntary open-source support is separate and grants no credits or product benefits. Public details are available at [`/ai-credits`](https://no-no.uk/ai-credits) and [`/refund-policy`](https://no-no.uk/refund-policy).
 
-專案測試涵蓋內容驗證、匿名管理安全、Google OAuth、公式處理、檢舉、防濫用與主要 Worker 流程。產品原則與邊界記錄於 [`PRODUCT.md`](pure-link/docs/PRODUCT.md)，技術說明與本機執行方式請見 [`pure-link/README.md`](pure-link/README.md)。
+## Project structure
 
-## 參與與延續
+- `pure-link/src/index.js`: routing and use-case coordination.
+- `pure-link/src/content.js`: validation and normalization for all three content types.
+- `pure-link/src/repository.js`: D1 data access.
+- `pure-link/src/abuse.js`: Turnstile and privacy-friendly rate limiting.
+- `pure-link/src/analytics.js`: daily aggregate analytics.
+- `pure-link/src/pages.js`: server-rendered public UI and disclosures.
+- `pure-link/migrations/`: ordered D1 schema migrations.
+- `pure-link/test/`: unit and workflow tests that run without external services.
 
-歡迎閱讀程式、提出 issue、改善文件、回報無障礙問題，或提交能維持產品邊界的 pull request。安全問題若可能造成實際傷害，請不要先公開可直接利用的細節；在正式安全回報管道建立前，可先透過維護者的 GitHub 個人頁面聯絡。
+Product boundaries and the release checklist live in [`docs/PRODUCT.md`](pure-link/docs/PRODUCT.md) and [`docs/RELEASE_CHECKLIST.md`](pure-link/docs/RELEASE_CHECKLIST.md).
 
-PureLink 採用 [MIT License](LICENSE)。任何人都可以檢查、使用、修改與自行部署，條件是保留原始著作權與授權聲明。
+## License
 
-## 內容與外部網站聲明
+PureLink is released under the [MIT License](LICENSE), allowing people, schools, communities, and small projects to inspect, use, modify, and self-host it while retaining the copyright and license notice.
 
-透過 PureLink 分享的內容與外部網站由建立者提供，不代表 PureLink 的立場、推薦、背書或安全保證。網址的 `+` 預覽提供透明資訊，但不等同於安全認證。
+---
+
+[閱讀繁體中文版](README.zh-Hant.md)
