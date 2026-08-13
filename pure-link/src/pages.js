@@ -103,6 +103,24 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           <p class="lede">No ads. No needless data.</p>
         </header>
 
+        <section class="quick-open" aria-labelledby="quick-open-title">
+          <div class="quick-open-heading">
+            <p class="eyebrow">OPEN</p>
+            <h2 id="quick-open-title">快速開啟 PureLink</h2>
+          </div>
+          <form class="quick-open-form" id="quick-open-form" novalidate>
+            <label class="quick-preview-toggle" title="先查看完整目的地再決定是否前往">
+              <input type="checkbox" id="quick-open-preview">
+              <span aria-hidden="true">+</span>
+              <small>先預覽</small>
+            </label>
+            <label class="visually-hidden" for="quick-open-input">PureLink 短網址或後綴</label>
+            <input id="quick-open-input" maxlength="128" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="貼上 no-no.uk/abc，或只輸入 abc">
+            <button type="submit" aria-label="開啟 PureLink">前往 →</button>
+          </form>
+          <p class="quick-open-status" id="quick-open-status" role="alert" hidden></p>
+        </section>
+
         ${authNotice}
 
         <section class="creator-panel panel" id="creator-panel" aria-labelledby="creator-title">
@@ -218,6 +236,10 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
     `,
     script: `
       const form = document.getElementById('create-form');
+      const quickOpenForm = document.getElementById('quick-open-form');
+      const quickOpenInput = document.getElementById('quick-open-input');
+      const quickOpenPreview = document.getElementById('quick-open-preview');
+      const quickOpenStatus = document.getElementById('quick-open-status');
       const content = document.getElementById('content');
       const contentType = document.getElementById('content-type');
       const contentHelp = document.getElementById('content-help');
@@ -233,6 +255,33 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       const resultStatus = document.getElementById('result-status');
       const shareResult = document.getElementById('share-result');
       let latestResult = null;
+
+      quickOpenForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        quickOpenStatus.hidden = true;
+        let candidate = quickOpenInput.value.trim();
+        let preview = quickOpenPreview.checked;
+        try {
+          if (/^https?:\\/\\//i.test(candidate)) {
+            const pasted = new URL(candidate);
+            if (pasted.hostname.toLowerCase() !== location.hostname.toLowerCase() || pasted.search || pasted.hash) throw new Error();
+            candidate = pasted.pathname;
+          } else {
+            candidate = candidate.replace(/^(?:www\\.)?no-no\\.uk\\//i, '');
+          }
+          candidate = candidate.replace(/^\\/+|\\/+$/g, '');
+          if (candidate.endsWith('+')) {
+            preview = true;
+            candidate = candidate.slice(0, -1);
+          }
+          if (!/^[A-Za-z0-9_-]{1,30}$/.test(candidate)) throw new Error();
+          location.assign('/' + candidate + (preview ? '+' : ''));
+        } catch {
+          quickOpenStatus.textContent = '請輸入 no-no.uk 的完整短網址，或 1–30 字元的短網址後綴。';
+          quickOpenStatus.hidden = false;
+          quickOpenInput.focus();
+        }
+      });
 
       const typeCopy = {
         url: { placeholder: 'example.com', help: '我們會補上 HTTPS，但不會暗中改寫網址。', limit: 4096 },
@@ -833,6 +882,20 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .account-entry a { display: inline-flex; align-items: center; justify-content: center; min-height: 2.7rem; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.9); box-shadow: 0 .65rem 2rem rgba(35,62,50,.1); color: var(--ink); text-decoration: none; font-size: .82rem; font-weight: 750; backdrop-filter: blur(18px); }
     .account-entry a:hover, .account-entry a:focus-visible { border-color: var(--green); background: white; }
     .hero { padding-top: 3rem; }
+    .quick-open { width: 100%; padding: 1.1rem; border: 1px solid rgba(35,92,72,.2); border-radius: 1.45rem; background: rgba(255,255,255,.72); box-shadow: 0 1rem 3rem rgba(35,62,50,.07); backdrop-filter: blur(18px); }
+    .quick-open-heading { display: flex; align-items: baseline; gap: .9rem; margin-bottom: .75rem; }
+    .quick-open-heading .eyebrow { margin: 0; }
+    .quick-open-heading h2 { font-size: 1rem; letter-spacing: -.02em; }
+    .quick-open-form { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: stretch; gap: .55rem; }
+    .quick-open-form input:not([type="checkbox"]) { min-height: 3.2rem; border-radius: 1rem; }
+    .quick-open-form > button { width: auto; min-height: 3.2rem; padding: .7rem 1.15rem; border-color: var(--ink); background: var(--ink); color: white; white-space: nowrap; }
+    .quick-preview-toggle { position: relative; min-width: 5.4rem; min-height: 3.2rem; display: grid; grid-template-columns: auto 1fr; grid-template-rows: 1fr 1fr; column-gap: .4rem; align-items: center; padding: .45rem .7rem; border: 1px solid var(--line); border-radius: 1rem; background: white; cursor: pointer; }
+    .quick-preview-toggle input { grid-row: 1 / 3; margin: 0; }
+    .quick-preview-toggle span { align-self: end; font-size: .95rem; font-weight: 850; line-height: 1; }
+    .quick-preview-toggle small { align-self: start; color: var(--muted); font-size: .64rem; line-height: 1.2; white-space: nowrap; }
+    .quick-preview-toggle:has(input:checked) { border-color: var(--green); background: #edf7f1; }
+    .quick-open-status { margin: .65rem .2rem 0; color: #8f2f2a; font-size: .76rem; }
+    .visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     .creator-panel { width: 100%; }
     .auth-notice { width: 100%; display: flex; align-items: center; gap: .7rem 1rem; flex-wrap: wrap; padding: .9rem 1rem; border: 1px solid #d8ceb0; border-radius: 1rem; background: #fffaf0; color: #6d654f; font-size: .8rem; line-height: 1.5; }
     .auth-notice strong { color: var(--ink); }
@@ -977,7 +1040,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .theme-mist .card-export { background: #e6f0ed; }
     .theme-night .card-export { background: #1b252b; }
     @media (max-width: 46rem) { .content-workspace.formula-mode { grid-template-columns: 1fr; } .formula-preview { margin-top: 0; } }
-    @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .custom-formula-fields { grid-template-columns: 1fr; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
+    @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .quick-open-form { grid-template-columns: auto 1fr; } .quick-open-form > button { grid-column: 1 / -1; } .custom-formula-fields { grid-template-columns: 1fr; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
   </style>
 </head>
 <body>${body}${scriptMarkup}${externalScriptMarkup}</body>

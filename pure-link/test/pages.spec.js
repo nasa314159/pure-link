@@ -37,6 +37,10 @@ describe('interactive pages', () => {
     expect(html).toContain('navigator.share');
     expect(html).toContain("document.execCommand('copy')");
     expect(html).toContain('瀏覽器不允許自動複製');
+    expect(html).toContain('id="quick-open-form"');
+    expect(html).toContain('id="quick-open-preview"');
+    expect(html).toContain("location.assign('/' + candidate + (preview ? '+' : ''))");
+    expect(html).toContain('貼上 no-no.uk/abc，或只輸入 abc');
     expect(() => new Function(script)).not.toThrow();
   });
 
