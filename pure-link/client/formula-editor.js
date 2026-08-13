@@ -5,6 +5,21 @@ const input = document.getElementById('content');
 const preview = document.getElementById('formula-live-preview');
 const emptyState = document.getElementById('formula-preview-empty');
 const rendered = document.getElementById('formula-preview-rendered');
+const customLabel = document.getElementById('custom-formula-label');
+const customLatex = document.getElementById('custom-formula-latex');
+const customList = document.getElementById('custom-formula-list');
+const customStatus = document.getElementById('custom-formula-status');
+const customAdd = document.getElementById('add-custom-formula');
+const aiDescription = document.getElementById('formula-ai-description');
+const aiGenerate = document.getElementById('generate-formula-ai');
+const aiStatus = document.getElementById('formula-ai-status');
+const aiResult = document.getElementById('formula-ai-result');
+const aiPreview = document.getElementById('formula-ai-preview');
+const aiSource = document.getElementById('formula-ai-source');
+const aiUse = document.getElementById('use-formula-ai');
+const customStorageKey = 'purelink:formula-shortcuts:v1';
+const customShortcutLimit = 24;
+let generatedLatex = '';
 
 if (input && preview && rendered) {
   input.addEventListener('input', renderPreview);
@@ -23,7 +38,146 @@ if (input && preview && rendered) {
       selectCategory(categoryTabs[nextIndex].dataset.formulaCategory);
     });
   });
+  initializeCustomShortcuts();
+  initializeFormulaAi();
   renderPreview();
+}
+
+function initializeFormulaAi() {
+  if (!aiDescription || !aiGenerate || !aiStatus || !aiResult || !aiPreview || !aiSource || !aiUse) return;
+
+  aiGenerate.addEventListener('click', generateFormula);
+  aiDescription.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') generateFormula();
+  });
+  aiUse.addEventListener('click', () => {
+    if (!generatedLatex) return;
+    insertAtSelection(generatedLatex, 0);
+    setAiStatus('已插入主公式輸入框；請在右側預覽檢查後再建立。');
+  });
+}
+
+async function generateFormula() {
+  const description = aiDescription.value.trim();
+  if (!description) return setAiStatus('請先用一句話描述要產生的公式。', true);
+
+  aiGenerate.disabled = true;
+  aiGenerate.textContent = '生成中…';
+  aiResult.hidden = true;
+  setAiStatus('正在產生可編輯的 LaTeX 草稿…');
+  try {
+    const response = await fetch('/api/formulas/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || '公式生成失敗，請稍後再試。');
+
+    generatedLatex = payload.latex;
+    aiPreview.replaceChildren();
+    appendMath(aiPreview, generatedLatex, true);
+    aiSource.textContent = generatedLatex;
+    aiResult.hidden = false;
+    const allowance = payload.allowanceSource === 'purchased'
+      ? `購買額度剩餘 ${payload.remaining} 次`
+      : `今日免費額度剩餘 ${payload.remaining} 次`;
+    setAiStatus(`草稿已生成。${allowance}；不會自動發布。`);
+  } catch (error) {
+    generatedLatex = '';
+    setAiStatus(error.message, true);
+  } finally {
+    aiGenerate.disabled = false;
+    aiGenerate.textContent = '生成草稿';
+  }
+}
+
+function setAiStatus(message, isError = false) {
+  if (!aiStatus) return;
+  aiStatus.textContent = message;
+  aiStatus.hidden = false;
+  aiStatus.dataset.error = String(isError);
+}
+
+function initializeCustomShortcuts() {
+  if (!customLabel || !customLatex || !customList || !customAdd) return;
+  let shortcuts = readCustomShortcuts();
+  renderCustomShortcuts(shortcuts);
+
+  customAdd.addEventListener('click', () => {
+    const label = customLabel.value.trim();
+    const latex = customLatex.value.trim();
+    if (!label || !latex) return setCustomStatus('請同時填寫按鍵名稱與 LaTeX。');
+    if (shortcuts.length >= customShortcutLimit) return setCustomStatus(`最多保存 ${customShortcutLimit} 個快捷鍵。`);
+    shortcuts = [...shortcuts, { id: crypto.randomUUID(), label, latex }];
+    if (!writeCustomShortcuts(shortcuts)) return;
+    customLabel.value = '';
+    customLatex.value = '';
+    setCustomStatus('已只在這個瀏覽器保存。', false);
+    renderCustomShortcuts(shortcuts);
+  });
+
+  customList.addEventListener('click', (event) => {
+    const insertButton = event.target.closest('[data-custom-formula-insert]');
+    if (insertButton) return insertAtSelection(insertButton.dataset.customFormulaInsert || '', 0);
+    const removeButton = event.target.closest('[data-custom-formula-remove]');
+    if (!removeButton) return;
+    shortcuts = shortcuts.filter((shortcut) => shortcut.id !== removeButton.dataset.customFormulaRemove);
+    if (!writeCustomShortcuts(shortcuts)) return;
+    setCustomStatus('已從這個瀏覽器移除。', false);
+    renderCustomShortcuts(shortcuts);
+  });
+}
+
+function readCustomShortcuts() {
+  try {
+    const value = JSON.parse(localStorage.getItem(customStorageKey) || '[]');
+    if (!Array.isArray(value)) return [];
+    return value.filter((item) => item && typeof item.id === 'string' && typeof item.label === 'string' && typeof item.latex === 'string')
+      .slice(0, customShortcutLimit)
+      .map((item) => ({ id: item.id, label: item.label.slice(0, 12), latex: item.latex.slice(0, 200) }));
+  } catch {
+    setCustomStatus('這個瀏覽器目前無法讀取自訂快捷鍵。');
+    return [];
+  }
+}
+
+function writeCustomShortcuts(shortcuts) {
+  try {
+    localStorage.setItem(customStorageKey, JSON.stringify(shortcuts));
+    return true;
+  } catch {
+    setCustomStatus('這個瀏覽器目前不允許保存自訂快捷鍵。');
+    return false;
+  }
+}
+
+function renderCustomShortcuts(shortcuts) {
+  customList.replaceChildren();
+  for (const shortcut of shortcuts) {
+    const item = document.createElement('span');
+    item.className = 'custom-formula-item';
+    const insert = document.createElement('button');
+    insert.type = 'button';
+    insert.textContent = shortcut.label;
+    insert.title = shortcut.latex;
+    insert.dataset.customFormulaInsert = shortcut.latex;
+    insert.setAttribute('aria-label', `${shortcut.label}; insert ${shortcut.latex}`);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.dataset.customFormulaRemove = shortcut.id;
+    remove.setAttribute('aria-label', `移除 ${shortcut.label}`);
+    item.append(insert, remove);
+    customList.append(item);
+  }
+}
+
+function setCustomStatus(message, isError = true) {
+  if (!customStatus) return;
+  customStatus.textContent = message;
+  customStatus.hidden = false;
+  customStatus.dataset.error = String(isError);
 }
 
 function selectCategory(category) {

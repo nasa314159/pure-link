@@ -9,7 +9,8 @@ const FORMULA_SHORTCUT_GROUPS = [
     label: '★',
     ariaLabel: 'Common math',
     shortcuts: [
-      ['a⁄b', '\\frac{}{}', 3, 'fraction'], ['x²', '^2', 0, 'square'], ['xⁿ', '^', 0, 'power'], ['√x', '\\sqrt{}', 1, 'square root'], ['∛x', '\\sqrt[3]{}', 1, 'cube root'], ['ⁿ√x', '\\sqrt[n]{}', 1, 'nth root'],
+      ['□/□', '\\frac{}{}', 3, 'fraction template'], ['a/b', '\\frac{a}{b}', 0, 'example fraction'], ['x²', '^2', 0, 'square'], ['xⁿ', '^', 0, 'power'], ['√x', '\\sqrt{}', 1, 'square root'], ['∛x', '\\sqrt[3]{}', 1, 'cube root'], ['ⁿ√x', '\\sqrt[n]{}', 1, 'nth root'],
+      ['Cₙʳ', 'C_{}^{}', 4, 'combination with subscript and superscript'], ['Pₙʳ', 'P_{}^{}', 4, 'permutation with subscript and superscript'],
       ['d⁄dx', '\\frac{d}{dx}', 0, 'derivative'], ['d²⁄dx²', '\\frac{d^2}{dx^2}', 0, 'second derivative'], ['∫', '\\int ', 0, 'indefinite integral'], ['∫ₐᵇ', '\\int_{}^{}', 4, 'definite integral'],
       ['Σ', '\\sum_{}^{}', 4, 'sum'], ['lim', '\\lim_{}', 1, 'limit'], ['[x;y]', '\\begin{bmatrix}  \\\\  \\end{bmatrix}', 16, 'column vector'], ['[a b;c d]', '\\begin{bmatrix}  &  \\\\  &  \\end{bmatrix}', 21, 'two by two matrix'],
     ],
@@ -33,7 +34,7 @@ const FORMULA_SHORTCUT_GROUPS = [
       ['d⁄dx', '\\frac{d}{dx}', 0, 'derivative'], ['d²⁄dx²', '\\frac{d^2}{dx^2}', 0, 'second derivative'], ['∂⁄∂x', '\\frac{\\partial}{\\partial x}', 0, 'partial derivative'], ['∂²⁄∂x²', '\\frac{\\partial^2}{\\partial x^2}', 0, 'second partial derivative'], ['∂²⁄∂x∂y', '\\frac{\\partial^2}{\\partial x\\partial y}', 0, 'mixed partial derivative'],
       ['∫', '\\int '], ['∬', '\\iint '], ['∭', '\\iiint '], ['∫ₐᵇ', '\\int_{}^{}', 4, 'definite integral'], ['∬ₐᵇ', '\\int_{}^{}\\int_{}^{}', 14, 'double definite integral'], ['∭ₐᵇ', '\\int_{}^{}\\int_{}^{}\\int_{}^{}', 24, 'triple definite integral'],
       ['Σ', '\\sum_{}^{}', 4, 'sum'], ['Π', '\\prod_{}^{}', 4, 'product'], ['lim', '\\lim_{}', 1, 'limit'], ['lim₋', '\\lim_{x\\to a^-}', 0, 'left limit'], ['lim₊', '\\lim_{x\\to a^+}', 0, 'right limit'], ['lim∞', '\\lim_{x\\to\\infty}', 0, 'limit at infinity'],
-      ['∇', '\\nabla'], ['∂', '\\partial'], ['δ', '\\delta'], ['ℒ', '\\mathcal{L}\\{  \\}', 3, 'Laplace transform'], ['ℒ⁻¹', '\\mathcal{L}^{-1}\\{  \\}', 3, 'inverse Laplace transform'], ['ℱ', '\\mathcal{F}\\{  \\}', 3, 'Fourier transform'], ['ℱ⁻¹', '\\mathcal{F}^{-1}\\{  \\}', 3, 'inverse Fourier transform'],
+      ['∇', '\\nabla'], ['∂', '\\partial'], ['δ', '\\delta'], ['□', '\\Box', 0, 'd Alembert operator'], ['Ĥ', '\\hat{H}', 0, 'Hamiltonian operator'], ['ℒ', '\\mathcal{L}\\{  \\}', 3, 'Laplace transform'], ['ℒ⁻¹', '\\mathcal{L}^{-1}\\{  \\}', 3, 'inverse Laplace transform'], ['ℱ', '\\mathcal{F}\\{  \\}', 3, 'Fourier transform'], ['ℱ⁻¹', '\\mathcal{F}^{-1}\\{  \\}', 3, 'inverse Fourier transform'],
     ],
   },
   {
@@ -90,6 +91,30 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
   const accountEntry = googleAuthConfigured
     ? `<nav class="account-entry" aria-label="帳戶"><a href="${user ? '/account' : '/auth/google?returnTo=%2F'}"${user ? '' : ' aria-label="使用 Google 登入"'}>${user ? '我的 PureLink' : '登入'}</a></nav>`
     : '';
+  const formulaAiLimit = Number(user?.is_admin) === 1 ? 100 : 5;
+  const formulaAiPanel = user
+    ? `<details class="formula-ai" id="formula-ai">
+        <summary>✦ 用一句話生成公式 <span>每日 ${formulaAiLimit} 次${formulaAiLimit === 100 ? '（管理員）' : ''}</span></summary>
+        <p>你的描述會傳送給 Cloudflare Workers AI；PureLink 不儲存描述或生成結果。AI 只會產生一個可編輯的 LaTeX 草稿，使用前請自行檢查。</p>
+        <p><a href="/ai-credits">AI credits, delivery and pricing</a></p>
+        <label class="field-label" for="formula-ai-description">用自然語言描述公式</label>
+        <div class="formula-ai-compose">
+          <textarea id="formula-ai-description" maxlength="500" rows="3" placeholder="例如：質量 m 與能量 E 的質能等價關係"></textarea>
+          <button type="button" id="generate-formula-ai">生成草稿</button>
+        </div>
+        <p class="formula-ai-status" id="formula-ai-status" role="status" hidden></p>
+        <section class="formula-ai-result" id="formula-ai-result" aria-label="AI 公式草稿" hidden>
+          <div id="formula-ai-preview" class="formula-ai-preview"></div>
+          <code id="formula-ai-source"></code>
+          <button type="button" class="secondary-button" id="use-formula-ai">插入公式輸入框</button>
+        </section>
+      </details>`
+    : `<details class="formula-ai" id="formula-ai">
+        <summary>✦ 用一句話生成公式 <span>一般帳號每日 5 次</span></summary>
+        <p>公式生成需要登入，以限制每人每日使用次數與控制公共服務成本。匿名建立、手動公式輸入與預覽仍完全免登入。</p>
+        <p><a href="/ai-credits">AI credits, delivery and pricing</a></p>
+        ${googleAuthConfigured ? '<a class="google-link" href="/auth/google?returnTo=%2F%23formula-ai">使用 Google 登入後繼續</a>' : '<p>公式生成目前尚未開放。</p>'}
+      </details>`;
   return documentShell({
     title: 'PureLink — 安靜地分享',
     description: '以簡潔、尊重隱私的方式分享網址、數學公式或一張短文小卡。',
@@ -101,6 +126,24 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           <h1>Just share.</h1>
           <p class="lede">No ads. No needless data.</p>
         </header>
+
+        <section class="quick-open" aria-labelledby="quick-open-title">
+          <div class="quick-open-heading">
+            <p class="eyebrow">OPEN</p>
+            <h2 id="quick-open-title">快速開啟 PureLink</h2>
+          </div>
+          <form class="quick-open-form" id="quick-open-form" novalidate>
+            <label class="quick-preview-toggle" title="先查看完整目的地再決定是否前往">
+              <input type="checkbox" id="quick-open-preview">
+              <span aria-hidden="true">+</span>
+              <small>先預覽</small>
+            </label>
+            <label class="visually-hidden" for="quick-open-input">PureLink 短網址或後綴</label>
+            <input id="quick-open-input" maxlength="128" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="貼上 no-no.uk/abc，或只輸入 abc">
+            <button type="submit" aria-label="開啟 PureLink">前往 →</button>
+          </form>
+          <p class="quick-open-status" id="quick-open-status" role="alert" hidden></p>
+        </section>
 
         ${authNotice}
 
@@ -136,11 +179,31 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
             <div class="formula-tools" id="formula-tools" hidden>
               <div class="formula-tool-heading"><strong>數學快捷輸入</strong><span>每個按鍵只插入 LaTeX；右側會立即預覽。</span></div>
+              ${formulaAiPanel}
               ${renderFormulaShortcutPalette()}
+              <details class="custom-formula-shortcuts">
+                <summary>＋ 自訂公式快捷鍵</summary>
+                <p>只儲存在這個瀏覽器，不會上傳到 PureLink。最多 24 個。</p>
+                <div class="custom-formula-fields">
+                  <label><span>按鍵名稱</span><input id="custom-formula-label" maxlength="12" placeholder="例如：Ĥ"></label>
+                  <label><span>插入的 LaTeX</span><input id="custom-formula-latex" maxlength="200" placeholder="例如：\\hat{H}"></label>
+                  <button type="button" id="add-custom-formula">加入</button>
+                </div>
+                <p class="custom-formula-status" id="custom-formula-status" role="status" hidden></p>
+                <div class="custom-formula-list" id="custom-formula-list" aria-label="自訂公式快捷鍵"></div>
+              </details>
             </div>
 
             <div class="conditional-options" id="url-options">
               <label class="check-row"><input type="checkbox" name="cleanTracking" value="true"><span><strong>清理常見追蹤參數</strong><small>建立前移除 utm、fbclid 等已知參數。</small></span></label>
+              <details class="tracking-rules">
+                <summary>自訂本次清理規則</summary>
+                <p>只套用於這次建立，不會保存到瀏覽器或帳號；保留名單優先於移除名單。</p>
+                <label class="field-label" for="tracking-remove">另外移除（逗號或空格分隔）</label>
+                <input id="tracking-remove" name="trackingRemove" maxlength="512" placeholder="例如：campaign_id, ref_*">
+                <label class="field-label" for="tracking-keep">始終保留（逗號或空格分隔）</label>
+                <input id="tracking-keep" name="trackingKeep" maxlength="512" placeholder="例如：utm_source, ref_code">
+              </details>
               <label class="check-row"><input type="checkbox" name="isAffiliate" value="true"><span><strong>這可能是推薦或分潤連結</strong><small>會在 + 預覽頁誠實告知接收者。</small></span></label>
             </div>
 
@@ -170,11 +233,14 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           <section class="result-panel" id="result-panel" aria-live="polite" hidden>
             <p class="eyebrow">READY</p>
             <h2>你的 PureLink 準備好了。</h2>
+            <span class="result-label">分享網址（可直接開啟）</span>
             <a class="result-url" id="result-url" href=""></a>
             <div class="result-actions">
               <button class="create-button" type="button" data-copy-target="result-url">複製分享連結</button>
               <a class="secondary-link" id="preview-link" href="" hidden></a>
+              <button class="secondary-button" id="share-result" type="button" hidden>分享</button>
             </div>
+            <p class="copy-status" id="result-status" role="status"></p>
             <div class="recovery-box">
               <strong>請保存匿名管理憑證</strong>
               <p>PureLink 不知道你是誰。若這個瀏覽器與你的備份都遺失，我們無法替你找回刪除權限。</p>
@@ -189,12 +255,16 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
         <footer class="home-footer">
           <p>內容由建立者提供，不代表 PureLink 的立場、推薦或安全保證。</p>
-          <nav aria-label="服務資訊">${googleAuthConfigured ? '<a href="/account">我的 PureLink</a>' : ''}<a href="/privacy">隱私說明</a><a href="/terms">使用與內容規範</a><a href="/transparency">透明度</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">GitHub 原始碼</a></nav>
+          <nav aria-label="服務資訊">${googleAuthConfigured ? '<a href="/account">我的 PureLink</a>' : ''}<a href="/ai-credits">AI credits</a><a href="/refund-policy">Refund policy</a><a href="/privacy">隱私說明</a><a href="/terms">使用與內容規範</a><a href="/transparency">透明度</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">GitHub 原始碼</a></nav>
         </footer>
       </main>
     `,
     script: `
       const form = document.getElementById('create-form');
+      const quickOpenForm = document.getElementById('quick-open-form');
+      const quickOpenInput = document.getElementById('quick-open-input');
+      const quickOpenPreview = document.getElementById('quick-open-preview');
+      const quickOpenStatus = document.getElementById('quick-open-status');
       const content = document.getElementById('content');
       const contentType = document.getElementById('content-type');
       const contentHelp = document.getElementById('content-help');
@@ -207,7 +277,36 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       const errorBox = document.getElementById('form-error');
       const submitButton = document.getElementById('create-button');
       const resultPanel = document.getElementById('result-panel');
+      const resultStatus = document.getElementById('result-status');
+      const shareResult = document.getElementById('share-result');
       let latestResult = null;
+
+      quickOpenForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        quickOpenStatus.hidden = true;
+        let candidate = quickOpenInput.value.trim();
+        let preview = quickOpenPreview.checked;
+        try {
+          if (/^https?:\\/\\//i.test(candidate)) {
+            const pasted = new URL(candidate);
+            if (pasted.hostname.toLowerCase() !== location.hostname.toLowerCase() || pasted.search || pasted.hash) throw new Error();
+            candidate = pasted.pathname;
+          } else {
+            candidate = candidate.replace(/^(?:www\\.)?no-no\\.uk\\//i, '');
+          }
+          candidate = candidate.replace(/^\\/+|\\/+$/g, '');
+          if (candidate.endsWith('+')) {
+            preview = true;
+            candidate = candidate.slice(0, -1);
+          }
+          if (!/^[A-Za-z0-9_-]{1,30}$/.test(candidate)) throw new Error();
+          location.assign('/' + candidate + (preview ? '+' : ''));
+        } catch {
+          quickOpenStatus.textContent = '請輸入 no-no.uk 的完整短網址，或 1–30 字元的短網址後綴。';
+          quickOpenStatus.hidden = false;
+          quickOpenInput.focus();
+        }
+      });
 
       const typeCopy = {
         url: { placeholder: 'example.com', help: '我們會補上 HTTPS，但不會暗中改寫網址。', limit: 4096 },
@@ -239,7 +338,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         const trimmed = value.trim();
         if (!trimmed) return null;
         if (/^(?:https?:\\/\\/)?[^\\s/]+\\.[^\\s/]{2,}(?:\\/[^\\s]*)?$/i.test(trimmed)) return 'url';
-        if (/\\\\(?:begin|end|frac|sqrt|sum|int|lim|left|right|text|mathrm|mathbf|mathbb|partial|nabla)\\b|[∂∫∑√∞≈≠≤≥±×÷∇]|\\$[^$]+\\$/.test(trimmed)) return 'formula';
+        if (/\\\\(?:begin|end|frac|sqrt|sum|int|lim|left|right|text|mathrm|mathbf|mathbb|partial|nabla)\\b|[_^](?:\\{[^}]*\\}|[A-Za-z0-9])|[∂∫∑√∞≈≠≤≥±×÷∇]|\\$[^$]+\\$/.test(trimmed)) return 'formula';
         return 'card';
       }
 
@@ -290,6 +389,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           previewLink.hidden = !result.previewUrl;
           previewLink.href = result.previewUrl || '';
           previewLink.textContent = result.previewLabel || '查看分享內容';
+          shareResult.hidden = !navigator.share;
+          resultStatus.textContent = '';
           form.hidden = true;
           resultPanel.hidden = false;
           resultPanel.focus();
@@ -303,18 +404,47 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       });
 
       document.querySelector('[data-copy-target="result-url"]').addEventListener('click', async (event) => {
-        await navigator.clipboard.writeText(latestResult.url);
         const button = event.currentTarget;
-        button.textContent = '已複製';
+        const copied = await copyText(latestResult.url);
+        button.textContent = copied ? '已複製' : '複製失敗';
+        resultStatus.textContent = copied ? '已複製：' + latestResult.url : '瀏覽器不允許自動複製，請手動選取上方完整網址。';
         setTimeout(() => { button.textContent = '複製分享連結'; }, 1600);
       });
 
+      shareResult.addEventListener('click', async () => {
+        try {
+          await navigator.share({ title: 'PureLink', text: 'Just share.', url: latestResult.url });
+          resultStatus.textContent = '已開啟系統分享選單：' + latestResult.url;
+        } catch (error) {
+          if (error.name !== 'AbortError') resultStatus.textContent = '無法開啟分享選單，仍可複製上方網址。';
+        }
+      });
+
       document.getElementById('copy-management').addEventListener('click', async (event) => {
-        await navigator.clipboard.writeText(latestResult.managementUrl);
         const button = event.currentTarget;
-        button.textContent = '已複製';
+        const copied = await copyText(latestResult.managementUrl);
+        button.textContent = copied ? '已複製' : '複製失敗';
         setTimeout(() => { button.textContent = '複製管理地址'; }, 1600);
       });
+
+      async function copyText(value) {
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(value);
+            return true;
+          }
+        } catch {}
+        const fallback = document.createElement('textarea');
+        fallback.value = value;
+        fallback.setAttribute('readonly', '');
+        fallback.style.position = 'fixed';
+        fallback.style.opacity = '0';
+        document.body.append(fallback);
+        fallback.select();
+        const copied = document.execCommand('copy');
+        fallback.remove();
+        return copied;
+      }
 
       document.getElementById('download-recovery').addEventListener('click', () => {
         const typeName = ({ url: '網址', formula: '公式', card: '小卡' })[latestResult.contentType] || '內容';
@@ -335,7 +465,21 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         content.focus();
       });
 
+      const shortcutInput = new URLSearchParams(location.hash.slice(1)).get('url');
+      const openFormulaAi = location.hash === '#formula-ai';
       selectType('url');
+      if (shortcutInput) {
+        content.value = shortcutInput;
+        updateCount();
+        updateSuggestion();
+        history.replaceState(null, '', location.pathname + location.search);
+        content.focus();
+      } else if (openFormulaAi) {
+        selectType('formula');
+        const formulaAi = document.getElementById('formula-ai');
+        if (formulaAi) formulaAi.open = true;
+        document.getElementById('formula-ai-description')?.focus();
+      }
     `,
     nonce,
     externalScripts: [
@@ -522,6 +666,7 @@ export function renderLegalPage(page) {
         ['最低限度統計', '只按日期、功能類型與國家或地區代碼累加總數，用來估計人數、成本與服務狀況；不保存原始 IP，也不建立個人瀏覽歷程。未知地區統一記為 ZZ。'],
         ['防止濫用', '公開寫入會使用 Turnstile 驗證，並以原始 IP、時間窗與伺服器密鑰產生不可逆的短期速率限制代碼。代碼只用於限制惡意大量請求，逾期後清除。'],
         ['自願登入', '完全不登入仍可建立與管理匿名內容。若你自願使用 Google 登入，PureLink 會保存 Google 提供的穩定帳號識別碼、電子郵件、顯示名稱，以及登入工作階段的不可逆雜湊，用來跨裝置顯示你主動連結的內容；不保存 Google 密碼或長期存取權杖。'],
+        ['可選的 AI 公式生成', '一般登入使用者可每日最多使用 5 次公式生成；維運管理員的測試上限為 100 次。你輸入的描述會傳送給 Cloudflare Workers AI，用來產生一個 LaTeX 草稿；PureLink 只在資料庫保存帳號、日期與當日次數，不保存描述或生成結果。AI 結果可能有誤，使用者必須先檢查與編輯。'],
         ['我們刻意不做的事', '不販售資料、不投放行為廣告、不做跨站追蹤、不建立個人興趣檔案，也不把使用內容拿去訓練模型。瀏覽器與網路供應商仍會在傳輸請求時接觸必要的網路資料。'],
         ['刪除與聯絡', '匿名建立者可用管理地址永久刪除內容；遺失管理憑證時無法驗證建立者身分。若內容涉及安全、隱私或權利問題，可從內容頁使用回報功能。'],
       ],
@@ -535,7 +680,7 @@ export function renderLegalPage(page) {
         ['預覽不是安全認證', '網址後加上 + 會完整顯示目的地與建立者是否宣告推薦或分潤關係，幫助接收者自行判斷；這不是惡意網站掃描、法律審核或安全保證。'],
         ['處理與下架', '收到回報後，PureLink 可依風險、內容規範與適用法律限制存取或移除內容。回報本身不代表內容必然違規，也不會自動下架。'],
         ['服務狀態', 'PureLink 以盡力而為方式提供，可能因維護、成本、安全事件或不可抗力暫停。重要內容不應只保存在 PureLink。'],
-        ['支持方式', '基本成果希望任何人都能使用。自願贊助用於服務成本、後續學習與硬體開發，不會改變平台對內容的背書立場。未來若提供高風險或高成本的加密連結等付費功能，會另行清楚揭露條件。'],
+        ['支持與付費功能', '基本成果希望任何人都能使用。自願支持不附帶商品、AI 額度或平台特權，並與商品付款分開處理。AI 公式額度是清楚標價的一次性數位商品；價格、交付與退款條件公開於 AI credits 與 Refund policy 頁面。'],
       ],
     },
     transparency: {
@@ -545,8 +690,36 @@ export function renderLegalPage(page) {
       sections: [
         ['目前的資料邊界', '內容資料庫保存分享內容、設定與匿名管理雜湊；自願登入者另保存最低限度 Google 帳號資料與工作階段雜湊；統計資料庫只保存每日聚合數字；速率限制只保存短期不可逆代碼；檢舉不要求姓名或電子郵件。'],
         ['人類驗證的定位', 'Turnstile 只保護建立與檢舉等公開寫入，不阻擋一般人閱讀內容。它是防止機器大量濫用的安全措施，不是建立會員身分或追蹤閱讀者。'],
+        ['AI 公式生成的邊界', '公式描述只在使用者主動按下生成時送往 Cloudflare Workers AI。PureLink 不儲存提示或回覆，只保存每日使用次數；草稿不會自動發布，必須由使用者插入、檢查後再建立 PureLink。'],
         ['開源與驗證', '正式發布時將公開程式、資料結構、部署說明與製作歷程，讓任何人能檢查承諾、提出問題或自行部署。版本與政策有實質變更時，也應在公開紀錄中留下痕跡。'],
         ['目前限制', '這是仍在驗證中的 MVP。自訂網域、正式監控、事件處理流程與定期透明度報告，會在正式上線前或依服務規模逐步完成。'],
+      ],
+    },
+    'ai-credits': {
+      lang: 'en',
+      eyebrow: 'AI FORMULA CREDITS',
+      title: 'More formula drafts, only when you need them.',
+      intro: 'PureLink is free to use. Optional one-time credit packs extend the AI-assisted formula feature without turning the core URL, formula, or card tools into a subscription.',
+      sections: [
+        ['What the product does', 'A signed-in customer can describe a mathematical expression in natural language and receive an editable LaTeX draft with an immediate visual preview. The result is never published automatically, may contain mistakes, and must be reviewed by the customer before use.'],
+        ['One-time plans', 'US$5 provides 300 AI formula generations. US$10 provides 800 generations. US$20 provides 2,000 generations. These are one-time purchases, not subscriptions. Taxes may be added at checkout when required.'],
+        ['Delivery', 'After a confirmed payment, credits are delivered automatically to the PureLink account that started checkout. Customers must be signed in before purchasing. The five free daily generations are used before purchased credits, and purchased credits are not shared between accounts.'],
+        ['Credit lifetime and limits', 'Purchased credits do not expire while PureLink continues to operate the AI formula service. They are non-transferable, have no cash value, and remain subject to a daily safety limit that protects accounts and the public service from automated abuse.'],
+        ['Payment boundary', 'Creem is used only to sell AI formula credit packs and acts as the merchant of record for these purchases. Voluntary support for the open-source project is separate, does not grant credits or product benefits, and is not processed through Creem. Checkout is enabled only after payment-provider approval and integration testing.'],
+        ['Support', 'For purchase, delivery, or account questions, contact nasa3.14159@gmail.com. Include the email address used for your PureLink account and the order number, but never send a password, full card number, or Google credential.'],
+      ],
+    },
+    'refund-policy': {
+      lang: 'en',
+      eyebrow: 'REFUND POLICY',
+      title: 'A clear path when a purchase goes wrong.',
+      intro: 'This policy applies to one-time purchases of PureLink AI formula credits. It does not limit any mandatory consumer rights that apply in the customer’s country or region.',
+      sections: [
+        ['Unused credits', 'A customer may request a refund within 14 calendar days of purchase if none of the purchased credits have been used. Approved refunds are returned to the original payment method.'],
+        ['Delivery or technical failure', 'If a confirmed payment is not credited to the correct PureLink account, contact support so the order can be verified and delivered. If PureLink cannot deliver the purchased credits or the feature has a material unresolved defect, the customer may receive a full or proportionate refund as appropriate.'],
+        ['Credits already used', 'Consumed credits are generally not refundable because the digital service is delivered immediately when a generation is requested. Exceptions are made where required by law or where PureLink confirms that a charged generation failed because of the service.'],
+        ['How to request help', 'Email nasa3.14159@gmail.com with the order number, purchase date, PureLink account email, and a short description of the issue. Do not include card details or account passwords. PureLink aims to acknowledge requests within five business days.'],
+        ['Processing and abuse', 'Refunds are processed through the original payment provider and may take additional time to appear. Fraudulent use, resale, automation intended to bypass limits, or repeated abuse may result in credits being suspended while the transaction is reviewed.'],
       ],
     },
   };
@@ -555,6 +728,7 @@ export function renderLegalPage(page) {
     title: `${content.title} — PureLink`,
     description: content.intro,
     robots: 'index, follow',
+    lang: content.lang || 'zh-Hant',
     body: `
       <main class="page legal-page">
         <a class="wordmark" href="/">PureLink</a>
@@ -563,7 +737,8 @@ export function renderLegalPage(page) {
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
-          <p class="legal-updated">MVP 說明版本：2026-08-06</p>
+          <nav class="legal-nav" aria-label="PureLink policies"><a href="/">PureLink</a><a href="/ai-credits">AI credits</a><a href="/refund-policy">Refund policy</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/transparency">Transparency</a></nav>
+          <p class="legal-updated">${content.lang === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14'}</p>
         </article>
       </main>
     `,
@@ -696,10 +871,16 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
   });
 }
 
-export function renderAccountPage(user, links) {
+export function renderAccountPage(user, links, creditBalance = 0, checkoutConfigured = false, purchaseStatus = '', nonce = '') {
   const rows = links.length
     ? links.map((link) => `<li><div><span>${escapeHtml(({ url: '網址', formula: '公式', card: '小卡' })[link.content_type] || '內容')}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">查看</a><a href="/manage/${escapeHtml(link.slug)}">管理</a></li>`).join('')
     : '<li class="empty-account">還沒有連結到這個帳號的 PureLink。</li>';
+  const purchaseNotice = purchaseStatus === 'success'
+    ? '<p class="auth-notice" role="status"><strong>付款流程已返回 PureLink。</strong><span>付款確認後，額度會由 Creem 的簽章通知自動加入；若尚未顯示，請稍候再重新整理。</span></p>'
+    : '';
+  const checkoutAction = checkoutConfigured
+    ? '<button id="buy-credits-300" type="button">US$5 · 購買 300 次</button><p class="billing-status" id="billing-status" role="status" hidden></p>'
+    : '<p class="billing-status">付款功能正在完成最後驗證，目前不會向你收費。</p>';
   return documentShell({
     title: '我的 PureLink',
     description: '跨裝置管理自願連結到 Google 帳號的 PureLink。',
@@ -711,11 +892,43 @@ export function renderAccountPage(user, links) {
           <p class="eyebrow">YOUR PURELINKS</p>
           <h1 class="manage-title">你好，${escapeHtml(user.display_name || user.email)}。</h1>
           <p class="lede manage-lede">只有你主動連結或登入後建立的內容會出現在這裡。匿名建立仍然可以完全不登入。</p>
+          ${purchaseNotice}
+          <section class="account-credits" aria-labelledby="account-credits-title">
+            <p class="eyebrow">AI FORMULA CREDITS</p>
+            <h2 id="account-credits-title">可用購買額度：${Math.max(0, Number(creditBalance || 0))} 次</h2>
+            <p>每天 5 次免費生成會優先使用；購買額度是一次性商品，不是訂閱。</p>
+            ${checkoutAction}
+            <p><a href="/ai-credits">商品與交付說明</a> · <a href="/refund-policy">退款政策</a></p>
+          </section>
           <ul class="account-links">${rows}</ul>
           <form action="/auth/logout" method="post"><button class="secondary-button" type="submit">登出</button></form>
         </article>
       </main>
     `,
+    script: checkoutConfigured ? `
+      const buyButton = document.getElementById('buy-credits-300');
+      const billingStatus = document.getElementById('billing-status');
+      buyButton?.addEventListener('click', async () => {
+        buyButton.disabled = true;
+        billingStatus.hidden = false;
+        billingStatus.textContent = '正在建立安全結帳頁…';
+        try {
+          const response = await fetch('/api/billing/checkout', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{}',
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || '目前無法開啟付款頁。');
+          location.assign(payload.checkoutUrl);
+        } catch (error) {
+          billingStatus.textContent = error.message;
+          billingStatus.dataset.error = 'true';
+          buyButton.disabled = false;
+        }
+      });
+    ` : '',
+    nonce,
   });
 }
 
@@ -735,14 +948,14 @@ export function renderNotFoundPage() {
   });
 }
 
-function documentShell({ title, description, body, robots = 'noindex, nofollow', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
+function documentShell({ title, description, body, robots = 'noindex, nofollow', lang = 'zh-Hant', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
   const scripts = [externalScript, ...externalScripts].filter(Boolean);
   const externalScriptMarkup = scripts.map((source) => source.startsWith('https://challenges.cloudflare.com/')
     ? `<script src="${escapeHtml(source)}" async defer></script>`
     : `<script type="module" src="${escapeHtml(source)}"></script>`).join('');
   return `<!doctype html>
-<html lang="zh-Hant">
+<html lang="${escapeHtml(lang)}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -769,6 +982,20 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .account-entry a { display: inline-flex; align-items: center; justify-content: center; min-height: 2.7rem; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.9); box-shadow: 0 .65rem 2rem rgba(35,62,50,.1); color: var(--ink); text-decoration: none; font-size: .82rem; font-weight: 750; backdrop-filter: blur(18px); }
     .account-entry a:hover, .account-entry a:focus-visible { border-color: var(--green); background: white; }
     .hero { padding-top: 3rem; }
+    .quick-open { width: 100%; padding: 1.1rem; border: 1px solid rgba(35,92,72,.2); border-radius: 1.45rem; background: rgba(255,255,255,.72); box-shadow: 0 1rem 3rem rgba(35,62,50,.07); backdrop-filter: blur(18px); }
+    .quick-open-heading { display: flex; align-items: baseline; gap: .9rem; margin-bottom: .75rem; }
+    .quick-open-heading .eyebrow { margin: 0; }
+    .quick-open-heading h2 { font-size: 1rem; letter-spacing: -.02em; }
+    .quick-open-form { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: stretch; gap: .55rem; }
+    .quick-open-form input:not([type="checkbox"]) { min-height: 3.2rem; border-radius: 1rem; }
+    .quick-open-form > button { width: auto; min-height: 3.2rem; padding: .7rem 1.15rem; border-color: var(--ink); background: var(--ink); color: white; white-space: nowrap; }
+    .quick-preview-toggle { position: relative; min-width: 5.4rem; min-height: 3.2rem; display: grid; grid-template-columns: auto 1fr; grid-template-rows: 1fr 1fr; column-gap: .4rem; align-items: center; padding: .45rem .7rem; border: 1px solid var(--line); border-radius: 1rem; background: white; cursor: pointer; }
+    .quick-preview-toggle input { grid-row: 1 / 3; margin: 0; }
+    .quick-preview-toggle span { align-self: end; font-size: .95rem; font-weight: 850; line-height: 1; }
+    .quick-preview-toggle small { align-self: start; color: var(--muted); font-size: .64rem; line-height: 1.2; white-space: nowrap; }
+    .quick-preview-toggle:has(input:checked) { border-color: var(--green); background: #edf7f1; }
+    .quick-open-status { margin: .65rem .2rem 0; color: #8f2f2a; font-size: .76rem; }
+    .visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
     .creator-panel { width: 100%; }
     .auth-notice { width: 100%; display: flex; align-items: center; gap: .7rem 1rem; flex-wrap: wrap; padding: .9rem 1rem; border: 1px solid #d8ceb0; border-radius: 1rem; background: #fffaf0; color: #6d654f; font-size: .8rem; line-height: 1.5; }
     .auth-notice strong { color: var(--ink); }
@@ -798,14 +1025,44 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .formula-tools { margin: .4rem 0 1.2rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: #f8fbf9; }
     .formula-tool-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; font-size: .78rem; }
     .formula-tool-heading span { color: var(--muted); }
+    .formula-ai { margin: 0 0 .9rem; padding: .85rem; border: 1px solid #bdd7cb; border-radius: 1rem; background: #edf5f1; }
+    .formula-ai summary { display: flex; justify-content: space-between; gap: 1rem; cursor: pointer; font-weight: 800; }
+    .formula-ai summary span { color: var(--green); font-size: .72rem; white-space: nowrap; }
+    .formula-ai > p { margin: .65rem 0; color: var(--muted); font-size: .75rem; line-height: 1.6; }
+    .formula-ai-compose { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .6rem; align-items: stretch; }
+    .formula-ai-compose textarea { min-height: 5.4rem; }
+    .formula-ai-compose button { width: auto; min-width: 8rem; border: 0; background: var(--ink); color: white; }
+    .formula-ai-status { margin: .65rem 0 0; color: var(--green); font-size: .76rem; }
+    .formula-ai-status[data-error="true"] { color: #8f2f2a; }
+    .formula-ai-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .65rem; align-items: center; margin-top: .75rem; padding: .85rem; border: 1px solid var(--line); border-radius: .9rem; background: white; }
+    .formula-ai-preview { grid-column: 1 / -1; min-height: 4rem; display: grid; place-items: center; overflow-x: auto; }
+    .formula-ai-result code { min-width: 0; padding: .65rem; border-radius: .6rem; background: #f5f7f6; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .formula-ai-result button { width: auto; white-space: nowrap; }
     .formula-category-tabs { display: flex; gap: .4rem; margin: 0 -.1rem .75rem; padding: .1rem; overflow-x: auto; scrollbar-width: thin; }
     .formula-category-tabs button { width: auto; flex: 0 0 auto; min-height: 2.35rem; padding: .48rem .78rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--muted); font-size: .75rem; }
     .formula-category-tabs button[aria-selected="true"] { border-color: var(--ink); background: var(--ink); color: white; }
+    .custom-formula-shortcuts { margin-top: .9rem; padding-top: .8rem; border-top: 1px solid var(--line); }
+    .custom-formula-shortcuts summary { cursor: pointer; font-weight: 800; }
+    .custom-formula-shortcuts > p { margin: .45rem 0 .75rem; color: var(--muted); font-size: .76rem; }
+    .custom-formula-fields { display: grid; grid-template-columns: minmax(7rem, .55fr) minmax(12rem, 1.45fr) auto; gap: .55rem; align-items: end; }
+    .custom-formula-fields label { display: grid; gap: .3rem; color: var(--muted); font-size: .72rem; }
+    .custom-formula-fields input { min-height: 2.65rem; }
+    .custom-formula-fields button { width: auto; min-height: 2.65rem; padding: .55rem 1rem; }
+    .custom-formula-list { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .75rem; }
+    .custom-formula-item { display: inline-flex; align-items: stretch; border: 1px solid var(--line); border-radius: .8rem; overflow: hidden; background: white; }
+    .custom-formula-item button { width: auto; min-height: 2.5rem; border: 0; border-radius: 0; background: white; }
+    .custom-formula-item [data-custom-formula-insert] { padding: .5rem .8rem; font-family: Georgia, serif; font-weight: 800; }
+    .custom-formula-item [data-custom-formula-remove] { padding: .5rem .65rem; border-left: 1px solid var(--line); color: var(--muted); }
+    .custom-formula-status[data-error="true"] { color: #8f2f2a; }
     .symbol-groups { display: grid; gap: .55rem; }
     .symbol-group { display: flex; flex-wrap: wrap; gap: .4rem; }
     .symbol-group button { width: auto; min-width: 2.55rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .7rem; background: white; color: var(--ink); font-family: ui-serif, Georgia, serif; font-size: .88rem; }
     .symbol-group button:hover, .symbol-group button:focus-visible { border-color: var(--green); background: #edf5f1; }
     .conditional-options { margin-top: 1.25rem; padding: .25rem 1rem; border: 1px solid var(--line); border-radius: 1.15rem; }
+    .tracking-rules { padding: .85rem 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+    .tracking-rules summary { cursor: pointer; color: var(--ink); font-size: .8rem; font-weight: 700; }
+    .tracking-rules p { margin: .65rem 0; font-size: .74rem; line-height: 1.55; }
+    .tracking-rules .field-label { margin-top: .75rem; }
     .check-row { display: flex; align-items: flex-start; gap: .8rem; padding: .9rem 0; border-bottom: 1px solid var(--line); cursor: pointer; }
     .check-row:last-child { border-bottom: 0; }
     .check-row input { margin-top: .2rem; accent-color: var(--green); }
@@ -827,14 +1084,18 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .turnstile-wrap { display: flex; justify-content: center; margin: 1rem 0; }
     .form-error { padding: .85rem 1rem; border-radius: 1rem; background: #fff0ee; color: #8a322c; font-size: .85rem; }
     .result-panel h2 { margin-bottom: 1.25rem; }
+    .result-label { display: block; margin-bottom: .45rem; color: var(--muted); font-size: .72rem; font-weight: 700; }
     .result-url { display: block; padding: 1rem; border-radius: 1rem; background: #edf2ef; font-family: ui-monospace, "SFMono-Regular", monospace; overflow-wrap: anywhere; }
-    .result-actions, .recovery-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: .8rem; }
+    .result-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: .75rem; margin-top: .8rem; }
+    .recovery-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: .8rem; }
+    .copy-status { min-height: 1.2rem; margin: .55rem 0 0; color: var(--muted); font-size: .72rem; overflow-wrap: anywhere; }
     .secondary-link { display: flex; align-items: center; justify-content: center; padding: .95rem 1.1rem; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; font-weight: 700; }
     .recovery-box { margin-top: 2rem; padding: 1.2rem; border: 1px solid #d8ceb0; border-radius: 1.2rem; background: #fffaf0; }
     .recovery-box p { margin: .5rem 0; color: #6d654f; font-size: .82rem; line-height: 1.55; }
     .quiet-button { margin-top: 1.25rem; border: 0; background: transparent; color: var(--muted); }
     .home-footer { padding-bottom: 3rem; color: var(--muted); font-size: .75rem; line-height: 1.6; }
     .home-footer nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .legal-nav { display: flex; flex-wrap: wrap; gap: .6rem 1rem; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .78rem; }
     .wordmark { width: fit-content; margin-bottom: 1.2rem; text-decoration: none; font-weight: 750; }
     .panel { padding: clamp(1.4rem, 5vw, 3.5rem); border: 1px solid var(--line); border-radius: 2rem; background: var(--surface); box-shadow: 0 1.5rem 5rem rgba(35, 62, 50, .08); backdrop-filter: blur(18px); }
     .preview-panel h1 { max-width: none; font-size: clamp(2rem, 6vw, 4.5rem); overflow-wrap: anywhere; }
@@ -880,6 +1141,13 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .account-connect p { margin: 0; color: var(--muted); line-height: 1.55; }
     .google-link { display: flex; justify-content: center; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: white; text-decoration: none; font-weight: 700; }
     .account-links { display: grid; gap: .7rem; margin: 0 0 1.5rem; padding: 0; list-style: none; }
+    .account-credits { display: grid; gap: .65rem; margin: 1.2rem 0; padding: 1rem; border: 1px solid #bdd7cb; border-radius: 1.2rem; background: #edf5f1; }
+    .account-credits h2, .account-credits p { margin: 0; }
+    .account-credits h2 { font-size: clamp(1.15rem, 3vw, 1.65rem); }
+    .account-credits > p { color: var(--muted); line-height: 1.55; }
+    .account-credits button { width: 100%; border: 0; background: var(--ink); color: white; }
+    .billing-status { color: var(--green); font-size: .78rem; }
+    .billing-status[data-error="true"] { color: #8f2f2a; }
     .account-links li { display: grid; grid-template-columns: 1fr auto auto; gap: .8rem; align-items: center; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; }
     .account-links li div { display: grid; gap: .2rem; }
     .account-links li span { color: var(--muted); font-size: .72rem; }
@@ -893,7 +1161,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .theme-mist .card-export { background: #e6f0ed; }
     .theme-night .card-export { background: #1b252b; }
     @media (max-width: 46rem) { .content-workspace.formula-mode { grid-template-columns: 1fr; } .formula-preview { margin-top: 0; } }
-    @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
+    @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .quick-open-form { grid-template-columns: auto 1fr; } .quick-open-form > button { grid-column: 1 / -1; } .formula-ai-compose, .formula-ai-result, .custom-formula-fields { grid-template-columns: 1fr; } .formula-ai-compose button, .formula-ai-result button { width: 100%; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
   </style>
 </head>
 <body>${body}${scriptMarkup}${externalScriptMarkup}</body>

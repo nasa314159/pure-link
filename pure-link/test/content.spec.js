@@ -14,6 +14,20 @@ describe('content validation', () => {
     expect(cleaned).toBe('https://example.com/?keep=yes');
   });
 
+  it('applies per-link custom remove and keep rules without storing a profile', () => {
+    const cleaned = normalizeUrl('https://example.com/?utm_source=test&campaign_id=42&keep=yes', true, {
+      remove: 'campaign_*',
+      keep: 'utm_source',
+    });
+    expect(cleaned).toContain('utm_source=test');
+    expect(cleaned).toContain('keep=yes');
+    expect(cleaned).not.toContain('campaign_id');
+  });
+
+  it('validates custom tracking parameter rules', () => {
+    expect(() => normalizeUrl('https://example.com/?x=1', true, { remove: 'bad rule!' })).toThrow(ValidationError);
+  });
+
   it('rejects unsafe URL schemes and embedded credentials', () => {
     expect(() => normalizeUrl('javascript:alert(1)', false)).toThrow(ValidationError);
     expect(() => normalizeUrl('https://name:secret@example.com', false)).toThrow(/credentials/);
@@ -28,6 +42,7 @@ describe('content validation', () => {
   it('suggests without changing the user selection', () => {
     expect(suggestContentType('example.com')).toBe('url');
     expect(suggestContentType('Energy is $E=mc^2$.')).toBe('formula');
+    expect(suggestContentType('C_{}^{}')).toBe('formula');
     expect(suggestContentType('Thank you for being here.')).toBe('card');
   });
 
@@ -42,4 +57,3 @@ describe('content validation', () => {
     expect(card.theme).toBe('mist');
   });
 });
-

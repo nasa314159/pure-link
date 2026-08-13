@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderCardPage, renderFormulaPage, renderHomePage, renderManagePage, renderReportPage } from '../src/pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -21,10 +21,28 @@ describe('interactive pages', () => {
     expect(html).toContain('data-formula-insert="\\Omega"');
     expect(html).toContain('aria-label="Calculus"');
     expect(html).toContain('>∂ ∫</button>');
-    expect(html).toContain('>a⁄b</button>');
+    expect(html).toContain('>□/□</button>');
+    expect(html).toContain('data-formula-insert="\\frac{a}{b}"');
+    expect(html).toContain('data-formula-insert="C_{}^{}"');
+    expect(html).toContain('data-formula-insert="P_{}^{}"');
+    expect(html).toContain('data-formula-insert="\\Box"');
+    expect(html).toContain('data-formula-insert="\\hat{H}"');
+    expect(html).toContain('id="custom-formula-list"');
+    expect(html).toContain('只儲存在這個瀏覽器，不會上傳到 PureLink');
+    expect(html).toContain('id="formula-ai"');
+    expect(html).toContain('公式生成需要登入');
     expect(html).not.toContain('>微積分</button>');
     expect(html).not.toContain('>分數</button>');
     expect(html).toContain('/assets/formula-editor.js');
+    expect(html).toContain('自訂本次清理規則');
+    expect(html).toContain("new URLSearchParams(location.hash.slice(1)).get('url')");
+    expect(html).toContain('navigator.share');
+    expect(html).toContain("document.execCommand('copy')");
+    expect(html).toContain('瀏覽器不允許自動複製');
+    expect(html).toContain('id="quick-open-form"');
+    expect(html).toContain('id="quick-open-preview"');
+    expect(html).toContain("location.assign('/' + candidate + (preview ? '+' : ''))");
+    expect(html).toContain('貼上 no-no.uk/abc，或只輸入 abc');
     expect(() => new Function(script)).not.toThrow();
   });
 
@@ -50,6 +68,43 @@ describe('interactive pages', () => {
     expect(signedIn).toContain('href="/account"');
     expect(signedIn).toContain('>我的 PureLink</a>');
     expect(signedIn).not.toContain('href="/auth/google?returnTo=%2F"');
+  });
+
+  it('shows the signed-in formula AI editor with a privacy disclosure', () => {
+    const html = renderHomePage('test-nonce', '', true, '', { id: 'user-1', email: 'person@example.com' });
+    expect(html).toContain('id="formula-ai-description"');
+    expect(html).toContain('id="generate-formula-ai"');
+    expect(html).toContain('id="use-formula-ai"');
+    expect(html).toContain('Cloudflare Workers AI');
+    expect(html).toContain('PureLink 不儲存描述或生成結果');
+  });
+
+  it('shows the administrator formula allowance without changing regular accounts', () => {
+    const html = renderHomePage('test-nonce', '', true, '', { id: 'admin-1', email: 'owner@example.com', is_admin: 1 });
+    expect(html).toContain('每日 100 次（管理員）');
+  });
+
+  it('publishes review-ready AI credit and refund information in English', () => {
+    const credits = renderLegalPage('ai-credits');
+    const refunds = renderLegalPage('refund-policy');
+    expect(credits).toContain('<html lang="en">');
+    expect(credits).toContain('US$5 provides 300 AI formula generations');
+    expect(credits).toContain('not processed through Creem');
+    expect(credits).toContain('nasa3.14159@gmail.com');
+    expect(refunds).toContain('<html lang="en">');
+    expect(refunds).toContain('within 14 calendar days');
+    expect(refunds).toContain('Consumed credits are generally not refundable');
+  });
+
+  it('shows purchased credits and creates checkout only when billing is configured', () => {
+    const disabled = renderAccountPage({ email: 'person@example.com' }, [], 12, false);
+    const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, true, 'success', 'billing-nonce');
+    expect(disabled).toContain('可用購買額度：12 次');
+    expect(disabled).not.toContain('id="buy-credits-300"');
+    expect(enabled).toContain('id="buy-credits-300"');
+    expect(enabled).toContain('付款流程已返回 PureLink');
+    expect(enabled).toContain('nonce="billing-nonce"');
+    expect(() => new Function(extractScript(enabled))).not.toThrow();
   });
 
   it('loads Turnstile as a regular deferred script', () => {

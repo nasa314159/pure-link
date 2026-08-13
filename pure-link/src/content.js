@@ -37,7 +37,10 @@ export function normalizeCreateInput(input) {
   const isAffiliate = input.isAffiliate === true || input.isAffiliate === 'true' || input.isAffiliate === 1 || input.isAffiliate === '1';
 
   if (contentType === 'url') {
-    const content = normalizeUrl(input.content, input.cleanTracking === true || input.cleanTracking === 'true');
+    const content = normalizeUrl(input.content, input.cleanTracking === true || input.cleanTracking === 'true', {
+      remove: input.trackingRemove,
+      keep: input.trackingKeep,
+    });
     return { slug, contentType, content, signature: null, theme: 'paper', isAffiliate };
   }
 
@@ -62,11 +65,12 @@ export function suggestContentType(value) {
   } catch {}
 
   const latexCommand = /\\(?:begin|end|frac|sqrt|sum|int|lim|left|right|text|mathrm|mathbf|mathbb|partial|nabla)\b/;
+  const latexScript = /[_^](?:\{[^}]*\}|[A-Za-z0-9])/;
   const mathSymbols = /[∂∫∑√∞≈≠≤≥±×÷∇]|(?:\$[^$]+\$)/;
-  return latexCommand.test(content) || mathSymbols.test(content) ? 'formula' : 'card';
+  return latexCommand.test(content) || latexScript.test(content) || mathSymbols.test(content) ? 'formula' : 'card';
 }
 
-export function normalizeUrl(value, cleanTracking = false) {
+export function normalizeUrl(value, cleanTracking = false, trackingRules = {}) {
   let raw = String(value || '').trim();
   if (!raw) throw new ValidationError('Enter a destination URL.', 'content');
   if (raw.length > LIMITS.url) throw new ValidationError(`URL must be ${LIMITS.url} characters or fewer.`, 'content');
@@ -87,14 +91,37 @@ export function normalizeUrl(value, cleanTracking = false) {
   if (url.username || url.password) throw new ValidationError('URLs containing embedded credentials are not supported.', 'content');
 
   if (cleanTracking) {
+    const removeRules = normalizeTrackingRules(trackingRules.remove, 'trackingRemove');
+    const keepRules = normalizeTrackingRules(trackingRules.keep, 'trackingKeep');
     for (const name of [...url.searchParams.keys()]) {
-      if (name.toLowerCase().startsWith('utm_') || TRACKING_PARAMETER_NAMES.has(name.toLowerCase())) {
+      const normalizedName = name.toLowerCase();
+      const shouldKeep = keepRules.some((rule) => matchesTrackingRule(normalizedName, rule));
+      const shouldRemove = normalizedName.startsWith('utm_')
+        || TRACKING_PARAMETER_NAMES.has(normalizedName)
+        || removeRules.some((rule) => matchesTrackingRule(normalizedName, rule));
+      if (!shouldKeep && shouldRemove) {
         url.searchParams.delete(name);
       }
     }
   }
 
   return url.toString();
+}
+
+function normalizeTrackingRules(value, field) {
+  const rules = Array.isArray(value) ? value : String(value || '').split(/[\s,]+/);
+  const normalized = [...new Set(rules.map((rule) => String(rule).trim().toLowerCase()).filter(Boolean))];
+  if (normalized.length > 32) throw new ValidationError('Use 32 custom parameter rules or fewer.', field);
+  for (const rule of normalized) {
+    if (rule.length > 64 || !/^[a-z0-9_.~-]+\*?$/.test(rule)) {
+      throw new ValidationError('Parameter rules may contain letters, numbers, dot, underscore, tilde, hyphen, and an optional ending *.', field);
+    }
+  }
+  return normalized;
+}
+
+function matchesTrackingRule(name, rule) {
+  return rule.endsWith('*') ? name.startsWith(rule.slice(0, -1)) : name === rule;
 }
 
 function normalizeText(value, contentType) {
@@ -127,4 +154,3 @@ function normalizeTheme(value) {
   if (!CARD_THEMES.includes(theme)) throw new ValidationError('Choose a valid card theme.', 'theme');
   return theme;
 }
-

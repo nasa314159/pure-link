@@ -4,9 +4,11 @@ import { enforceWriteProtection } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text } from './http.js';
 import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNotFoundPage, renderReportPage, renderUrlPreview } from './pages.js';
+import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
+import { BillingError, createCheckout, getCreditBalance, handleCreemWebhook, isCheckoutConfigured } from './billing.js';
 
 export default {
   async fetch(request, env, context) {
@@ -15,6 +17,9 @@ export default {
     } catch (error) {
       if (error instanceof ValidationError) {
         return json({ error: error.message, field: error.field || null }, { status: 400 });
+      }
+      if (error instanceof BillingError) {
+        return json({ error: error.message }, { status: error.status });
       }
       console.error('PureLink request failed', { name: error?.name, message: error?.message });
       return json({ error: 'PureLink could not complete this request.' }, { status: 500 });
@@ -37,7 +42,7 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'GET' && path === 'robots.txt') {
     return text('User-agent: *\nDisallow: /\n', { headers: { 'cache-control': 'public, max-age=3600' } });
   }
-  if (request.method === 'GET' && (path === 'privacy' || path === 'terms' || path === 'transparency')) {
+  if (request.method === 'GET' && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
     return html(renderLegalPage(path));
   }
 
@@ -52,14 +57,38 @@ export async function routeRequest(request, env, context) {
     if (!requireSameOrigin(request, env)) return json({ error: 'Invalid request origin.' }, { status: 403 });
     return logout(request, env);
   }
+  if (request.method === 'POST' && path === 'api/webhooks/creem') {
+    return handleCreemWebhook(request, env);
+  }
   if (request.method === 'GET' && path === 'account') {
     const user = await getCurrentUser(request, env);
     if (!user) return redirect('/auth/google?returnTo=/account');
-    return html(renderAccountPage(user, await repository.listByOwner(user.id)));
+    const nonce = createSlug() + createSlug();
+    return html(renderAccountPage(
+      user,
+      await repository.listByOwner(user.id),
+      await getCreditBalance(env.pure_link_db, user.id),
+      isCheckoutConfigured(env),
+      requestUrl.searchParams.get('purchase'),
+      nonce,
+    ), {}, { scriptNonce: nonce });
+  }
+
+  if (request.method === 'POST' && path === 'api/billing/checkout') {
+    if (!request.headers.get('origin') || !requireSameOrigin(request, env)) {
+      return json({ error: 'Invalid request origin.' }, { status: 403 });
+    }
+    const user = await getCurrentUser(request, env);
+    if (!user) return json({ error: '請先登入再購買 AI 公式額度。' }, { status: 401 });
+    return json(await createCheckout({ requestUrl, user, env }));
   }
 
   if (request.method === 'POST' && (path === 'api/links' || path === 'api/create')) {
     return createLink(request, requestUrl, repository, env, context);
+  }
+
+  if (request.method === 'POST' && path === 'api/formulas/generate') {
+    return generateFormula(request, env);
   }
 
   if (request.method === 'POST' && path === 'api/reports') {
@@ -168,6 +197,31 @@ async function createLink(request, requestUrl, repository, env, context) {
   }
 
   return json({ error: 'Could not allocate a unique link. Please try again.' }, { status: 503 });
+}
+
+async function generateFormula(request, env) {
+  if (!request.headers.get('origin') || !requireSameOrigin(request, env)) {
+    return json({ error: 'Invalid request origin.' }, { status: 403 });
+  }
+  const user = await getCurrentUser(request, env);
+  if (!user) {
+    return json({ error: '請先登入再使用公式生成。', loginUrl: '/auth/google?returnTo=%2F%23formula-ai' }, { status: 401 });
+  }
+
+  try {
+    const input = await readCreateInput(request);
+    return json(await generateFormulaDraft({
+      description: input.description,
+      userId: user.id,
+      db: env.pure_link_db,
+      ai: env.AI,
+      dailyLimit: Number(user.is_admin) === 1 ? 100 : 5,
+      isAdmin: Number(user.is_admin) === 1,
+    }));
+  } catch (error) {
+    if (error instanceof FormulaAiError) return json({ error: error.message }, { status: error.status });
+    throw error;
+  }
 }
 
 async function submitReport(request, requestUrl, env, context) {
