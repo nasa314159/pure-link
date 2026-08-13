@@ -38,7 +38,7 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'GET' && path === 'robots.txt') {
     return text('User-agent: *\nDisallow: /\n', { headers: { 'cache-control': 'public, max-age=3600' } });
   }
-  if (request.method === 'GET' && (path === 'privacy' || path === 'terms' || path === 'transparency')) {
+  if (request.method === 'GET' && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
     return html(renderLegalPage(path));
   }
 

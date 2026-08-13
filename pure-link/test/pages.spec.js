@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderCardPage, renderFormulaPage, renderHomePage, renderManagePage, renderReportPage } from '../src/pages.js';
+import { renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -82,6 +82,18 @@ describe('interactive pages', () => {
   it('shows the administrator formula allowance without changing regular accounts', () => {
     const html = renderHomePage('test-nonce', '', true, '', { id: 'admin-1', email: 'owner@example.com', is_admin: 1 });
     expect(html).toContain('每日 100 次（管理員）');
+  });
+
+  it('publishes review-ready AI credit and refund information in English', () => {
+    const credits = renderLegalPage('ai-credits');
+    const refunds = renderLegalPage('refund-policy');
+    expect(credits).toContain('<html lang="en">');
+    expect(credits).toContain('US$5 provides 300 AI formula generations');
+    expect(credits).toContain('not processed through Lemon Squeezy');
+    expect(credits).toContain('nasa3.14159@gmail.com');
+    expect(refunds).toContain('<html lang="en">');
+    expect(refunds).toContain('within 14 calendar days');
+    expect(refunds).toContain('Consumed credits are generally not refundable');
   });
 
   it('loads Turnstile as a regular deferred script', () => {

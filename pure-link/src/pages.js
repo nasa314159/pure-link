@@ -96,6 +96,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
     ? `<details class="formula-ai" id="formula-ai">
         <summary>✦ 用一句話生成公式 <span>每日 ${formulaAiLimit} 次${formulaAiLimit === 100 ? '（管理員）' : ''}</span></summary>
         <p>你的描述會傳送給 Cloudflare Workers AI；PureLink 不儲存描述或生成結果。AI 只會產生一個可編輯的 LaTeX 草稿，使用前請自行檢查。</p>
+        <p><a href="/ai-credits">AI credits, delivery and pricing</a></p>
         <label class="field-label" for="formula-ai-description">用自然語言描述公式</label>
         <div class="formula-ai-compose">
           <textarea id="formula-ai-description" maxlength="500" rows="3" placeholder="例如：質量 m 與能量 E 的質能等價關係"></textarea>
@@ -111,6 +112,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
     : `<details class="formula-ai" id="formula-ai">
         <summary>✦ 用一句話生成公式 <span>一般帳號每日 5 次</span></summary>
         <p>公式生成需要登入，以限制每人每日使用次數與控制公共服務成本。匿名建立、手動公式輸入與預覽仍完全免登入。</p>
+        <p><a href="/ai-credits">AI credits, delivery and pricing</a></p>
         ${googleAuthConfigured ? '<a class="google-link" href="/auth/google?returnTo=%2F%23formula-ai">使用 Google 登入後繼續</a>' : '<p>公式生成目前尚未開放。</p>'}
       </details>`;
   return documentShell({
@@ -253,7 +255,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
         <footer class="home-footer">
           <p>內容由建立者提供，不代表 PureLink 的立場、推薦或安全保證。</p>
-          <nav aria-label="服務資訊">${googleAuthConfigured ? '<a href="/account">我的 PureLink</a>' : ''}<a href="/privacy">隱私說明</a><a href="/terms">使用與內容規範</a><a href="/transparency">透明度</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">GitHub 原始碼</a></nav>
+          <nav aria-label="服務資訊">${googleAuthConfigured ? '<a href="/account">我的 PureLink</a>' : ''}<a href="/ai-credits">AI credits</a><a href="/refund-policy">Refund policy</a><a href="/privacy">隱私說明</a><a href="/terms">使用與內容規範</a><a href="/transparency">透明度</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">GitHub 原始碼</a></nav>
         </footer>
       </main>
     `,
@@ -678,7 +680,7 @@ export function renderLegalPage(page) {
         ['預覽不是安全認證', '網址後加上 + 會完整顯示目的地與建立者是否宣告推薦或分潤關係，幫助接收者自行判斷；這不是惡意網站掃描、法律審核或安全保證。'],
         ['處理與下架', '收到回報後，PureLink 可依風險、內容規範與適用法律限制存取或移除內容。回報本身不代表內容必然違規，也不會自動下架。'],
         ['服務狀態', 'PureLink 以盡力而為方式提供，可能因維護、成本、安全事件或不可抗力暫停。重要內容不應只保存在 PureLink。'],
-        ['支持方式', '基本成果希望任何人都能使用。自願贊助用於服務成本、後續學習與硬體開發，不會改變平台對內容的背書立場。未來若提供高風險或高成本的加密連結等付費功能，會另行清楚揭露條件。'],
+        ['支持與付費功能', '基本成果希望任何人都能使用。自願支持不附帶商品、AI 額度或平台特權，並與商品付款分開處理。AI 公式額度是清楚標價的一次性數位商品；價格、交付與退款條件公開於 AI credits 與 Refund policy 頁面。'],
       ],
     },
     transparency: {
@@ -693,12 +695,40 @@ export function renderLegalPage(page) {
         ['目前限制', '這是仍在驗證中的 MVP。自訂網域、正式監控、事件處理流程與定期透明度報告，會在正式上線前或依服務規模逐步完成。'],
       ],
     },
+    'ai-credits': {
+      lang: 'en',
+      eyebrow: 'AI FORMULA CREDITS',
+      title: 'More formula drafts, only when you need them.',
+      intro: 'PureLink is free to use. Optional one-time credit packs extend the AI-assisted formula feature without turning the core URL, formula, or card tools into a subscription.',
+      sections: [
+        ['What the product does', 'A signed-in customer can describe a mathematical expression in natural language and receive an editable LaTeX draft with an immediate visual preview. The result is never published automatically, may contain mistakes, and must be reviewed by the customer before use.'],
+        ['One-time plans', 'US$5 provides 300 AI formula generations. US$10 provides 800 generations. US$20 provides 2,000 generations. These are one-time purchases, not subscriptions. Taxes may be added at checkout when required.'],
+        ['Delivery', 'After a confirmed payment, credits are delivered automatically to the PureLink account that started checkout. Customers must be signed in before purchasing. The five free daily generations are used before purchased credits, and purchased credits are not shared between accounts.'],
+        ['Credit lifetime and limits', 'Purchased credits do not expire while PureLink continues to operate the AI formula service. They are non-transferable, have no cash value, and remain subject to a daily safety limit that protects accounts and the public service from automated abuse.'],
+        ['Payment boundary', 'Lemon Squeezy is used only to sell AI formula credit packs. Voluntary support for the open-source project is separate, does not grant credits or product benefits, and is not processed through Lemon Squeezy. Checkout will be enabled after payment-provider approval and integration testing.'],
+        ['Support', 'For purchase, delivery, or account questions, contact nasa3.14159@gmail.com. Include the email address used for your PureLink account and the order number, but never send a password, full card number, or Google credential.'],
+      ],
+    },
+    'refund-policy': {
+      lang: 'en',
+      eyebrow: 'REFUND POLICY',
+      title: 'A clear path when a purchase goes wrong.',
+      intro: 'This policy applies to one-time purchases of PureLink AI formula credits. It does not limit any mandatory consumer rights that apply in the customer’s country or region.',
+      sections: [
+        ['Unused credits', 'A customer may request a refund within 14 calendar days of purchase if none of the purchased credits have been used. Approved refunds are returned to the original payment method.'],
+        ['Delivery or technical failure', 'If a confirmed payment is not credited to the correct PureLink account, contact support so the order can be verified and delivered. If PureLink cannot deliver the purchased credits or the feature has a material unresolved defect, the customer may receive a full or proportionate refund as appropriate.'],
+        ['Credits already used', 'Consumed credits are generally not refundable because the digital service is delivered immediately when a generation is requested. Exceptions are made where required by law or where PureLink confirms that a charged generation failed because of the service.'],
+        ['How to request help', 'Email nasa3.14159@gmail.com with the order number, purchase date, PureLink account email, and a short description of the issue. Do not include card details or account passwords. PureLink aims to acknowledge requests within five business days.'],
+        ['Processing and abuse', 'Refunds are processed through the original payment provider and may take additional time to appear. Fraudulent use, resale, automation intended to bypass limits, or repeated abuse may result in credits being suspended while the transaction is reviewed.'],
+      ],
+    },
   };
   const content = pages[page] || pages.transparency;
   return documentShell({
     title: `${content.title} — PureLink`,
     description: content.intro,
     robots: 'index, follow',
+    lang: content.lang || 'zh-Hant',
     body: `
       <main class="page legal-page">
         <a class="wordmark" href="/">PureLink</a>
@@ -707,7 +737,8 @@ export function renderLegalPage(page) {
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
-          <p class="legal-updated">MVP 說明版本：2026-08-13</p>
+          <nav class="legal-nav" aria-label="PureLink policies"><a href="/">PureLink</a><a href="/ai-credits">AI credits</a><a href="/refund-policy">Refund policy</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/transparency">Transparency</a></nav>
+          <p class="legal-updated">${content.lang === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14'}</p>
         </article>
       </main>
     `,
@@ -879,14 +910,14 @@ export function renderNotFoundPage() {
   });
 }
 
-function documentShell({ title, description, body, robots = 'noindex, nofollow', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
+function documentShell({ title, description, body, robots = 'noindex, nofollow', lang = 'zh-Hant', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
   const scripts = [externalScript, ...externalScripts].filter(Boolean);
   const externalScriptMarkup = scripts.map((source) => source.startsWith('https://challenges.cloudflare.com/')
     ? `<script src="${escapeHtml(source)}" async defer></script>`
     : `<script type="module" src="${escapeHtml(source)}"></script>`).join('');
   return `<!doctype html>
-<html lang="zh-Hant">
+<html lang="${escapeHtml(lang)}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1026,6 +1057,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .quiet-button { margin-top: 1.25rem; border: 0; background: transparent; color: var(--muted); }
     .home-footer { padding-bottom: 3rem; color: var(--muted); font-size: .75rem; line-height: 1.6; }
     .home-footer nav { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .legal-nav { display: flex; flex-wrap: wrap; gap: .6rem 1rem; margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .78rem; }
     .wordmark { width: fit-content; margin-bottom: 1.2rem; text-decoration: none; font-weight: 750; }
     .panel { padding: clamp(1.4rem, 5vw, 3.5rem); border: 1px solid var(--line); border-radius: 2rem; background: var(--surface); box-shadow: 0 1.5rem 5rem rgba(35, 62, 50, .08); backdrop-filter: blur(18px); }
     .preview-panel h1 { max-width: none; font-size: clamp(2rem, 6vw, 4.5rem); overflow-wrap: anywhere; }

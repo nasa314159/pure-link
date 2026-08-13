@@ -29,11 +29,12 @@ describe('PureLink worker', () => {
     expect(body).toContain('href="/auth/google?returnTo=%2F"');
   });
 
-  it('serves privacy, terms, and transparency disclosures', async () => {
-    for (const path of ['privacy', 'terms', 'transparency']) {
+  it('serves privacy, terms, transparency, AI credit, and refund disclosures', async () => {
+    for (const path of ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy']) {
       const response = await worker.fetch(new Request(`https://pure.test/${path}`), env);
       expect(response.status).toBe(200);
-      expect(await response.text()).toContain('MVP 說明版本');
+      const body = await response.text();
+      expect(body).toMatch(/MVP 說明版本|Last updated/);
     }
   });
 
