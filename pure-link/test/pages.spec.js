@@ -51,6 +51,23 @@ describe('interactive pages', () => {
     const card = renderCardPage({ slug: 'kind', content: 'hello', theme: 'paper' });
     expect(formula).toContain('data-export-brand-toggle');
     expect(card).toContain('data-export-brand-toggle');
+    expect(formula).toContain('data-copy-link');
+    expect(formula).toContain('data-share-link');
+    expect(card).toContain('data-copy-link');
+    expect(card).toContain('data-share-link');
+    expect(formula).toContain('<meta name="robots" content="noindex, nofollow, noarchive">');
+    expect(card).toContain('<meta name="robots" content="noindex, nofollow, noarchive">');
+  });
+
+  it('publishes descriptive homepage SEO and social preview metadata', () => {
+    const html = renderHomePage('test-nonce');
+    expect(html).toContain('Privacy-friendly URL shortener and formula sharing');
+    expect(html).toContain('privacy-friendly URL shortener for clean short links');
+    expect(html).toContain('<meta name="robots" content="index, follow">');
+    expect(html).toContain('<link rel="canonical" href="https://no-no.uk/">');
+    expect(html).toContain('<meta property="og:image" content="https://no-no.uk/og.png">');
+    expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
+    expect(html).not.toContain('name="keywords"');
   });
 
   it('shows a clear retry path when an OAuth attempt expires', () => {

@@ -1,18 +1,21 @@
 # PureLink
 
-[no-no.uk](https://no-no.uk) · [GitHub](https://github.com/nasa314159/pure-link)
+**Just share.**<br>
+No ads. No needless data.
 
-PureLink 是一個安靜、簡潔、可被驗證其隱私承諾的分享工具。MVP 把三件事做好：
+[Use PureLink](https://no-no.uk) · [繁體中文版](docs/README.zh-Hant.md)
 
-- 短網址：接收者可在網址後加上 `+`，先看完整目的地與推薦／分潤揭露。
-- 公式：支援 LaTeX、常見 Unicode 數學輸入、文字混合公式、可自訂的本機快捷鍵、即時預覽、複製原始內容與下載 PNG；登入者可選擇以 Cloudflare Workers AI 將一句描述轉成可編輯 LaTeX 草稿。
-- 短文小卡：一段話、可選署名，以及紙白、薄霧、夜色三種主題。
+PureLink is a quiet, open-source sharing tool whose privacy promises can be inspected rather than merely trusted. Its MVP focuses on three things:
 
-任何人都能閱讀與建立。Auto 只提出內容類型建議，不會替使用者做不可見的決定。匿名建立者會收到唯一管理地址；PureLink 只保存憑證雜湊，因此遺失後無法找回。自願使用 Google 登入者可跨裝置管理主動連結的內容；匿名管理仍不要求登入。
+- **Short links:** recipients can append `+` to inspect the complete destination and any referral or affiliate disclosure before continuing.
+- **Formulas:** LaTeX and common Unicode math input, mixed text and formulas, browser-local custom shortcuts, live preview, source copying, and PNG export. Signed-in users may optionally turn a natural-language description into an editable LaTeX draft with Cloudflare Workers AI.
+- **Small cards:** one short message, an optional signature, and three quiet themes.
 
-## 本機執行
+Anyone can read and create without an account. Auto mode only suggests a content type; it never makes an invisible choice for the user. Anonymous creators receive a unique management URL. PureLink stores only its credential hash, so a lost anonymous credential cannot be recovered. Google sign-in is optional and exists only for cross-device management of content a user chooses to attach to an account.
 
-需求：Node.js 20+ 與 npm。
+## Run locally
+
+Requirements: Node.js 20+ and npm.
 
 ```sh
 npm install
@@ -20,13 +23,13 @@ npx wrangler d1 migrations apply pure-link-production --local
 npm run dev
 ```
 
-第一次建立本機資料庫時，也可用完整結構：
+For a new local database, the complete schema can also be applied directly:
 
 ```sh
 npx wrangler d1 execute pure-link-production --local --file schema.sql
 ```
 
-測試與部署前檢查：
+Checks before deployment:
 
 ```sh
 npm test -- --run
@@ -34,65 +37,67 @@ npm run assets:prepare
 npx wrangler deploy --dry-run
 ```
 
-`npm run assets:prepare` 會把 KaTeX 字型、樣式與 PNG 匯出程式整理到 `public/assets`。瀏覽器端不依賴 CDN。
+`npm run assets:prepare` bundles the self-hosted KaTeX assets and the browser-side PNG export code into `public/assets`. Content tools do not depend on a third-party CDN.
 
-## iOS 分享捷徑
+## iOS share shortcut
 
-第一版不開放能繞過 Turnstile 的匿名直寫 API。iPhone／iPad 捷徑可以從分享表單接收網址，將它做 URL 編碼後開啟：
+The first release does not expose an anonymous write API that could bypass Turnstile. An iPhone or iPad Shortcut can receive a URL from the share sheet, URL-encode it, and open:
 
 ```text
-https://no-no.uk/#url=[捷徑輸入]
+https://no-no.uk/#url=[Shortcut Input]
 ```
 
-PureLink 會自動把網址帶入建立頁，使用者仍能檢查目的地、選擇清理規則並親自確認建立。網址放在 `#` 後方，因此開啟頁面時不會先被當成伺服器查詢參數送出。
+PureLink fills the creation form while still letting the user inspect the destination, choose cleanup rules, and explicitly confirm creation. Because the URL is placed after `#`, it is not sent to the server as a query parameter when the page first opens.
 
-## 正式環境設定
+## Production configuration
 
-公開寫入採 fail-closed：缺少下列設定時，建立與檢舉 API 會回覆 503，而不是取消防護。
+Public writes fail closed. If required protection is missing, creation and reporting return `503` instead of silently disabling safeguards.
 
-- `TURNSTILE_SITE_KEY`：可公開的 Turnstile site key。
-- `TURNSTILE_SECRET_KEY`：使用 `wrangler secret put` 設定。
-- `RATE_LIMIT_SECRET`：至少 32 個隨機位元組，使用 `wrangler secret put` 設定。
-- `GOOGLE_CLIENT_ID`：Google OAuth 網頁應用程式用戶端 ID。
-- `GOOGLE_CLIENT_SECRET`：使用 `wrangler secret put` 設定。
-- Google OAuth 授權重新導向 URI：`https://no-no.uk/auth/google/callback`。
-- Workers AI binding：`AI`（已寫入 `wrangler.jsonc`，不需要把 API key 寫進專案）。
+- `TURNSTILE_SITE_KEY`: public Turnstile site key.
+- `TURNSTILE_SECRET_KEY`: set with `wrangler secret put`.
+- `RATE_LIMIT_SECRET`: at least 32 random bytes, set with `wrangler secret put`.
+- `GOOGLE_CLIENT_ID`: Google OAuth web client ID.
+- `GOOGLE_CLIENT_SECRET`: set with `wrangler secret put`.
+- Google OAuth redirect URI: `https://no-no.uk/auth/google/callback`.
+- Workers AI binding: `AI`, already declared in `wrangler.jsonc`; no API key belongs in the repository.
 
-請勿把真實密鑰提交到 Git。可複製 `.dev.vars.example` 為 `.dev.vars` 做本機設定。
+Never commit real secrets. Copy `.dev.vars.example` to `.dev.vars` for local development.
 
-## 隱私設計
+## Privacy design
 
-PureLink 的應用資料分成四類：
-
-| 類別 | 保存內容 | 用途／期限 |
+| Category | Stored data | Purpose / lifetime |
 | --- | --- | --- |
-| 分享內容 | 內容、類型、設定、狀態、時間、管理憑證雜湊 | 提供分享與匿名刪除 |
-| 每日統計 | 日期、動作、內容類型、國家代碼、總數 | 成本與使用狀況；沒有原始 IP 或個人歷程 |
-| 速率限制 | HMAC 短期代碼、次數、到期時間 | 阻止大量惡意寫入；到期後清除 |
-| 檢舉 | 類別、最少補充說明、狀態、時間 | 內容安全審查；不要求姓名或電子郵件 |
-| AI 每日額度 | 帳號、日期、當日次數 | 一般帳號每日最多 5 次，維運管理員 100 次；不保存描述或生成結果 |
+| Shared content | Content, type, settings, status, timestamps, and management-credential hash | Delivery and anonymous deletion |
+| Daily analytics | Date, action, content type, country code, and aggregate count | Cost and service health; no raw IP or personal browsing history |
+| Rate limiting | Short-lived HMAC identifier, count, and expiry | Prevent automated abuse; removed after expiry |
+| Reports | Category, minimal optional details, status, and timestamps | Content-safety review; no name or email required |
+| Daily AI allowance | Account, date, and count | Five daily generations for regular accounts and 100 for the operator; prompts and results are not stored |
 
-服務不投放行為廣告、不做跨站追蹤、不販售資料、不建立個人興趣檔案，也不把分享內容用於模型訓練。完整說明在網站的 `/privacy`、`/terms` 與 `/transparency`。
+PureLink does not serve behavioral advertising, track people across sites, sell data, build interest profiles, or train models on shared content. See [`/privacy`](https://no-no.uk/privacy), [`/terms`](https://no-no.uk/terms), and [`/transparency`](https://no-no.uk/transparency) for the complete public disclosures.
 
-## AI 額度與付款邊界
+## AI credits and payment boundary
 
-一般登入帳號每日仍有 5 次免費 AI 公式生成。預計提供的額外額度是一次性數位商品，不是訂閱：US$5／300 次、US$10／800 次、US$20／2,000 次。付款確認後才會自動加入發起結帳的 PureLink 帳號；免費額度先使用，購買額度在 AI 公式服務持續營運期間不過期。
+Signed-in accounts receive five free AI formula drafts per day. Optional extra credits are one-time digital purchases, not subscriptions: US$5 for 300, US$10 for 800, or US$20 for 2,000 generations. Credits are delivered only after confirmed payment, are tied to the account that started checkout, and do not expire while the AI formula service continues to operate.
 
-Creem 只處理 AI 公式額度商品，並作為這些交易的 merchant of record；它不處理沒有商品對價的自願支持。自願支持與 AI 額度在介面、帳務和公開說明中保持分離。正式購買功能會在商家審核、測試付款、簽章驗證、重複通知防護與退款流程完成後才啟用。公開商品與退款說明位於 `/ai-credits` 與 `/refund-policy`。
+Creem acts as merchant of record only for AI formula credit purchases. Voluntary open-source support is separate and grants no credits or product benefits. Public details are available at [`/ai-credits`](https://no-no.uk/ai-credits) and [`/refund-policy`](https://no-no.uk/refund-policy).
 
-## 專案結構
+## Project structure
 
-- `src/index.js`：路由與使用情境協調。
-- `src/content.js`：三種內容的驗證與正規化。
-- `src/repository.js`：D1 資料存取。
-- `src/abuse.js`：Turnstile 與隱私友善速率限制。
-- `src/analytics.js`：每日聚合統計。
-- `src/pages.js`：伺服器產生的公開介面與聲明頁。
-- `migrations/`：依序套用的 D1 結構變更。
-- `test/`：不需外部服務即可執行的單元與流程測試。
+- `src/index.js`: routing and use-case coordination.
+- `src/content.js`: validation and normalization for all three content types.
+- `src/repository.js`: D1 data access.
+- `src/abuse.js`: Turnstile and privacy-friendly rate limiting.
+- `src/analytics.js`: daily aggregate analytics.
+- `src/pages.js`: server-rendered public UI and disclosures.
+- `migrations/`: ordered D1 schema migrations.
+- `test/`: unit and workflow tests that run without external services.
 
-產品邊界與上線清單見 `docs/PRODUCT.md` 與 `docs/RELEASE_CHECKLIST.md`。
+Product boundaries and the release checklist live in [`docs/PRODUCT.md`](docs/PRODUCT.md) and [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md).
 
-## 開源授權
+## License
 
-PureLink 採用 [MIT License](LICENSE)。它允許任何人檢查、使用、修改與自行部署，條件是保留原始著作權與授權聲明。選擇 MIT 是為了讓個人、學校、社群與小型專案都能低摩擦地享受與延續成果。
+PureLink is released under the [MIT License](LICENSE), allowing people, schools, communities, and small projects to inspect, use, modify, and self-host it while retaining the copyright and license notice.
+
+---
+
+[閱讀繁體中文版](docs/README.zh-Hant.md)

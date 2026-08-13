@@ -19,6 +19,39 @@ document.querySelector('[data-copy-content]')?.addEventListener('click', async (
   }
 });
 
+document.querySelector('[data-copy-link]')?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  try {
+    await copyText(location.href);
+    setTemporaryLabel(button, '已複製連結');
+  } catch {
+    setTemporaryLabel(button, '無法複製');
+  }
+});
+
+document.querySelector('[data-share-link]')?.addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  if (!navigator.share) {
+    try {
+      await copyText(location.href);
+      setTemporaryLabel(button, '已複製連結');
+    } catch {
+      setTemporaryLabel(button, '無法分享');
+    }
+    return;
+  }
+
+  try {
+    await navigator.share({
+      title: document.title,
+      text: document.querySelector('meta[name="description"]')?.content || 'PureLink',
+      url: location.href,
+    });
+  } catch (error) {
+    if (error?.name !== 'AbortError') setTemporaryLabel(button, '無法分享');
+  }
+});
+
 document.querySelector('[data-download-png]')?.addEventListener('click', async (event) => {
   const button = event.currentTarget;
   const originalLabel = button.textContent;
@@ -55,4 +88,22 @@ function setTemporaryLabel(button, label) {
   const originalLabel = button.textContent;
   button.textContent = label;
   setTimeout(() => { button.textContent = originalLabel; }, 1600);
+}
+
+async function copyText(value) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const helper = document.createElement('textarea');
+  helper.value = value;
+  helper.setAttribute('readonly', '');
+  helper.style.position = 'fixed';
+  helper.style.opacity = '0';
+  document.body.append(helper);
+  helper.select();
+  const copied = document.execCommand('copy');
+  helper.remove();
+  if (!copied) throw new Error('Copy was rejected.');
 }
