@@ -116,8 +116,10 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         ${googleAuthConfigured ? '<a class="google-link" href="/auth/google?returnTo=%2F%23formula-ai">使用 Google 登入後繼續</a>' : '<p>公式生成目前尚未開放。</p>'}
       </details>`;
   return documentShell({
-    title: 'PureLink — 安靜地分享',
-    description: '以簡潔、尊重隱私的方式分享網址、數學公式或一張短文小卡。',
+    title: 'PureLink — Privacy-friendly URL shortener and formula sharing',
+    description: 'Shorten links without ads or needless tracking, share readable LaTeX formulas, and create quiet note cards with PureLink.',
+    robots: 'index, follow',
+    canonicalPath: '/',
     body: `
       ${accountEntry}
       <main class="home creator-home">
@@ -125,6 +127,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           <p class="eyebrow">PURELINK</p>
           <h1>Just share.</h1>
           <p class="lede">No ads. No needless data.</p>
+          <p class="hero-summary">A privacy-friendly URL shortener for clean short links, readable LaTeX formula sharing, and quiet note cards.</p>
         </header>
 
         <section class="quick-open" aria-labelledby="quick-open-title">
@@ -522,6 +525,7 @@ export function renderFormulaPage(link) {
     title: 'Formula — PureLink',
     description: 'A formula shared with PureLink.',
     robots: 'noindex, nofollow, noarchive',
+    canonicalPath: `/${link.slug}`,
     body: `
       <main class="page">
         <a class="wordmark" href="/">PureLink</a>
@@ -534,6 +538,8 @@ export function renderFormulaPage(link) {
           <div class="content-actions">
             <button class="secondary-button" type="button" data-copy-content>複製原始內容</button>
             <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-formula.png">下載 PNG</button>
+            <button class="secondary-button" type="button" data-copy-link>複製連結</button>
+            <button class="secondary-button" type="button" data-share-link>分享</button>
           </div>
           <details class="source-details">
             <summary>查看原始輸入（LaTeX／Unicode）</summary>
@@ -555,6 +561,7 @@ export function renderCardPage(link) {
     title: 'A small card — PureLink',
     description: 'A small card shared with PureLink.',
     robots: 'noindex, nofollow, noarchive',
+    canonicalPath: `/${link.slug}`,
     body: `
       <main class="page card-page theme-${escapeHtml(link.theme || 'paper')}">
         <a class="wordmark" href="/">PureLink</a>
@@ -568,6 +575,8 @@ export function renderCardPage(link) {
           <div class="content-actions">
             <button class="secondary-button" type="button" data-copy-content>複製文字</button>
             <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-card.png">下載 PNG</button>
+            <button class="secondary-button" type="button" data-copy-link>複製連結</button>
+            <button class="secondary-button" type="button" data-share-link>分享</button>
           </div>
           <textarea id="raw-content" hidden>${escapeHtml(link.content)}</textarea>
           <p class="notice">${escapeHtml(PLATFORM_NOTICE)}</p>
@@ -728,6 +737,7 @@ export function renderLegalPage(page) {
     title: `${content.title} — PureLink`,
     description: content.intro,
     robots: 'index, follow',
+    canonicalPath: `/${page}`,
     lang: content.lang || 'zh-Hant',
     body: `
       <main class="page legal-page">
@@ -948,9 +958,11 @@ export function renderNotFoundPage() {
   });
 }
 
-function documentShell({ title, description, body, robots = 'noindex, nofollow', lang = 'zh-Hant', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
+function documentShell({ title, description, body, robots = 'noindex, nofollow', lang = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
   const scripts = [externalScript, ...externalScripts].filter(Boolean);
+  const canonicalUrl = canonicalPath ? `https://no-no.uk${canonicalPath}` : '';
+  const canonicalMarkup = canonicalUrl ? `<link rel="canonical" href="${escapeHtml(canonicalUrl)}">` : '';
   const externalScriptMarkup = scripts.map((source) => source.startsWith('https://challenges.cloudflare.com/')
     ? `<script src="${escapeHtml(source)}" async defer></script>`
     : `<script type="module" src="${escapeHtml(source)}"></script>`).join('');
@@ -961,7 +973,22 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="${escapeHtml(description)}">
   <meta name="robots" content="${escapeHtml(robots)}">
+  <meta name="theme-color" content="#e9f3eb">
+  <meta property="og:site_name" content="PureLink">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:image" content="https://no-no.uk/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  ${canonicalUrl ? `<meta property="og:url" content="${escapeHtml(canonicalUrl)}">` : ''}
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(title)}">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  <meta name="twitter:image" content="https://no-no.uk/og.png">
   <title>${escapeHtml(title)}</title>
+  ${canonicalMarkup}
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/assets/katex/katex.min.css">
   <style>
     :root { color-scheme: light; --ink: #17231f; --muted: #65716b; --line: #dce3df; --paper: #f7f8f5; --surface: rgba(255,255,255,.88); --green: #235c48; }
@@ -982,6 +1009,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .account-entry a { display: inline-flex; align-items: center; justify-content: center; min-height: 2.7rem; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.9); box-shadow: 0 .65rem 2rem rgba(35,62,50,.1); color: var(--ink); text-decoration: none; font-size: .82rem; font-weight: 750; backdrop-filter: blur(18px); }
     .account-entry a:hover, .account-entry a:focus-visible { border-color: var(--green); background: white; }
     .hero { padding-top: 3rem; }
+    .hero-summary { max-width: 42rem; margin: 1rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.65; }
     .quick-open { width: 100%; padding: 1.1rem; border: 1px solid rgba(35,92,72,.2); border-radius: 1.45rem; background: rgba(255,255,255,.72); box-shadow: 0 1rem 3rem rgba(35,62,50,.07); backdrop-filter: blur(18px); }
     .quick-open-heading { display: flex; align-items: baseline; gap: .9rem; margin-bottom: .75rem; }
     .quick-open-heading .eyebrow { margin: 0; }
