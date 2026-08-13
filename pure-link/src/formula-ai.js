@@ -1,6 +1,7 @@
 import { ValidationError } from './content.js';
 
 export const FORMULA_AI_DAILY_LIMIT = 5;
+export const FORMULA_AI_ADMIN_DAILY_LIMIT = 100;
 export const FORMULA_AI_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_LATEX_LENGTH = 2000;
@@ -13,8 +14,9 @@ export class FormulaAiError extends Error {
   }
 }
 
-export async function generateFormulaDraft({ description, userId, db, ai }) {
+export async function generateFormulaDraft({ description, userId, db, ai, dailyLimit = FORMULA_AI_DAILY_LIMIT }) {
   const prompt = normalizeDescription(description);
+  const limit = Math.min(FORMULA_AI_ADMIN_DAILY_LIMIT, Math.max(1, Number(dailyLimit) || FORMULA_AI_DAILY_LIMIT));
   if (!db || !ai || typeof ai.run !== 'function') {
     throw new FormulaAiError('公式生成目前無法使用，請稍後再試。', 503);
   }
@@ -28,9 +30,9 @@ export async function generateFormulaDraft({ description, userId, db, ai }) {
       updated_at = CURRENT_TIMESTAMP
     WHERE formula_ai_daily_usage.request_count < ?
     RETURNING request_count
-  `).bind(userId, FORMULA_AI_DAILY_LIMIT).first();
+  `).bind(userId, limit).first();
 
-  if (!usage) throw new FormulaAiError('今天的 5 次公式生成額度已用完，請明天再試。', 429);
+  if (!usage) throw new FormulaAiError(`今天的 ${limit} 次公式生成額度已用完，請明天再試。`, 429);
 
   let result;
   try {
@@ -66,7 +68,8 @@ export async function generateFormulaDraft({ description, userId, db, ai }) {
   const latex = extractLatex(result);
   return {
     latex,
-    remaining: Math.max(0, FORMULA_AI_DAILY_LIMIT - Number(usage.request_count || 0)),
+    remaining: Math.max(0, limit - Number(usage.request_count || 0)),
+    limit,
     provider: 'Cloudflare Workers AI',
     model: 'llama-3.1-8b-instruct-fast',
   };
@@ -96,7 +99,7 @@ export function extractLatex(result) {
   if (latex.startsWith('$$') && latex.endsWith('$$')) latex = latex.slice(2, -2).trim();
   else if (latex.startsWith('$') && latex.endsWith('$')) latex = latex.slice(1, -1).trim();
 
-  if (!latex || latex.length > MAX_LATEX_LENGTH || /[<>]|```/.test(latex)) {
+  if (!latex || latex.length > MAX_LATEX_LENGTH || /<\/?[A-Za-z][^>]*>|```/.test(latex)) {
     throw new FormulaAiError('AI 沒有回傳可安全編輯的單一 LaTeX 公式，請換一種描述再試。');
   }
   return latex;

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   FORMULA_AI_DAILY_LIMIT,
+  FORMULA_AI_ADMIN_DAILY_LIMIT,
   FORMULA_AI_MODEL,
   FormulaAiError,
   extractLatex,
@@ -18,7 +19,21 @@ describe('formula AI', () => {
   it('extracts a single editable LaTeX expression and rejects markup', () => {
     expect(extractLatex({ response: { latex: 'E=mc^2' } })).toBe('E=mc^2');
     expect(extractLatex({ response: '{"latex":"$$\\\\frac{a}{b}$$"}' })).toBe('\\frac{a}{b}');
+    expect(extractLatex({ response: { latex: 'x < y' } })).toBe('x < y');
     expect(() => extractLatex({ response: { latex: '<script>alert(1)</script>' } })).toThrow(FormulaAiError);
+  });
+
+  it('gives an administrator a capped 100-attempt allowance', async () => {
+    const db = new UsageDb();
+    const ai = { run: vi.fn().mockResolvedValue({ response: { latex: 'x<y' } }) };
+    const result = await generateFormulaDraft({
+      description: 'x is less than y',
+      userId: 'admin-1',
+      db,
+      ai,
+      dailyLimit: FORMULA_AI_ADMIN_DAILY_LIMIT,
+    });
+    expect(result).toMatchObject({ latex: 'x<y', limit: 100, remaining: 99 });
   });
 
   it('uses the Cloudflare model without storing the prompt or result in D1', async () => {
@@ -69,7 +84,8 @@ class UsageDb {
         return {
           async first() {
             if (!sql.includes('INSERT INTO formula_ai_daily_usage')) return null;
-            if (db.count >= FORMULA_AI_DAILY_LIMIT) return null;
+            const requestedLimit = Number(values[1]) || FORMULA_AI_DAILY_LIMIT;
+            if (db.count >= requestedLimit) return null;
             db.count += 1;
             return { request_count: db.count };
           },

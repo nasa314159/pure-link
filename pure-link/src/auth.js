@@ -18,7 +18,7 @@ export async function getCurrentUser(request, env) {
   if (!token || !env.pure_link_db) return null;
   const tokenHash = await hashManagementToken(token);
   const row = await env.pure_link_db.prepare(`
-    SELECT users.id, users.email, users.display_name, users.avatar_url
+    SELECT users.id, users.email, users.display_name, users.avatar_url, users.is_admin
     FROM user_sessions
     JOIN users ON users.id = user_sessions.user_id
     WHERE user_sessions.token_hash = ? AND user_sessions.expires_at > CURRENT_TIMESTAMP

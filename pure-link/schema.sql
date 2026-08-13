@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL,
     display_name TEXT NOT NULL,
     avatar_url TEXT,
+    is_admin INTEGER NOT NULL DEFAULT 0 CHECK (is_admin IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -82,7 +83,7 @@ ON links(owner_user_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS formula_ai_daily_usage (
     user_id TEXT NOT NULL,
     usage_date TEXT NOT NULL,
-    request_count INTEGER NOT NULL DEFAULT 0 CHECK (request_count >= 0 AND request_count <= 5),
+    request_count INTEGER NOT NULL DEFAULT 0 CHECK (request_count >= 0 AND request_count <= 100),
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, usage_date),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

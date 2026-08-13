@@ -91,9 +91,10 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
   const accountEntry = googleAuthConfigured
     ? `<nav class="account-entry" aria-label="帳戶"><a href="${user ? '/account' : '/auth/google?returnTo=%2F'}"${user ? '' : ' aria-label="使用 Google 登入"'}>${user ? '我的 PureLink' : '登入'}</a></nav>`
     : '';
+  const formulaAiLimit = Number(user?.is_admin) === 1 ? 100 : 5;
   const formulaAiPanel = user
     ? `<details class="formula-ai" id="formula-ai">
-        <summary>✦ 用一句話生成公式 <span>每日 5 次</span></summary>
+        <summary>✦ 用一句話生成公式 <span>每日 ${formulaAiLimit} 次${formulaAiLimit === 100 ? '（管理員）' : ''}</span></summary>
         <p>你的描述會傳送給 Cloudflare Workers AI；PureLink 不儲存描述或生成結果。AI 只會產生一個可編輯的 LaTeX 草稿，使用前請自行檢查。</p>
         <label class="field-label" for="formula-ai-description">用自然語言描述公式</label>
         <div class="formula-ai-compose">
@@ -108,7 +109,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         </section>
       </details>`
     : `<details class="formula-ai" id="formula-ai">
-        <summary>✦ 用一句話生成公式 <span>每日 5 次</span></summary>
+        <summary>✦ 用一句話生成公式 <span>一般帳號每日 5 次</span></summary>
         <p>公式生成需要登入，以限制每人每日使用次數與控制公共服務成本。匿名建立、手動公式輸入與預覽仍完全免登入。</p>
         ${googleAuthConfigured ? '<a class="google-link" href="/auth/google?returnTo=%2F%23formula-ai">使用 Google 登入後繼續</a>' : '<p>公式生成目前尚未開放。</p>'}
       </details>`;
@@ -663,7 +664,7 @@ export function renderLegalPage(page) {
         ['最低限度統計', '只按日期、功能類型與國家或地區代碼累加總數，用來估計人數、成本與服務狀況；不保存原始 IP，也不建立個人瀏覽歷程。未知地區統一記為 ZZ。'],
         ['防止濫用', '公開寫入會使用 Turnstile 驗證，並以原始 IP、時間窗與伺服器密鑰產生不可逆的短期速率限制代碼。代碼只用於限制惡意大量請求，逾期後清除。'],
         ['自願登入', '完全不登入仍可建立與管理匿名內容。若你自願使用 Google 登入，PureLink 會保存 Google 提供的穩定帳號識別碼、電子郵件、顯示名稱，以及登入工作階段的不可逆雜湊，用來跨裝置顯示你主動連結的內容；不保存 Google 密碼或長期存取權杖。'],
-        ['可選的 AI 公式生成', '登入使用者可每日最多使用 5 次公式生成。你輸入的描述會傳送給 Cloudflare Workers AI，用來產生一個 LaTeX 草稿；PureLink 只在資料庫保存帳號、日期與當日次數，不保存描述或生成結果。AI 結果可能有誤，使用者必須先檢查與編輯。'],
+        ['可選的 AI 公式生成', '一般登入使用者可每日最多使用 5 次公式生成；維運管理員的測試上限為 100 次。你輸入的描述會傳送給 Cloudflare Workers AI，用來產生一個 LaTeX 草稿；PureLink 只在資料庫保存帳號、日期與當日次數，不保存描述或生成結果。AI 結果可能有誤，使用者必須先檢查與編輯。'],
         ['我們刻意不做的事', '不販售資料、不投放行為廣告、不做跨站追蹤、不建立個人興趣檔案，也不把使用內容拿去訓練模型。瀏覽器與網路供應商仍會在傳輸請求時接觸必要的網路資料。'],
         ['刪除與聯絡', '匿名建立者可用管理地址永久刪除內容；遺失管理憑證時無法驗證建立者身分。若內容涉及安全、隱私或權利問題，可從內容頁使用回報功能。'],
       ],

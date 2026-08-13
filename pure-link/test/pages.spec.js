@@ -79,6 +79,11 @@ describe('interactive pages', () => {
     expect(html).toContain('PureLink 不儲存描述或生成結果');
   });
 
+  it('shows the administrator formula allowance without changing regular accounts', () => {
+    const html = renderHomePage('test-nonce', '', true, '', { id: 'admin-1', email: 'owner@example.com', is_admin: 1 });
+    expect(html).toContain('每日 100 次（管理員）');
+  });
+
   it('loads Turnstile as a regular deferred script', () => {
     const html = renderHomePage('test-nonce', 'site-key');
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');

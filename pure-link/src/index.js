@@ -191,6 +191,7 @@ async function generateFormula(request, env) {
       userId: user.id,
       db: env.pure_link_db,
       ai: env.AI,
+      dailyLimit: Number(user.is_admin) === 1 ? 100 : 5,
     }));
   } catch (error) {
     if (error instanceof FormulaAiError) return json({ error: error.message }, { status: error.status });
