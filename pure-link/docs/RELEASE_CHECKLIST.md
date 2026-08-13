@@ -28,6 +28,7 @@
 - [ ] 在 Creem 測試模式建立 300 次額度商品，設定測試 API key 與 webhook secret。
 - [ ] 將 Creem 測試 webhook 指向 `/api/webhooks/creem`，驗證付款、重送、退款與爭議事件。
 - [ ] Creem 商家審核通過後，再設定正式 API key、正式 webhook secret，並啟用正式結帳。
+- [ ] 確認 Creem 顯示 Live payments enabled 後，才將 `CREEM_LIVE_CHECKOUT_ENABLED` 設為 `true`。
 
 ## C. 發布順序
 

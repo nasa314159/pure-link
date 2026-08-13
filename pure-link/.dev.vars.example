@@ -8,3 +8,4 @@ CREEM_API_KEY=replace-with-creem-test-api-key
 CREEM_WEBHOOK_SECRET=replace-with-creem-test-webhook-secret
 CREEM_API_BASE=https://test-api.creem.io
 CREEM_PRODUCT_300_ID=replace-with-creem-test-product-id
+CREEM_LIVE_CHECKOUT_ENABLED=false

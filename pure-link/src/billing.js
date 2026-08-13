@@ -14,7 +14,8 @@ export class BillingError extends Error {
 }
 
 export function isCheckoutConfigured(env) {
-  return Boolean(env.CREEM_API_KEY && env.CREEM_WEBHOOK_SECRET && configuredProductId(env));
+  return env.CREEM_LIVE_CHECKOUT_ENABLED === 'true'
+    && Boolean(env.CREEM_API_KEY && env.CREEM_WEBHOOK_SECRET && configuredProductId(env));
 }
 
 export async function getCreditBalance(db, userId) {
@@ -30,7 +31,7 @@ export async function getCreditBalance(db, userId) {
 export async function createCheckout({ requestUrl, user, env, fetchImplementation = fetch }) {
   const apiKey = String(env.CREEM_API_KEY || '');
   const productId = configuredProductId(env);
-  if (!apiKey || !env.CREEM_WEBHOOK_SECRET || !productId) throw new BillingError('AI 額度結帳目前尚未開放。', 503);
+  if (!isCheckoutConfigured(env)) throw new BillingError('AI 額度結帳目前尚未開放。', 503);
 
   const requestId = crypto.randomUUID();
   await env.pure_link_db.prepare(`
