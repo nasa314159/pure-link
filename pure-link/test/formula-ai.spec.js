@@ -33,7 +33,11 @@ describe('formula AI', () => {
     });
 
     expect(result).toMatchObject({ latex: '\\nabla^2\\psi=0', remaining: 4, provider: 'Cloudflare Workers AI' });
-    expect(ai.run).toHaveBeenCalledWith(FORMULA_AI_MODEL, expect.objectContaining({ max_tokens: 512, temperature: 0.1 }));
+    expect(ai.run).toHaveBeenCalledWith(FORMULA_AI_MODEL, expect.objectContaining({
+      max_tokens: 512,
+      temperature: 0.1,
+      response_format: expect.objectContaining({ type: 'json_schema' }),
+    }));
     expect(db.boundValues.flat()).not.toContain('the Laplace equation for psi');
     expect(db.boundValues.flat()).not.toContain('\\nabla^2\\psi=0');
   });

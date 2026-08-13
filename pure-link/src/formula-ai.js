@@ -1,7 +1,7 @@
 import { ValidationError } from './content.js';
 
 export const FORMULA_AI_DAILY_LIMIT = 5;
-export const FORMULA_AI_MODEL = '@cf/openai/gpt-oss-20b';
+export const FORMULA_AI_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_LATEX_LENGTH = 2000;
 
@@ -47,6 +47,15 @@ export async function generateFormulaDraft({ description, userId, db, ai }) {
         },
         { role: 'user', content: prompt },
       ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          type: 'object',
+          properties: { latex: { type: 'string' } },
+          required: ['latex'],
+          additionalProperties: false,
+        },
+      },
       max_tokens: 512,
       temperature: 0.1,
     });
@@ -59,7 +68,7 @@ export async function generateFormulaDraft({ description, userId, db, ai }) {
     latex,
     remaining: Math.max(0, FORMULA_AI_DAILY_LIMIT - Number(usage.request_count || 0)),
     provider: 'Cloudflare Workers AI',
-    model: 'gpt-oss-20b',
+    model: 'llama-3.1-8b-instruct-fast',
   };
 }
 
