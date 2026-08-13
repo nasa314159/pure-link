@@ -4,6 +4,7 @@ import { enforceWriteProtection } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text } from './http.js';
 import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNotFoundPage, renderReportPage, renderUrlPreview } from './pages.js';
+import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
@@ -60,6 +61,10 @@ export async function routeRequest(request, env, context) {
 
   if (request.method === 'POST' && (path === 'api/links' || path === 'api/create')) {
     return createLink(request, requestUrl, repository, env, context);
+  }
+
+  if (request.method === 'POST' && path === 'api/formulas/generate') {
+    return generateFormula(request, env);
   }
 
   if (request.method === 'POST' && path === 'api/reports') {
@@ -168,6 +173,29 @@ async function createLink(request, requestUrl, repository, env, context) {
   }
 
   return json({ error: 'Could not allocate a unique link. Please try again.' }, { status: 503 });
+}
+
+async function generateFormula(request, env) {
+  if (!request.headers.get('origin') || !requireSameOrigin(request, env)) {
+    return json({ error: 'Invalid request origin.' }, { status: 403 });
+  }
+  const user = await getCurrentUser(request, env);
+  if (!user) {
+    return json({ error: '請先登入再使用公式生成。', loginUrl: '/auth/google?returnTo=%2F%23formula-ai' }, { status: 401 });
+  }
+
+  try {
+    const input = await readCreateInput(request);
+    return json(await generateFormulaDraft({
+      description: input.description,
+      userId: user.id,
+      db: env.pure_link_db,
+      ai: env.AI,
+    }));
+  } catch (error) {
+    if (error instanceof FormulaAiError) return json({ error: error.message }, { status: error.status });
+    throw error;
+  }
 }
 
 async function submitReport(request, requestUrl, env, context) {

@@ -10,8 +10,16 @@ const customLatex = document.getElementById('custom-formula-latex');
 const customList = document.getElementById('custom-formula-list');
 const customStatus = document.getElementById('custom-formula-status');
 const customAdd = document.getElementById('add-custom-formula');
+const aiDescription = document.getElementById('formula-ai-description');
+const aiGenerate = document.getElementById('generate-formula-ai');
+const aiStatus = document.getElementById('formula-ai-status');
+const aiResult = document.getElementById('formula-ai-result');
+const aiPreview = document.getElementById('formula-ai-preview');
+const aiSource = document.getElementById('formula-ai-source');
+const aiUse = document.getElementById('use-formula-ai');
 const customStorageKey = 'purelink:formula-shortcuts:v1';
 const customShortcutLimit = 24;
+let generatedLatex = '';
 
 if (input && preview && rendered) {
   input.addEventListener('input', renderPreview);
@@ -31,7 +39,61 @@ if (input && preview && rendered) {
     });
   });
   initializeCustomShortcuts();
+  initializeFormulaAi();
   renderPreview();
+}
+
+function initializeFormulaAi() {
+  if (!aiDescription || !aiGenerate || !aiStatus || !aiResult || !aiPreview || !aiSource || !aiUse) return;
+
+  aiGenerate.addEventListener('click', generateFormula);
+  aiDescription.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') generateFormula();
+  });
+  aiUse.addEventListener('click', () => {
+    if (!generatedLatex) return;
+    insertAtSelection(generatedLatex, 0);
+    setAiStatus('已插入主公式輸入框；請在右側預覽檢查後再建立。');
+  });
+}
+
+async function generateFormula() {
+  const description = aiDescription.value.trim();
+  if (!description) return setAiStatus('請先用一句話描述要產生的公式。', true);
+
+  aiGenerate.disabled = true;
+  aiGenerate.textContent = '生成中…';
+  aiResult.hidden = true;
+  setAiStatus('正在產生可編輯的 LaTeX 草稿…');
+  try {
+    const response = await fetch('/api/formulas/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || '公式生成失敗，請稍後再試。');
+
+    generatedLatex = payload.latex;
+    aiPreview.replaceChildren();
+    appendMath(aiPreview, generatedLatex, true);
+    aiSource.textContent = generatedLatex;
+    aiResult.hidden = false;
+    setAiStatus(`草稿已生成。今日還可使用 ${payload.remaining} 次；不會自動發布。`);
+  } catch (error) {
+    generatedLatex = '';
+    setAiStatus(error.message, true);
+  } finally {
+    aiGenerate.disabled = false;
+    aiGenerate.textContent = '生成草稿';
+  }
+}
+
+function setAiStatus(message, isError = false) {
+  if (!aiStatus) return;
+  aiStatus.textContent = message;
+  aiStatus.hidden = false;
+  aiStatus.dataset.error = String(isError);
 }
 
 function initializeCustomShortcuts() {

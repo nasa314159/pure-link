@@ -29,6 +29,8 @@ describe('interactive pages', () => {
     expect(html).toContain('data-formula-insert="\\hat{H}"');
     expect(html).toContain('id="custom-formula-list"');
     expect(html).toContain('只儲存在這個瀏覽器，不會上傳到 PureLink');
+    expect(html).toContain('id="formula-ai"');
+    expect(html).toContain('公式生成需要登入');
     expect(html).not.toContain('>微積分</button>');
     expect(html).not.toContain('>分數</button>');
     expect(html).toContain('/assets/formula-editor.js');
@@ -66,6 +68,15 @@ describe('interactive pages', () => {
     expect(signedIn).toContain('href="/account"');
     expect(signedIn).toContain('>我的 PureLink</a>');
     expect(signedIn).not.toContain('href="/auth/google?returnTo=%2F"');
+  });
+
+  it('shows the signed-in formula AI editor with a privacy disclosure', () => {
+    const html = renderHomePage('test-nonce', '', true, '', { id: 'user-1', email: 'person@example.com' });
+    expect(html).toContain('id="formula-ai-description"');
+    expect(html).toContain('id="generate-formula-ai"');
+    expect(html).toContain('id="use-formula-ai"');
+    expect(html).toContain('Cloudflare Workers AI');
+    expect(html).toContain('PureLink 不儲存描述或生成結果');
   });
 
   it('loads Turnstile as a regular deferred script', () => {

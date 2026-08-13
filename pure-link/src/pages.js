@@ -91,6 +91,27 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
   const accountEntry = googleAuthConfigured
     ? `<nav class="account-entry" aria-label="帳戶"><a href="${user ? '/account' : '/auth/google?returnTo=%2F'}"${user ? '' : ' aria-label="使用 Google 登入"'}>${user ? '我的 PureLink' : '登入'}</a></nav>`
     : '';
+  const formulaAiPanel = user
+    ? `<details class="formula-ai" id="formula-ai">
+        <summary>✦ 用一句話生成公式 <span>每日 5 次</span></summary>
+        <p>你的描述會傳送給 Cloudflare Workers AI；PureLink 不儲存描述或生成結果。AI 只會產生一個可編輯的 LaTeX 草稿，使用前請自行檢查。</p>
+        <label class="field-label" for="formula-ai-description">用自然語言描述公式</label>
+        <div class="formula-ai-compose">
+          <textarea id="formula-ai-description" maxlength="500" rows="3" placeholder="例如：質量 m 與能量 E 的質能等價關係"></textarea>
+          <button type="button" id="generate-formula-ai">生成草稿</button>
+        </div>
+        <p class="formula-ai-status" id="formula-ai-status" role="status" hidden></p>
+        <section class="formula-ai-result" id="formula-ai-result" aria-label="AI 公式草稿" hidden>
+          <div id="formula-ai-preview" class="formula-ai-preview"></div>
+          <code id="formula-ai-source"></code>
+          <button type="button" class="secondary-button" id="use-formula-ai">插入公式輸入框</button>
+        </section>
+      </details>`
+    : `<details class="formula-ai" id="formula-ai">
+        <summary>✦ 用一句話生成公式 <span>每日 5 次</span></summary>
+        <p>公式生成需要登入，以限制每人每日使用次數與控制公共服務成本。匿名建立、手動公式輸入與預覽仍完全免登入。</p>
+        ${googleAuthConfigured ? '<a class="google-link" href="/auth/google?returnTo=%2F%23formula-ai">使用 Google 登入後繼續</a>' : '<p>公式生成目前尚未開放。</p>'}
+      </details>`;
   return documentShell({
     title: 'PureLink — 安靜地分享',
     description: '以簡潔、尊重隱私的方式分享網址、數學公式或一張短文小卡。',
@@ -155,6 +176,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
             <div class="formula-tools" id="formula-tools" hidden>
               <div class="formula-tool-heading"><strong>數學快捷輸入</strong><span>每個按鍵只插入 LaTeX；右側會立即預覽。</span></div>
+              ${formulaAiPanel}
               ${renderFormulaShortcutPalette()}
               <details class="custom-formula-shortcuts">
                 <summary>＋ 自訂公式快捷鍵</summary>
@@ -441,6 +463,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       });
 
       const shortcutInput = new URLSearchParams(location.hash.slice(1)).get('url');
+      const openFormulaAi = location.hash === '#formula-ai';
       selectType('url');
       if (shortcutInput) {
         content.value = shortcutInput;
@@ -448,6 +471,11 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         updateSuggestion();
         history.replaceState(null, '', location.pathname + location.search);
         content.focus();
+      } else if (openFormulaAi) {
+        selectType('formula');
+        const formulaAi = document.getElementById('formula-ai');
+        if (formulaAi) formulaAi.open = true;
+        document.getElementById('formula-ai-description')?.focus();
       }
     `,
     nonce,
@@ -635,6 +663,7 @@ export function renderLegalPage(page) {
         ['最低限度統計', '只按日期、功能類型與國家或地區代碼累加總數，用來估計人數、成本與服務狀況；不保存原始 IP，也不建立個人瀏覽歷程。未知地區統一記為 ZZ。'],
         ['防止濫用', '公開寫入會使用 Turnstile 驗證，並以原始 IP、時間窗與伺服器密鑰產生不可逆的短期速率限制代碼。代碼只用於限制惡意大量請求，逾期後清除。'],
         ['自願登入', '完全不登入仍可建立與管理匿名內容。若你自願使用 Google 登入，PureLink 會保存 Google 提供的穩定帳號識別碼、電子郵件、顯示名稱，以及登入工作階段的不可逆雜湊，用來跨裝置顯示你主動連結的內容；不保存 Google 密碼或長期存取權杖。'],
+        ['可選的 AI 公式生成', '登入使用者可每日最多使用 5 次公式生成。你輸入的描述會傳送給 Cloudflare Workers AI，用來產生一個 LaTeX 草稿；PureLink 只在資料庫保存帳號、日期與當日次數，不保存描述或生成結果。AI 結果可能有誤，使用者必須先檢查與編輯。'],
         ['我們刻意不做的事', '不販售資料、不投放行為廣告、不做跨站追蹤、不建立個人興趣檔案，也不把使用內容拿去訓練模型。瀏覽器與網路供應商仍會在傳輸請求時接觸必要的網路資料。'],
         ['刪除與聯絡', '匿名建立者可用管理地址永久刪除內容；遺失管理憑證時無法驗證建立者身分。若內容涉及安全、隱私或權利問題，可從內容頁使用回報功能。'],
       ],
@@ -658,6 +687,7 @@ export function renderLegalPage(page) {
       sections: [
         ['目前的資料邊界', '內容資料庫保存分享內容、設定與匿名管理雜湊；自願登入者另保存最低限度 Google 帳號資料與工作階段雜湊；統計資料庫只保存每日聚合數字；速率限制只保存短期不可逆代碼；檢舉不要求姓名或電子郵件。'],
         ['人類驗證的定位', 'Turnstile 只保護建立與檢舉等公開寫入，不阻擋一般人閱讀內容。它是防止機器大量濫用的安全措施，不是建立會員身分或追蹤閱讀者。'],
+        ['AI 公式生成的邊界', '公式描述只在使用者主動按下生成時送往 Cloudflare Workers AI。PureLink 不儲存提示或回覆，只保存每日使用次數；草稿不會自動發布，必須由使用者插入、檢查後再建立 PureLink。'],
         ['開源與驗證', '正式發布時將公開程式、資料結構、部署說明與製作歷程，讓任何人能檢查承諾、提出問題或自行部署。版本與政策有實質變更時，也應在公開紀錄中留下痕跡。'],
         ['目前限制', '這是仍在驗證中的 MVP。自訂網域、正式監控、事件處理流程與定期透明度報告，會在正式上線前或依服務規模逐步完成。'],
       ],
@@ -676,7 +706,7 @@ export function renderLegalPage(page) {
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
-          <p class="legal-updated">MVP 說明版本：2026-08-06</p>
+          <p class="legal-updated">MVP 說明版本：2026-08-13</p>
         </article>
       </main>
     `,
@@ -925,6 +955,19 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .formula-tools { margin: .4rem 0 1.2rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: #f8fbf9; }
     .formula-tool-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; font-size: .78rem; }
     .formula-tool-heading span { color: var(--muted); }
+    .formula-ai { margin: 0 0 .9rem; padding: .85rem; border: 1px solid #bdd7cb; border-radius: 1rem; background: #edf5f1; }
+    .formula-ai summary { display: flex; justify-content: space-between; gap: 1rem; cursor: pointer; font-weight: 800; }
+    .formula-ai summary span { color: var(--green); font-size: .72rem; white-space: nowrap; }
+    .formula-ai > p { margin: .65rem 0; color: var(--muted); font-size: .75rem; line-height: 1.6; }
+    .formula-ai-compose { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .6rem; align-items: stretch; }
+    .formula-ai-compose textarea { min-height: 5.4rem; }
+    .formula-ai-compose button { width: auto; min-width: 8rem; border: 0; background: var(--ink); color: white; }
+    .formula-ai-status { margin: .65rem 0 0; color: var(--green); font-size: .76rem; }
+    .formula-ai-status[data-error="true"] { color: #8f2f2a; }
+    .formula-ai-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .65rem; align-items: center; margin-top: .75rem; padding: .85rem; border: 1px solid var(--line); border-radius: .9rem; background: white; }
+    .formula-ai-preview { grid-column: 1 / -1; min-height: 4rem; display: grid; place-items: center; overflow-x: auto; }
+    .formula-ai-result code { min-width: 0; padding: .65rem; border-radius: .6rem; background: #f5f7f6; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .formula-ai-result button { width: auto; white-space: nowrap; }
     .formula-category-tabs { display: flex; gap: .4rem; margin: 0 -.1rem .75rem; padding: .1rem; overflow-x: auto; scrollbar-width: thin; }
     .formula-category-tabs button { width: auto; flex: 0 0 auto; min-height: 2.35rem; padding: .48rem .78rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--muted); font-size: .75rem; }
     .formula-category-tabs button[aria-selected="true"] { border-color: var(--ink); background: var(--ink); color: white; }
@@ -1040,7 +1083,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .theme-mist .card-export { background: #e6f0ed; }
     .theme-night .card-export { background: #1b252b; }
     @media (max-width: 46rem) { .content-workspace.formula-mode { grid-template-columns: 1fr; } .formula-preview { margin-top: 0; } }
-    @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .quick-open-form { grid-template-columns: auto 1fr; } .quick-open-form > button { grid-column: 1 / -1; } .custom-formula-fields { grid-template-columns: 1fr; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
+    @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .quick-open-form { grid-template-columns: auto 1fr; } .quick-open-form > button { grid-column: 1 / -1; } .formula-ai-compose, .formula-ai-result, .custom-formula-fields { grid-template-columns: 1fr; } .formula-ai-compose button, .formula-ai-result button { width: 100%; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
   </style>
 </head>
 <body>${body}${scriptMarkup}${externalScriptMarkup}</body>

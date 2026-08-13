@@ -47,6 +47,25 @@ describe('PureLink worker', () => {
     expect(db.links.size).toBe(0);
   });
 
+  it('requires an authenticated same-origin account for formula AI', async () => {
+    env.GOOGLE_CLIENT_ID = 'test-client';
+    env.GOOGLE_CLIENT_SECRET = 'test-secret';
+    const invalidOrigin = await worker.fetch(new Request('https://pure.test/api/formulas/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ description: 'energy equals mass times light speed squared' }),
+    }), env);
+    expect(invalidOrigin.status).toBe(403);
+
+    const signedOut = await worker.fetch(new Request('https://pure.test/api/formulas/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://pure.test' },
+      body: JSON.stringify({ description: 'energy equals mass times light speed squared' }),
+    }), env);
+    expect(signedOut.status).toBe(401);
+    expect(await signedOut.json()).toMatchObject({ loginUrl: '/auth/google?returnTo=%2F%23formula-ai' });
+  });
+
   it('creates, redirects, and previews a URL', async () => {
     const created = await createLink(env, {
       contentType: 'url',

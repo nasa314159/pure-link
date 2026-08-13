@@ -27,6 +27,9 @@
 			"database_id": "4bfcfb5c-1ce7-4fcb-8686-5f32b8412f46"
 		}
 	],
+	"ai": {
+		"binding": "AI"
+	},
 	"assets": {
 		"directory": "./public",
 		"binding": "ASSETS",
@@ -35,6 +38,9 @@
 	"env": {
 		"staging": {
 			"name": "pure-link-staging",
+			"ai": {
+				"binding": "AI"
+			},
 			"vars": {
 				"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL",
 				"PUBLIC_ORIGIN": "https://no-no.uk"
