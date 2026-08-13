@@ -31,17 +31,18 @@ export async function routeRequest(request, env, context) {
   const requestUrl = new URL(request.url);
   const path = safePathname(requestUrl.pathname);
   const repository = createLinkRepository(env.pure_link_db);
+  const isPublicRead = request.method === 'GET' || request.method === 'HEAD';
 
-  if (request.method === 'GET' && path === '') {
+  if (isPublicRead && path === '') {
     const nonce = createSlug() + createSlug();
     const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
     const googleAuthConfigured = isGoogleAuthConfigured(env);
     const user = googleAuthConfigured ? await getCurrentUser(request, env) : null;
-    return html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
+    return publicReadResponse(request, html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) }));
   }
-  if (request.method === 'GET' && path === 'robots.txt') {
+  if (isPublicRead && path === 'robots.txt') {
     const origin = publicOrigin(requestUrl, env);
-    return text([
+    return publicReadResponse(request, text([
       'User-agent: *',
       'Allow: /',
       'Disallow: /account',
@@ -51,15 +52,15 @@ export async function routeRequest(request, env, context) {
       'Disallow: /api/',
       `Sitemap: ${origin}/sitemap.xml`,
       '',
-    ].join('\n'), { headers: { 'cache-control': 'public, max-age=3600' } });
+    ].join('\n'), { headers: { 'cache-control': 'public, max-age=3600' } }));
   }
-  if (request.method === 'GET' && path === 'sitemap.xml') {
-    return xml(renderSitemap(publicOrigin(requestUrl, env)), {
+  if (isPublicRead && path === 'sitemap.xml') {
+    return publicReadResponse(request, xml(renderSitemap(publicOrigin(requestUrl, env)), {
       headers: { 'cache-control': 'public, max-age=3600, stale-while-revalidate=86400' },
-    });
+    }));
   }
-  if (request.method === 'GET' && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
-    return html(renderLegalPage(path));
+  if (isPublicRead && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
+    return publicReadResponse(request, html(renderLegalPage(path)));
   }
 
   if (request.method === 'GET' && path.startsWith('assets/')) {
@@ -325,4 +326,9 @@ function renderSitemap(origin) {
   const paths = ['', 'privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'];
   const urls = paths.map((path) => `  <url><loc>${origin}/${path}</loc></url>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
+}
+
+function publicReadResponse(request, response) {
+  if (request.method !== 'HEAD') return response;
+  return new Response(null, { status: response.status, headers: response.headers });
 }
