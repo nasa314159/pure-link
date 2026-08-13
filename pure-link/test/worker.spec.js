@@ -38,6 +38,27 @@ describe('PureLink worker', () => {
     }
   });
 
+  it('publishes a public-only sitemap and points robots.txt to it', async () => {
+    env.PUBLIC_ORIGIN = 'https://no-no.uk';
+    const robots = await worker.fetch(new Request('https://pure.test/robots.txt'), env);
+    expect(robots.status).toBe(200);
+    expect(robots.headers.get('content-type')).toContain('text/plain');
+    const robotsBody = await robots.text();
+    expect(robotsBody).toContain('Allow: /');
+    expect(robotsBody).toContain('Disallow: /manage/');
+    expect(robotsBody).toContain('Sitemap: https://no-no.uk/sitemap.xml');
+
+    const sitemap = await worker.fetch(new Request('https://pure.test/sitemap.xml'), env);
+    expect(sitemap.status).toBe(200);
+    expect(sitemap.headers.get('content-type')).toContain('application/xml');
+    const sitemapBody = await sitemap.text();
+    expect(sitemapBody).toContain('<loc>https://no-no.uk/</loc>');
+    expect(sitemapBody).toContain('<loc>https://no-no.uk/privacy</loc>');
+    expect(sitemapBody).toContain('<loc>https://no-no.uk/ai-credits</loc>');
+    expect(sitemapBody).not.toContain('/account');
+    expect(sitemapBody).not.toContain('/manage/');
+  });
+
   it('fails closed for public writes when abuse protection is not configured', async () => {
     const response = await worker.fetch(new Request('https://pure.test/api/links', {
       method: 'POST',
