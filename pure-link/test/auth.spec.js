@@ -22,6 +22,7 @@ describe('Google account integration', () => {
     expect(location.searchParams.get('scope')).toBe('openid email profile');
     expect(location.searchParams.get('code_challenge_method')).toBe('S256');
     expect(response.headers.get('set-cookie')).toContain('HttpOnly; Secure; SameSite=Lax');
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=1200');
     expect(db.values[2]).toBe('/account');
   });
 

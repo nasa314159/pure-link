@@ -72,10 +72,15 @@ function renderFormulaShortcutPalette() {
   return `<div class="formula-category-tabs" role="tablist" aria-label="數學快捷鍵分類">${tabs}</div><div class="symbol-groups">${panels}</div>`;
 }
 
-export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false) {
+export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '') {
   const turnstileWidget = turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="create"></div></div>`
     : '';
+  const authNotice = authStatus === 'expired'
+    ? '<div class="auth-notice" role="status"><strong>登入等待時間已結束。</strong><span>為了保護帳戶，這次的一次性登入已失效；請從「我的 PureLink」重新開始。</span><a href="/account">重新登入</a></div>'
+    : authStatus
+      ? '<div class="auth-notice" role="status"><strong>這次登入沒有完成。</strong><span>沒有建立任何帳戶工作階段，請重新嘗試。</span><a href="/account">重新登入</a></div>'
+      : '';
   return documentShell({
     title: 'PureLink — 安靜地分享',
     description: '以簡潔、尊重隱私的方式分享網址、數學公式或一張短文小卡。',
@@ -86,6 +91,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           <h1>清楚地分享，<br>少留一點痕跡。</h1>
           <p class="lede">把網址、公式，或一段想好好送出去的話，交給一個安靜的連結。</p>
         </header>
+
+        ${authNotice}
 
         <section class="creator-panel panel" id="creator-panel" aria-labelledby="creator-title">
           <div class="creator-heading">
@@ -750,6 +757,9 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .creator-home { width: min(calc(100% - 2rem), 68rem); gap: 4rem; }
     .hero { padding-top: 3rem; }
     .creator-panel { width: 100%; }
+    .auth-notice { width: 100%; display: flex; align-items: center; gap: .7rem 1rem; flex-wrap: wrap; padding: .9rem 1rem; border: 1px solid #d8ceb0; border-radius: 1rem; background: #fffaf0; color: #6d654f; font-size: .8rem; line-height: 1.5; }
+    .auth-notice strong { color: var(--ink); }
+    .auth-notice a { margin-left: auto; font-weight: 700; }
     .creator-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.5rem; }
     h2 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.5rem); letter-spacing: -.04em; }
     .suggestion { width: auto; padding: .55rem .8rem; border: 1px solid #bed8ca; background: #edf7f1; color: var(--green); font-size: .75rem; }

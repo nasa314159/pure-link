@@ -30,7 +30,7 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'GET' && path === '') {
     const nonce = createSlug() + createSlug();
     const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
-    return html(renderHomePage(nonce, turnstileSiteKey, isGoogleAuthConfigured(env)), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
+    return html(renderHomePage(nonce, turnstileSiteKey, isGoogleAuthConfigured(env), requestUrl.searchParams.get('auth')), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
   }
   if (request.method === 'GET' && path === 'robots.txt') {
     return text('User-agent: *\nDisallow: /\n', { headers: { 'cache-control': 'public, max-age=3600' } });

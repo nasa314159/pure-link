@@ -30,6 +30,12 @@ describe('interactive pages', () => {
     expect(card).toContain('data-export-brand-toggle');
   });
 
+  it('shows a clear retry path when an OAuth attempt expires', () => {
+    const html = renderHomePage('test-nonce', '', true, 'expired');
+    expect(html).toContain('登入等待時間已結束');
+    expect(html).toContain('href="/account">重新登入');
+  });
+
   it('loads Turnstile as a regular deferred script', () => {
     const html = renderHomePage('test-nonce', 'site-key');
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');

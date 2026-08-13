@@ -4,7 +4,7 @@ import { json, redirect } from './http.js';
 const SESSION_COOKIE = 'purelink_session';
 const OAUTH_STATE_COOKIE = 'purelink_oauth_state';
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
-const OAUTH_STATE_SECONDS = 10 * 60;
+const OAUTH_STATE_SECONDS = 20 * 60;
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
@@ -41,7 +41,7 @@ export async function startGoogleAuth(request, env) {
 
   await env.pure_link_db.prepare(`
     INSERT INTO oauth_states (state_hash, code_verifier, return_to, expires_at)
-    VALUES (?, ?, ?, datetime('now', '+10 minutes'))
+    VALUES (?, ?, ?, datetime('now', '+20 minutes'))
   `).bind(stateHash, verifier, returnTo).run();
 
   const authorizationUrl = new URL(GOOGLE_AUTH_URL);
@@ -66,7 +66,11 @@ export async function finishGoogleAuth(request, env, fetchImplementation = fetch
   const state = requestUrl.searchParams.get('state') || '';
   const code = requestUrl.searchParams.get('code') || '';
   const stateCookie = readCookie(request, OAUTH_STATE_COOKIE);
-  if (!state || !code || !stateCookie || !constantTimeEqual(state, stateCookie)) {
+  if (!state || !code) {
+    return redirect('/?auth=invalid', 302, { headers: { 'set-cookie': clearCookie(OAUTH_STATE_COOKIE) } });
+  }
+  if (!stateCookie) return redirect('/?auth=expired');
+  if (!constantTimeEqual(state, stateCookie)) {
     return redirect('/?auth=invalid', 302, { headers: { 'set-cookie': clearCookie(OAUTH_STATE_COOKIE) } });
   }
 
