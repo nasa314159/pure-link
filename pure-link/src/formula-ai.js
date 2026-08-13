@@ -1,4 +1,5 @@
 import { ValidationError } from './content.js';
+import { consumeFormulaAllowance, restorePurchasedFormulaCredit } from './billing.js';
 
 export const FORMULA_AI_DAILY_LIMIT = 5;
 export const FORMULA_AI_ADMIN_DAILY_LIMIT = 100;
@@ -14,25 +15,14 @@ export class FormulaAiError extends Error {
   }
 }
 
-export async function generateFormulaDraft({ description, userId, db, ai, dailyLimit = FORMULA_AI_DAILY_LIMIT }) {
+export async function generateFormulaDraft({ description, userId, db, ai, dailyLimit = FORMULA_AI_DAILY_LIMIT, isAdmin = dailyLimit > FORMULA_AI_DAILY_LIMIT }) {
   const prompt = normalizeDescription(description);
-  const limit = Math.min(FORMULA_AI_ADMIN_DAILY_LIMIT, Math.max(1, Number(dailyLimit) || FORMULA_AI_DAILY_LIMIT));
   if (!db || !ai || typeof ai.run !== 'function') {
     throw new FormulaAiError('公式生成目前無法使用，請稍後再試。', 503);
   }
 
   await db.prepare("DELETE FROM formula_ai_daily_usage WHERE usage_date < date('now', '-31 days')").run();
-  const usage = await db.prepare(`
-    INSERT INTO formula_ai_daily_usage (user_id, usage_date, request_count, updated_at)
-    VALUES (?, CURRENT_DATE, 1, CURRENT_TIMESTAMP)
-    ON CONFLICT(user_id, usage_date) DO UPDATE SET
-      request_count = formula_ai_daily_usage.request_count + 1,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE formula_ai_daily_usage.request_count < ?
-    RETURNING request_count
-  `).bind(userId, limit).first();
-
-  if (!usage) throw new FormulaAiError(`今天的 ${limit} 次公式生成額度已用完，請明天再試。`, 429);
+  const allowance = await consumeFormulaAllowance({ db, userId, isAdmin });
 
   let result;
   try {
@@ -62,14 +52,22 @@ export async function generateFormulaDraft({ description, userId, db, ai, dailyL
       temperature: 0.1,
     });
   } catch {
+    if (allowance.source === 'purchased') await restorePurchasedFormulaCredit(db, userId);
     throw new FormulaAiError('Cloudflare Workers AI 暫時沒有完成這次生成，這次嘗試仍計入每日額度。');
   }
 
-  const latex = extractLatex(result);
+  let latex;
+  try {
+    latex = extractLatex(result);
+  } catch (error) {
+    if (allowance.source === 'purchased') await restorePurchasedFormulaCredit(db, userId);
+    throw error;
+  }
   return {
     latex,
-    remaining: Math.max(0, limit - Number(usage.request_count || 0)),
-    limit,
+    remaining: allowance.remaining,
+    limit: allowance.limit,
+    allowanceSource: allowance.source,
     provider: 'Cloudflare Workers AI',
     model: 'llama-3.1-8b-instruct-fast',
   };

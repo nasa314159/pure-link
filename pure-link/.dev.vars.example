@@ -4,3 +4,7 @@ APP_ENV=development
 TURNSTILE_SITE_KEY=replace-with-public-site-key
 TURNSTILE_SECRET_KEY=replace-with-secret-key
 RATE_LIMIT_SECRET=replace-with-at-least-32-random-bytes
+CREEM_API_KEY=replace-with-creem-test-api-key
+CREEM_WEBHOOK_SECRET=replace-with-creem-test-webhook-secret
+CREEM_API_BASE=https://test-api.creem.io
+CREEM_PRODUCT_300_ID=replace-with-creem-test-product-id

@@ -79,7 +79,10 @@ async function generateFormula() {
     appendMath(aiPreview, generatedLatex, true);
     aiSource.textContent = generatedLatex;
     aiResult.hidden = false;
-    setAiStatus(`草稿已生成。今日還可使用 ${payload.remaining} 次；不會自動發布。`);
+    const allowance = payload.allowanceSource === 'purchased'
+      ? `購買額度剩餘 ${payload.remaining} 次`
+      : `今日免費額度剩餘 ${payload.remaining} 次`;
+    setAiStatus(`草稿已生成。${allowance}；不會自動發布。`);
   } catch (error) {
     generatedLatex = '';
     setAiStatus(error.message, true);

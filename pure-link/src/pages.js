@@ -705,7 +705,7 @@ export function renderLegalPage(page) {
         ['One-time plans', 'US$5 provides 300 AI formula generations. US$10 provides 800 generations. US$20 provides 2,000 generations. These are one-time purchases, not subscriptions. Taxes may be added at checkout when required.'],
         ['Delivery', 'After a confirmed payment, credits are delivered automatically to the PureLink account that started checkout. Customers must be signed in before purchasing. The five free daily generations are used before purchased credits, and purchased credits are not shared between accounts.'],
         ['Credit lifetime and limits', 'Purchased credits do not expire while PureLink continues to operate the AI formula service. They are non-transferable, have no cash value, and remain subject to a daily safety limit that protects accounts and the public service from automated abuse.'],
-        ['Payment boundary', 'Lemon Squeezy is used only to sell AI formula credit packs. Voluntary support for the open-source project is separate, does not grant credits or product benefits, and is not processed through Lemon Squeezy. Checkout will be enabled after payment-provider approval and integration testing.'],
+        ['Payment boundary', 'Creem is used only to sell AI formula credit packs and acts as the merchant of record for these purchases. Voluntary support for the open-source project is separate, does not grant credits or product benefits, and is not processed through Creem. Checkout is enabled only after payment-provider approval and integration testing.'],
         ['Support', 'For purchase, delivery, or account questions, contact nasa3.14159@gmail.com. Include the email address used for your PureLink account and the order number, but never send a password, full card number, or Google credential.'],
       ],
     },
@@ -871,10 +871,16 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
   });
 }
 
-export function renderAccountPage(user, links) {
+export function renderAccountPage(user, links, creditBalance = 0, checkoutConfigured = false, purchaseStatus = '', nonce = '') {
   const rows = links.length
     ? links.map((link) => `<li><div><span>${escapeHtml(({ url: '網址', formula: '公式', card: '小卡' })[link.content_type] || '內容')}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">查看</a><a href="/manage/${escapeHtml(link.slug)}">管理</a></li>`).join('')
     : '<li class="empty-account">還沒有連結到這個帳號的 PureLink。</li>';
+  const purchaseNotice = purchaseStatus === 'success'
+    ? '<p class="auth-notice" role="status"><strong>付款流程已返回 PureLink。</strong><span>付款確認後，額度會由 Creem 的簽章通知自動加入；若尚未顯示，請稍候再重新整理。</span></p>'
+    : '';
+  const checkoutAction = checkoutConfigured
+    ? '<button id="buy-credits-300" type="button">US$5 · 購買 300 次</button><p class="billing-status" id="billing-status" role="status" hidden></p>'
+    : '<p class="billing-status">付款功能正在完成最後驗證，目前不會向你收費。</p>';
   return documentShell({
     title: '我的 PureLink',
     description: '跨裝置管理自願連結到 Google 帳號的 PureLink。',
@@ -886,11 +892,43 @@ export function renderAccountPage(user, links) {
           <p class="eyebrow">YOUR PURELINKS</p>
           <h1 class="manage-title">你好，${escapeHtml(user.display_name || user.email)}。</h1>
           <p class="lede manage-lede">只有你主動連結或登入後建立的內容會出現在這裡。匿名建立仍然可以完全不登入。</p>
+          ${purchaseNotice}
+          <section class="account-credits" aria-labelledby="account-credits-title">
+            <p class="eyebrow">AI FORMULA CREDITS</p>
+            <h2 id="account-credits-title">可用購買額度：${Math.max(0, Number(creditBalance || 0))} 次</h2>
+            <p>每天 5 次免費生成會優先使用；購買額度是一次性商品，不是訂閱。</p>
+            ${checkoutAction}
+            <p><a href="/ai-credits">商品與交付說明</a> · <a href="/refund-policy">退款政策</a></p>
+          </section>
           <ul class="account-links">${rows}</ul>
           <form action="/auth/logout" method="post"><button class="secondary-button" type="submit">登出</button></form>
         </article>
       </main>
     `,
+    script: checkoutConfigured ? `
+      const buyButton = document.getElementById('buy-credits-300');
+      const billingStatus = document.getElementById('billing-status');
+      buyButton?.addEventListener('click', async () => {
+        buyButton.disabled = true;
+        billingStatus.hidden = false;
+        billingStatus.textContent = '正在建立安全結帳頁…';
+        try {
+          const response = await fetch('/api/billing/checkout', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{}',
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || '目前無法開啟付款頁。');
+          location.assign(payload.checkoutUrl);
+        } catch (error) {
+          billingStatus.textContent = error.message;
+          billingStatus.dataset.error = 'true';
+          buyButton.disabled = false;
+        }
+      });
+    ` : '',
+    nonce,
   });
 }
 
@@ -1103,6 +1141,13 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .account-connect p { margin: 0; color: var(--muted); line-height: 1.55; }
     .google-link { display: flex; justify-content: center; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: white; text-decoration: none; font-weight: 700; }
     .account-links { display: grid; gap: .7rem; margin: 0 0 1.5rem; padding: 0; list-style: none; }
+    .account-credits { display: grid; gap: .65rem; margin: 1.2rem 0; padding: 1rem; border: 1px solid #bdd7cb; border-radius: 1.2rem; background: #edf5f1; }
+    .account-credits h2, .account-credits p { margin: 0; }
+    .account-credits h2 { font-size: clamp(1.15rem, 3vw, 1.65rem); }
+    .account-credits > p { color: var(--muted); line-height: 1.55; }
+    .account-credits button { width: 100%; border: 0; background: var(--ink); color: white; }
+    .billing-status { color: var(--green); font-size: .78rem; }
+    .billing-status[data-error="true"] { color: #8f2f2a; }
     .account-links li { display: grid; grid-template-columns: 1fr auto auto; gap: .8rem; align-items: center; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; }
     .account-links li div { display: grid; gap: .2rem; }
     .account-links li span { color: var(--muted); font-size: .72rem; }

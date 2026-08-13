@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage } from '../src/pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -89,11 +89,22 @@ describe('interactive pages', () => {
     const refunds = renderLegalPage('refund-policy');
     expect(credits).toContain('<html lang="en">');
     expect(credits).toContain('US$5 provides 300 AI formula generations');
-    expect(credits).toContain('not processed through Lemon Squeezy');
+    expect(credits).toContain('not processed through Creem');
     expect(credits).toContain('nasa3.14159@gmail.com');
     expect(refunds).toContain('<html lang="en">');
     expect(refunds).toContain('within 14 calendar days');
     expect(refunds).toContain('Consumed credits are generally not refundable');
+  });
+
+  it('shows purchased credits and creates checkout only when billing is configured', () => {
+    const disabled = renderAccountPage({ email: 'person@example.com' }, [], 12, false);
+    const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, true, 'success', 'billing-nonce');
+    expect(disabled).toContain('可用購買額度：12 次');
+    expect(disabled).not.toContain('id="buy-credits-300"');
+    expect(enabled).toContain('id="buy-credits-300"');
+    expect(enabled).toContain('付款流程已返回 PureLink');
+    expect(enabled).toContain('nonce="billing-nonce"');
+    expect(() => new Function(extractScript(enabled))).not.toThrow();
   });
 
   it('loads Turnstile as a regular deferred script', () => {

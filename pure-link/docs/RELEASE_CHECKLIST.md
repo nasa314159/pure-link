@@ -17,7 +17,7 @@
 - [x] 選定並註冊正式網域 `no-no.uk`。
 - [x] 建立 Managed Turnstile widget，允許 `no-no.uk` 與 `staging.no-no.uk`。
 - [x] 產生獨立的 `RATE_LIMIT_SECRET`，不得沿用其他服務密鑰。
-- [ ] 在遠端 D1 先備份，再依序套用 `migrations/0000` 至 `0002`。
+- [ ] 在遠端 D1 先備份，再依序套用所有尚未套用的 migration（目前至 `0006`）。
 - [x] 建立與正式環境隔離的 `pure-link-staging` D1。
 - [x] 在 staging 驗證建立、預覽、跳轉、公式、小卡、PNG、檢舉與刪除。
 - [ ] 驗證手機、鍵盤操作、錯誤畫面與 Turnstile 無障礙流程。
@@ -25,6 +25,9 @@
 - [ ] 建立檢舉處理者、檢視頻率與緊急下架流程。
 - [x] 選定 MIT 開源授權並加入 `LICENSE`。
 - [ ] 補上公開原始碼、製作歷程與安靜的自願支持連結。
+- [ ] 在 Creem 測試模式建立 300 次額度商品，設定測試 API key 與 webhook secret。
+- [ ] 將 Creem 測試 webhook 指向 `/api/webhooks/creem`，驗證付款、重送、退款與爭議事件。
+- [ ] Creem 商家審核通過後，再設定正式 API key、正式 webhook secret，並啟用正式結帳。
 
 ## C. 發布順序
 
