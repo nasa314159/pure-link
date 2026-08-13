@@ -1,0 +1,6 @@
+# Local development can use placeholder values. Localhost bypasses public write
+# protection so the creation and report flows remain easy to test.
+APP_ENV=development
+TURNSTILE_SITE_KEY=replace-with-public-site-key
+TURNSTILE_SECRET_KEY=replace-with-secret-key
+RATE_LIMIT_SECRET=replace-with-at-least-32-random-bytes
