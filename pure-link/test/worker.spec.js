@@ -13,7 +13,9 @@ describe('PureLink worker', () => {
   it('serves the local MVP status page with privacy headers', async () => {
     const response = await worker.fetch(new Request('https://pure.test/'), env);
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain('清楚地分享');
+    const body = await response.text();
+    expect(body).toContain('<h1>Just share.</h1>');
+    expect(body).toContain('<p class="lede">No ads. No needless data.</p>');
     expect(response.headers.get('referrer-policy')).toBe('no-referrer');
     expect(response.headers.get('content-security-policy')).toContain("default-src 'none'");
   });

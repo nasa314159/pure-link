@@ -98,8 +98,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       <main class="home creator-home">
         <header class="hero">
           <p class="eyebrow">PURELINK</p>
-          <h1>清楚地分享，<br>少留一點痕跡。</h1>
-          <p class="lede">把網址、公式，或一段想好好送出去的話，交給一個安靜的連結。</p>
+          <h1>Just share.</h1>
+          <p class="lede">No ads. No needless data.</p>
         </header>
 
         ${authNotice}
