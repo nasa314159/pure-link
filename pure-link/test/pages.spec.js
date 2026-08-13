@@ -11,7 +11,14 @@ describe('interactive pages', () => {
     expect(html).toContain('小卡');
     expect(html).toContain('貼上 \\\\frac');
     expect(html).toContain('公式即時預覽');
-    expect(html).toContain('data-formula-insert="∫"');
+    expect(html).toContain('data-formula-category="calculus"');
+    expect(html).toContain('data-formula-category="matrices"');
+    expect(html).toContain('data-formula-category="trigonometry"');
+    expect(html).toContain('data-formula-insert="\\int ');
+    expect(html).toContain('data-formula-insert="^"');
+    expect(html).toContain('data-formula-insert="\\begin{bmatrix}');
+    expect(html).toContain('data-formula-insert="\\operatorname{arsinh} ');
+    expect(html).toContain('data-formula-insert="\\Omega"');
     expect(html).toContain('/assets/formula-editor.js');
     expect(() => new Function(script)).not.toThrow();
   });

@@ -3,6 +3,75 @@ import { renderFormulaContent } from './formula.js';
 
 const PLATFORM_NOTICE = '透過 PureLink 分享的內容與外部網站由建立者提供，不代表 PureLink 的立場、推薦、背書或安全保證。';
 
+const FORMULA_SHORTCUT_GROUPS = [
+  {
+    id: 'common',
+    label: '常用',
+    shortcuts: [
+      ['分數', '\\frac{}{}', 3], ['平方', '^2'], ['n 次方', '^'], ['平方根', '\\sqrt{}', 1], ['立方根', '\\sqrt[3]{}', 1], ['n 次方根', '\\sqrt[n]{}', 1],
+      ['一階導數', '\\frac{d}{dx}'], ['二階導數', '\\frac{d^2}{dx^2}'], ['不定積分', '\\int '], ['定積分', '\\int_{}^{}', 4],
+      ['總和', '\\sum_{}^{}', 4], ['極限', '\\lim_{}', 1], ['列向量', '\\begin{bmatrix}  \\\\  \\end{bmatrix}', 16], ['2×2 矩陣', '\\begin{bmatrix}  &  \\\\  &  \\end{bmatrix}', 21],
+    ],
+  },
+  {
+    id: 'algebra',
+    label: '代數',
+    shortcuts: [
+      ['分數', '\\frac{}{}', 3], ['平方', '^2'], ['次方', '^'], ['平方根', '\\sqrt{}', 1], ['立方根', '\\sqrt[3]{}', 1], ['n 次方根', '\\sqrt[n]{}', 1],
+      ['無限大', '\\infty'], ['負無限大', '-\\infty'], ['圓周率', '\\pi'], ['自然常數', 'e'], ['指數', 'e^'], ['自然對數', '\\ln '],
+      ['對數', '\\log_{}', 1], ['常用對數', '\\log_{10}'], ['絕對值', '\\left|  \\right|', 8], ['小於等於', '\\le'], ['大於等於', '\\ge'], ['不等於', '\\ne'],
+      ['正負', '\\pm'], ['約等於', '\\approx'], ['相乘', '\\times'], ['相除', '\\div'], ['右箭頭', '\\to'], ['雙向箭頭', '\\leftrightarrow'],
+    ],
+  },
+  {
+    id: 'calculus',
+    label: '微積分',
+    shortcuts: [
+      ['一階導數', '\\frac{d}{dx}'], ['二階導數', '\\frac{d^2}{dx^2}'], ['偏導數', '\\frac{\\partial}{\\partial x}'], ['二階偏導', '\\frac{\\partial^2}{\\partial x^2}'], ['混合偏導', '\\frac{\\partial^2}{\\partial x\\partial y}'],
+      ['不定積分', '\\int '], ['二重積分', '\\iint '], ['三重積分', '\\iiint '], ['定積分', '\\int_{}^{}', 4], ['二重定積分', '\\int_{}^{}\\int_{}^{}', 14], ['三重定積分', '\\int_{}^{}\\int_{}^{}\\int_{}^{}', 24],
+      ['總和', '\\sum_{}^{}', 4], ['乘積', '\\prod_{}^{}', 4], ['極限', '\\lim_{}', 1], ['左極限', '\\lim_{x\\to a^-}'], ['右極限', '\\lim_{x\\to a^+}'], ['趨近無限', '\\lim_{x\\to\\infty}'],
+      ['梯度', '\\nabla'], ['偏微分', '\\partial'], ['變分', '\\delta'], ['拉普拉斯', '\\mathcal{L}\\{  \\}', 3], ['反拉普拉斯', '\\mathcal{L}^{-1}\\{  \\}', 3], ['傅立葉', '\\mathcal{F}\\{  \\}', 3], ['反傅立葉', '\\mathcal{F}^{-1}\\{  \\}', 3],
+    ],
+  },
+  {
+    id: 'matrices',
+    label: '向量與矩陣',
+    shortcuts: [
+      ['二元組', '( , )', 3], ['三元組', '( , , )', 5], ['四元組', '( , , , )', 7], ['2 維列向量', '\\begin{bmatrix}  \\\\  \\end{bmatrix}', 16], ['3 維列向量', '\\begin{bmatrix}  \\\\  \\\\  \\end{bmatrix}', 21],
+      ['2 維行向量', '\\begin{bmatrix}  &  \\end{bmatrix}', 15], ['3 維行向量', '\\begin{bmatrix}  &  &  \\end{bmatrix}', 18],
+      ['2×2 矩陣', '\\begin{bmatrix}  &  \\\\  &  \\end{bmatrix}', 21], ['2×3 矩陣', '\\begin{bmatrix}  &  &  \\\\  &  &  \\end{bmatrix}', 27], ['3×2 矩陣', '\\begin{bmatrix}  &  \\\\  &  \\\\  &  \\end{bmatrix}', 27], ['3×3 矩陣', '\\begin{bmatrix}  &  &  \\\\  &  &  \\\\  &  &  \\end{bmatrix}', 36],
+      ['行列式', '\\begin{vmatrix}  &  \\\\  &  \\end{vmatrix}', 21], ['括號矩陣', '\\begin{pmatrix}  &  \\\\  &  \\end{pmatrix}', 21], ['單位矩陣', 'I_n'], ['轉置', '^{\\mathsf T}'], ['逆矩陣', '^{-1}'],
+    ],
+  },
+  {
+    id: 'trigonometry',
+    label: '三角函數',
+    shortcuts: [
+      ['圓周率', '\\pi'], ['角度', '^{\\circ}'], ['弧度', '\\operatorname{rad}'], ['正弦', '\\sin '], ['餘弦', '\\cos '], ['正切', '\\tan '], ['正割', '\\sec '], ['餘割', '\\csc '], ['餘切', '\\cot '],
+      ['反正弦', '\\sin^{-1}'], ['反餘弦', '\\cos^{-1}'], ['反正切', '\\tan^{-1}'], ['雙曲正弦', '\\sinh '], ['雙曲餘弦', '\\cosh '], ['雙曲正切', '\\tanh '], ['雙曲正割', '\\operatorname{sech} '], ['雙曲餘割', '\\operatorname{csch} '], ['雙曲餘切', '\\coth '],
+      ['反雙曲正弦', '\\operatorname{arsinh} '], ['反雙曲餘弦', '\\operatorname{arcosh} '], ['反雙曲正切', '\\operatorname{artanh} '],
+    ],
+  },
+  {
+    id: 'symbols',
+    label: '希臘與符號',
+    shortcuts: [
+      ['α', '\\alpha'], ['β', '\\beta'], ['γ', '\\gamma'], ['δ', '\\delta'], ['ε', '\\epsilon'], ['ζ', '\\zeta'], ['η', '\\eta'], ['θ', '\\theta'], ['κ', '\\kappa'], ['λ', '\\lambda'], ['μ', '\\mu'], ['ν', '\\nu'], ['ξ', '\\xi'], ['ρ', '\\rho'], ['σ', '\\sigma'], ['τ', '\\tau'], ['φ', '\\phi'], ['χ', '\\chi'], ['ψ', '\\psi'], ['ω', '\\omega'],
+      ['Γ', '\\Gamma'], ['Δ', '\\Delta'], ['Θ', '\\Theta'], ['Λ', '\\Lambda'], ['Ξ', '\\Xi'], ['Π', '\\Pi'], ['Σ', '\\Sigma'], ['Φ', '\\Phi'], ['Ψ', '\\Psi'], ['Ω', '\\Omega'],
+      ['所有', '\\forall'], ['存在', '\\exists'], ['聯集', '\\cup'], ['交集', '\\cap'], ['屬於', '\\in'], ['不屬於', '\\notin'], ['空集合', '\\varnothing'], ['因此', '\\therefore'], ['因為', '\\because'], ['平行', '\\parallel'], ['垂直', '\\perp'], ['全等', '\\cong'], ['成正比', '\\propto'], ['包含於', '\\subseteq'], ['包含', '\\supseteq'], ['圓圈加', '\\oplus'], ['圓圈乘', '\\otimes'],
+    ],
+  },
+];
+
+function renderFormulaShortcutPalette() {
+  const tabs = FORMULA_SHORTCUT_GROUPS.map((group, index) => `<button type="button" role="tab" id="formula-tab-${group.id}" aria-controls="formula-panel-${group.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}" data-formula-category="${group.id}">${escapeHtml(group.label)}</button>`).join('');
+  const panels = FORMULA_SHORTCUT_GROUPS.map((group, index) => {
+    const buttons = group.shortcuts.map(([label, insert, cursorBack = 0]) => `<button type="button" title="插入 ${escapeHtml(insert)}" aria-label="${escapeHtml(label)}：插入 ${escapeHtml(insert)}" data-formula-insert="${escapeHtml(insert)}"${cursorBack ? ` data-cursor-back="${cursorBack}"` : ''}>${escapeHtml(label)}</button>`).join('');
+    return `<div class="symbol-group" role="tabpanel" id="formula-panel-${group.id}" aria-labelledby="formula-tab-${group.id}" data-formula-panel="${group.id}"${index === 0 ? '' : ' hidden'}>${buttons}</div>`;
+  }).join('');
+  return `<div class="formula-category-tabs" role="tablist" aria-label="數學快捷鍵分類">${tabs}</div><div class="symbol-groups">${panels}</div>`;
+}
+
 export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false) {
   const turnstileWidget = turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="create"></div></div>`
@@ -49,18 +118,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
             </div>
 
             <div class="formula-tools" id="formula-tools" hidden>
-              <div class="formula-tool-heading"><strong>常用數學輸入</strong><span>點選插入；也可直接輸入 Unicode 或 LaTeX。</span></div>
-              <div class="symbol-groups">
-                <div class="symbol-group" aria-label="基本運算">
-                  <button type="button" data-formula-insert="+">＋</button><button type="button" data-formula-insert="−">−</button><button type="button" data-formula-insert="×">×</button><button type="button" data-formula-insert="÷">÷</button><button type="button" data-formula-insert="±">±</button><button type="button" data-formula-insert="≠">≠</button><button type="button" data-formula-insert="≈">≈</button><button type="button" data-formula-insert="≤">≤</button><button type="button" data-formula-insert="≥">≥</button>
-                </div>
-                <div class="symbol-group" aria-label="代數與分析">
-                  <button type="button" data-formula-insert="²">x²</button><button type="button" data-formula-insert="ⁿ">xⁿ</button><button type="button" data-formula-insert="\\frac{}{}" data-cursor-back="3">a/b</button><button type="button" data-formula-insert="\\sqrt{}" data-cursor-back="1">√</button><button type="button" data-formula-insert="∑">∑</button><button type="button" data-formula-insert="∫">∫</button><button type="button" data-formula-insert="∂">∂</button><button type="button" data-formula-insert="∞">∞</button><button type="button" data-formula-insert="→">→</button>
-                </div>
-                <div class="symbol-group" aria-label="希臘字母">
-                  <button type="button" data-formula-insert="α">α</button><button type="button" data-formula-insert="β">β</button><button type="button" data-formula-insert="γ">γ</button><button type="button" data-formula-insert="Δ">Δ</button><button type="button" data-formula-insert="θ">θ</button><button type="button" data-formula-insert="λ">λ</button><button type="button" data-formula-insert="μ">μ</button><button type="button" data-formula-insert="π">π</button><button type="button" data-formula-insert="σ">σ</button><button type="button" data-formula-insert="φ">φ</button><button type="button" data-formula-insert="ω">ω</button><button type="button" data-formula-insert="Ω">Ω</button>
-                </div>
-              </div>
+              <div class="formula-tool-heading"><strong>數學快捷輸入</strong><span>每個按鍵只插入 LaTeX；右側會立即預覽。</span></div>
+              ${renderFormulaShortcutPalette()}
             </div>
 
             <div class="conditional-options" id="url-options">
@@ -716,9 +775,12 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .formula-tools { margin: .4rem 0 1.2rem; padding: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: #f8fbf9; }
     .formula-tool-heading { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .8rem; font-size: .78rem; }
     .formula-tool-heading span { color: var(--muted); }
+    .formula-category-tabs { display: flex; gap: .4rem; margin: 0 -.1rem .75rem; padding: .1rem; overflow-x: auto; scrollbar-width: thin; }
+    .formula-category-tabs button { width: auto; flex: 0 0 auto; min-height: 2.35rem; padding: .48rem .78rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--muted); font-size: .75rem; }
+    .formula-category-tabs button[aria-selected="true"] { border-color: var(--ink); background: var(--ink); color: white; }
     .symbol-groups { display: grid; gap: .55rem; }
     .symbol-group { display: flex; flex-wrap: wrap; gap: .4rem; }
-    .symbol-group button { width: auto; min-width: 2.55rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .7rem; background: white; color: var(--ink); font-family: ui-serif, Georgia, serif; font-size: 1rem; }
+    .symbol-group button { width: auto; min-width: 2.55rem; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .7rem; background: white; color: var(--ink); font-family: ui-serif, Georgia, serif; font-size: .88rem; }
     .symbol-group button:hover, .symbol-group button:focus-visible { border-color: var(--green); background: #edf5f1; }
     .conditional-options { margin-top: 1.25rem; padding: .25rem 1rem; border: 1px solid var(--line); border-radius: 1.15rem; }
     .check-row { display: flex; align-items: flex-start; gap: .8rem; padding: .9rem 0; border-bottom: 1px solid var(--line); cursor: pointer; }

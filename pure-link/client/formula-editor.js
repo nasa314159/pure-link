@@ -12,7 +12,29 @@ if (input && preview && rendered) {
   document.querySelectorAll('[data-formula-insert]').forEach((button) => {
     button.addEventListener('click', () => insertAtSelection(button.dataset.formulaInsert || '', Number(button.dataset.cursorBack || 0)));
   });
+  const categoryTabs = [...document.querySelectorAll('[data-formula-category]')];
+  categoryTabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => selectCategory(tab.dataset.formulaCategory));
+    tab.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? categoryTabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + categoryTabs.length) % categoryTabs.length;
+      categoryTabs[nextIndex].focus();
+      selectCategory(categoryTabs[nextIndex].dataset.formulaCategory);
+    });
+  });
   renderPreview();
+}
+
+function selectCategory(category) {
+  document.querySelectorAll('[data-formula-category]').forEach((tab) => {
+    const selected = tab.dataset.formulaCategory === category;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  document.querySelectorAll('[data-formula-panel]').forEach((panel) => {
+    panel.hidden = panel.dataset.formulaPanel !== category;
+  });
 }
 
 function insertAtSelection(value, cursorBack) {
