@@ -65,6 +65,26 @@ describe('PureLink worker', () => {
     }
   });
 
+  it('serves social and favicon assets for GET and HEAD requests', async () => {
+    env.ASSETS = {
+      fetch: async (request) => new Response(request.method === 'HEAD' ? null : 'brand asset', {
+        headers: { 'content-type': request.url.endsWith('.svg') ? 'image/svg+xml' : 'image/png' },
+      }),
+    };
+
+    for (const path of ['favicon.svg', 'og.png']) {
+      const get = await worker.fetch(new Request(`https://pure.test/${path}`), env);
+      expect(get.status).toBe(200);
+      expect(get.headers.get('content-type')).toContain('image/');
+      expect(await get.text()).toBe('brand asset');
+
+      const head = await worker.fetch(new Request(`https://pure.test/${path}`, { method: 'HEAD' }), env);
+      expect(head.status).toBe(200);
+      expect(head.headers.get('content-type')).toContain('image/');
+      expect(await head.text()).toBe('');
+    }
+  });
+
   it('fails closed for public writes when abuse protection is not configured', async () => {
     const response = await worker.fetch(new Request('https://pure.test/api/links', {
       method: 'POST',

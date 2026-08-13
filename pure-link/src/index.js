@@ -63,7 +63,7 @@ export async function routeRequest(request, env, context) {
     return publicReadResponse(request, html(renderLegalPage(path)));
   }
 
-  if (request.method === 'GET' && path.startsWith('assets/')) {
+  if (isPublicRead && (path.startsWith('assets/') || ['favicon.svg', 'og.png'].includes(path))) {
     if (!env.ASSETS) return text('Asset not found.', { status: 404 });
     return env.ASSETS.fetch(request);
   }
