@@ -19,6 +19,11 @@ describe('interactive pages', () => {
     expect(html).toContain('data-formula-insert="\\begin{bmatrix}');
     expect(html).toContain('data-formula-insert="\\operatorname{arsinh} ');
     expect(html).toContain('data-formula-insert="\\Omega"');
+    expect(html).toContain('aria-label="Calculus"');
+    expect(html).toContain('>∂ ∫</button>');
+    expect(html).toContain('>a⁄b</button>');
+    expect(html).not.toContain('>微積分</button>');
+    expect(html).not.toContain('>分數</button>');
     expect(html).toContain('/assets/formula-editor.js');
     expect(() => new Function(script)).not.toThrow();
   });

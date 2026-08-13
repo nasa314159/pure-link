@@ -6,70 +6,76 @@ const PLATFORM_NOTICE = '透過 PureLink 分享的內容與外部網站由建立
 const FORMULA_SHORTCUT_GROUPS = [
   {
     id: 'common',
-    label: '常用',
+    label: '★',
+    ariaLabel: 'Common math',
     shortcuts: [
-      ['分數', '\\frac{}{}', 3], ['平方', '^2'], ['n 次方', '^'], ['平方根', '\\sqrt{}', 1], ['立方根', '\\sqrt[3]{}', 1], ['n 次方根', '\\sqrt[n]{}', 1],
-      ['一階導數', '\\frac{d}{dx}'], ['二階導數', '\\frac{d^2}{dx^2}'], ['不定積分', '\\int '], ['定積分', '\\int_{}^{}', 4],
-      ['總和', '\\sum_{}^{}', 4], ['極限', '\\lim_{}', 1], ['列向量', '\\begin{bmatrix}  \\\\  \\end{bmatrix}', 16], ['2×2 矩陣', '\\begin{bmatrix}  &  \\\\  &  \\end{bmatrix}', 21],
+      ['a⁄b', '\\frac{}{}', 3, 'fraction'], ['x²', '^2', 0, 'square'], ['xⁿ', '^', 0, 'power'], ['√x', '\\sqrt{}', 1, 'square root'], ['∛x', '\\sqrt[3]{}', 1, 'cube root'], ['ⁿ√x', '\\sqrt[n]{}', 1, 'nth root'],
+      ['d⁄dx', '\\frac{d}{dx}', 0, 'derivative'], ['d²⁄dx²', '\\frac{d^2}{dx^2}', 0, 'second derivative'], ['∫', '\\int ', 0, 'indefinite integral'], ['∫ₐᵇ', '\\int_{}^{}', 4, 'definite integral'],
+      ['Σ', '\\sum_{}^{}', 4, 'sum'], ['lim', '\\lim_{}', 1, 'limit'], ['[x;y]', '\\begin{bmatrix}  \\\\  \\end{bmatrix}', 16, 'column vector'], ['[a b;c d]', '\\begin{bmatrix}  &  \\\\  &  \\end{bmatrix}', 21, 'two by two matrix'],
     ],
   },
   {
     id: 'algebra',
-    label: '代數',
+    label: '√',
+    ariaLabel: 'Algebra',
     shortcuts: [
-      ['分數', '\\frac{}{}', 3], ['平方', '^2'], ['次方', '^'], ['平方根', '\\sqrt{}', 1], ['立方根', '\\sqrt[3]{}', 1], ['n 次方根', '\\sqrt[n]{}', 1],
-      ['無限大', '\\infty'], ['負無限大', '-\\infty'], ['圓周率', '\\pi'], ['自然常數', 'e'], ['指數', 'e^'], ['自然對數', '\\ln '],
-      ['對數', '\\log_{}', 1], ['常用對數', '\\log_{10}'], ['絕對值', '\\left|  \\right|', 8], ['小於等於', '\\le'], ['大於等於', '\\ge'], ['不等於', '\\ne'],
-      ['正負', '\\pm'], ['約等於', '\\approx'], ['相乘', '\\times'], ['相除', '\\div'], ['右箭頭', '\\to'], ['雙向箭頭', '\\leftrightarrow'],
+      ['a⁄b', '\\frac{}{}', 3, 'fraction'], ['x²', '^2', 0, 'square'], ['xⁿ', '^', 0, 'power'], ['√x', '\\sqrt{}', 1, 'square root'], ['∛x', '\\sqrt[3]{}', 1, 'cube root'], ['ⁿ√x', '\\sqrt[n]{}', 1, 'nth root'],
+      ['∞', '\\infty'], ['−∞', '-\\infty'], ['π', '\\pi'], ['e', 'e'], ['eˣ', 'e^', 0, 'exponential'], ['ln', '\\ln '],
+      ['logₐ', '\\log_{}', 1, 'logarithm'], ['log₁₀', '\\log_{10}'], ['|x|', '\\left|  \\right|', 8, 'absolute value'], ['≤', '\\le'], ['≥', '\\ge'], ['≠', '\\ne'],
+      ['±', '\\pm'], ['≈', '\\approx'], ['×', '\\times'], ['÷', '\\div'], ['→', '\\to'], ['↔', '\\leftrightarrow'],
     ],
   },
   {
     id: 'calculus',
-    label: '微積分',
+    label: '∂ ∫',
+    ariaLabel: 'Calculus',
     shortcuts: [
-      ['一階導數', '\\frac{d}{dx}'], ['二階導數', '\\frac{d^2}{dx^2}'], ['偏導數', '\\frac{\\partial}{\\partial x}'], ['二階偏導', '\\frac{\\partial^2}{\\partial x^2}'], ['混合偏導', '\\frac{\\partial^2}{\\partial x\\partial y}'],
-      ['不定積分', '\\int '], ['二重積分', '\\iint '], ['三重積分', '\\iiint '], ['定積分', '\\int_{}^{}', 4], ['二重定積分', '\\int_{}^{}\\int_{}^{}', 14], ['三重定積分', '\\int_{}^{}\\int_{}^{}\\int_{}^{}', 24],
-      ['總和', '\\sum_{}^{}', 4], ['乘積', '\\prod_{}^{}', 4], ['極限', '\\lim_{}', 1], ['左極限', '\\lim_{x\\to a^-}'], ['右極限', '\\lim_{x\\to a^+}'], ['趨近無限', '\\lim_{x\\to\\infty}'],
-      ['梯度', '\\nabla'], ['偏微分', '\\partial'], ['變分', '\\delta'], ['拉普拉斯', '\\mathcal{L}\\{  \\}', 3], ['反拉普拉斯', '\\mathcal{L}^{-1}\\{  \\}', 3], ['傅立葉', '\\mathcal{F}\\{  \\}', 3], ['反傅立葉', '\\mathcal{F}^{-1}\\{  \\}', 3],
+      ['d⁄dx', '\\frac{d}{dx}', 0, 'derivative'], ['d²⁄dx²', '\\frac{d^2}{dx^2}', 0, 'second derivative'], ['∂⁄∂x', '\\frac{\\partial}{\\partial x}', 0, 'partial derivative'], ['∂²⁄∂x²', '\\frac{\\partial^2}{\\partial x^2}', 0, 'second partial derivative'], ['∂²⁄∂x∂y', '\\frac{\\partial^2}{\\partial x\\partial y}', 0, 'mixed partial derivative'],
+      ['∫', '\\int '], ['∬', '\\iint '], ['∭', '\\iiint '], ['∫ₐᵇ', '\\int_{}^{}', 4, 'definite integral'], ['∬ₐᵇ', '\\int_{}^{}\\int_{}^{}', 14, 'double definite integral'], ['∭ₐᵇ', '\\int_{}^{}\\int_{}^{}\\int_{}^{}', 24, 'triple definite integral'],
+      ['Σ', '\\sum_{}^{}', 4, 'sum'], ['Π', '\\prod_{}^{}', 4, 'product'], ['lim', '\\lim_{}', 1, 'limit'], ['lim₋', '\\lim_{x\\to a^-}', 0, 'left limit'], ['lim₊', '\\lim_{x\\to a^+}', 0, 'right limit'], ['lim∞', '\\lim_{x\\to\\infty}', 0, 'limit at infinity'],
+      ['∇', '\\nabla'], ['∂', '\\partial'], ['δ', '\\delta'], ['ℒ', '\\mathcal{L}\\{  \\}', 3, 'Laplace transform'], ['ℒ⁻¹', '\\mathcal{L}^{-1}\\{  \\}', 3, 'inverse Laplace transform'], ['ℱ', '\\mathcal{F}\\{  \\}', 3, 'Fourier transform'], ['ℱ⁻¹', '\\mathcal{F}^{-1}\\{  \\}', 3, 'inverse Fourier transform'],
     ],
   },
   {
     id: 'matrices',
-    label: '向量與矩陣',
+    label: '[ ]',
+    ariaLabel: 'Vectors and matrices',
     shortcuts: [
-      ['二元組', '( , )', 3], ['三元組', '( , , )', 5], ['四元組', '( , , , )', 7], ['2 維列向量', '\\begin{bmatrix}  \\\\  \\end{bmatrix}', 16], ['3 維列向量', '\\begin{bmatrix}  \\\\  \\\\  \\end{bmatrix}', 21],
-      ['2 維行向量', '\\begin{bmatrix}  &  \\end{bmatrix}', 15], ['3 維行向量', '\\begin{bmatrix}  &  &  \\end{bmatrix}', 18],
-      ['2×2 矩陣', '\\begin{bmatrix}  &  \\\\  &  \\end{bmatrix}', 21], ['2×3 矩陣', '\\begin{bmatrix}  &  &  \\\\  &  &  \\end{bmatrix}', 27], ['3×2 矩陣', '\\begin{bmatrix}  &  \\\\  &  \\\\  &  \\end{bmatrix}', 27], ['3×3 矩陣', '\\begin{bmatrix}  &  &  \\\\  &  &  \\\\  &  &  \\end{bmatrix}', 36],
-      ['行列式', '\\begin{vmatrix}  &  \\\\  &  \\end{vmatrix}', 21], ['括號矩陣', '\\begin{pmatrix}  &  \\\\  &  \\end{pmatrix}', 21], ['單位矩陣', 'I_n'], ['轉置', '^{\\mathsf T}'], ['逆矩陣', '^{-1}'],
+      ['(x,y)', '( , )', 3, 'pair'], ['(x,y,z)', '( , , )', 5, 'triple'], ['(w,x,y,z)', '( , , , )', 7, 'quadruple'], ['[x;y]', '\\begin{bmatrix}  \\\\  \\end{bmatrix}', 16, 'two dimensional column vector'], ['[x;y;z]', '\\begin{bmatrix}  \\\\  \\\\  \\end{bmatrix}', 21, 'three dimensional column vector'],
+      ['[x y]', '\\begin{bmatrix}  &  \\end{bmatrix}', 15, 'two dimensional row vector'], ['[x y z]', '\\begin{bmatrix}  &  &  \\end{bmatrix}', 18, 'three dimensional row vector'],
+      ['[2×2]', '\\begin{bmatrix}  &  \\\\  &  \\end{bmatrix}', 21, 'two by two matrix'], ['[2×3]', '\\begin{bmatrix}  &  &  \\\\  &  &  \\end{bmatrix}', 27, 'two by three matrix'], ['[3×2]', '\\begin{bmatrix}  &  \\\\  &  \\\\  &  \\end{bmatrix}', 27, 'three by two matrix'], ['[3×3]', '\\begin{bmatrix}  &  &  \\\\  &  &  \\\\  &  &  \\end{bmatrix}', 36, 'three by three matrix'],
+      ['|2×2|', '\\begin{vmatrix}  &  \\\\  &  \\end{vmatrix}', 21, 'determinant'], ['(2×2)', '\\begin{pmatrix}  &  \\\\  &  \\end{pmatrix}', 21, 'parenthesized matrix'], ['Iₙ', 'I_n', 0, 'identity matrix'], ['Aᵀ', '^{\\mathsf T}', 0, 'transpose'], ['A⁻¹', '^{-1}', 0, 'inverse matrix'],
     ],
   },
   {
     id: 'trigonometry',
-    label: '三角函數',
+    label: 'sin',
+    ariaLabel: 'Trigonometry',
     shortcuts: [
-      ['圓周率', '\\pi'], ['角度', '^{\\circ}'], ['弧度', '\\operatorname{rad}'], ['正弦', '\\sin '], ['餘弦', '\\cos '], ['正切', '\\tan '], ['正割', '\\sec '], ['餘割', '\\csc '], ['餘切', '\\cot '],
-      ['反正弦', '\\sin^{-1}'], ['反餘弦', '\\cos^{-1}'], ['反正切', '\\tan^{-1}'], ['雙曲正弦', '\\sinh '], ['雙曲餘弦', '\\cosh '], ['雙曲正切', '\\tanh '], ['雙曲正割', '\\operatorname{sech} '], ['雙曲餘割', '\\operatorname{csch} '], ['雙曲餘切', '\\coth '],
-      ['反雙曲正弦', '\\operatorname{arsinh} '], ['反雙曲餘弦', '\\operatorname{arcosh} '], ['反雙曲正切', '\\operatorname{artanh} '],
+      ['π', '\\pi'], ['°', '^{\\circ}', 0, 'degrees'], ['rad', '\\operatorname{rad}'], ['sin', '\\sin '], ['cos', '\\cos '], ['tan', '\\tan '], ['sec', '\\sec '], ['csc', '\\csc '], ['cot', '\\cot '],
+      ['sin⁻¹', '\\sin^{-1}'], ['cos⁻¹', '\\cos^{-1}'], ['tan⁻¹', '\\tan^{-1}'], ['sinh', '\\sinh '], ['cosh', '\\cosh '], ['tanh', '\\tanh '], ['sech', '\\operatorname{sech} '], ['csch', '\\operatorname{csch} '], ['coth', '\\coth '],
+      ['arsinh', '\\operatorname{arsinh} '], ['arcosh', '\\operatorname{arcosh} '], ['artanh', '\\operatorname{artanh} '],
     ],
   },
   {
     id: 'symbols',
-    label: '希臘與符號',
+    label: 'α ω',
+    ariaLabel: 'Greek and symbols',
     shortcuts: [
       ['α', '\\alpha'], ['β', '\\beta'], ['γ', '\\gamma'], ['δ', '\\delta'], ['ε', '\\epsilon'], ['ζ', '\\zeta'], ['η', '\\eta'], ['θ', '\\theta'], ['κ', '\\kappa'], ['λ', '\\lambda'], ['μ', '\\mu'], ['ν', '\\nu'], ['ξ', '\\xi'], ['ρ', '\\rho'], ['σ', '\\sigma'], ['τ', '\\tau'], ['φ', '\\phi'], ['χ', '\\chi'], ['ψ', '\\psi'], ['ω', '\\omega'],
       ['Γ', '\\Gamma'], ['Δ', '\\Delta'], ['Θ', '\\Theta'], ['Λ', '\\Lambda'], ['Ξ', '\\Xi'], ['Π', '\\Pi'], ['Σ', '\\Sigma'], ['Φ', '\\Phi'], ['Ψ', '\\Psi'], ['Ω', '\\Omega'],
-      ['所有', '\\forall'], ['存在', '\\exists'], ['聯集', '\\cup'], ['交集', '\\cap'], ['屬於', '\\in'], ['不屬於', '\\notin'], ['空集合', '\\varnothing'], ['因此', '\\therefore'], ['因為', '\\because'], ['平行', '\\parallel'], ['垂直', '\\perp'], ['全等', '\\cong'], ['成正比', '\\propto'], ['包含於', '\\subseteq'], ['包含', '\\supseteq'], ['圓圈加', '\\oplus'], ['圓圈乘', '\\otimes'],
+      ['∀', '\\forall'], ['∃', '\\exists'], ['∪', '\\cup'], ['∩', '\\cap'], ['∈', '\\in'], ['∉', '\\notin'], ['∅', '\\varnothing'], ['∴', '\\therefore'], ['∵', '\\because'], ['∥', '\\parallel'], ['⊥', '\\perp'], ['≅', '\\cong'], ['∝', '\\propto'], ['⊆', '\\subseteq'], ['⊇', '\\supseteq'], ['⊕', '\\oplus'], ['⊗', '\\otimes'],
     ],
   },
 ];
 
 function renderFormulaShortcutPalette() {
-  const tabs = FORMULA_SHORTCUT_GROUPS.map((group, index) => `<button type="button" role="tab" id="formula-tab-${group.id}" aria-controls="formula-panel-${group.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}" data-formula-category="${group.id}">${escapeHtml(group.label)}</button>`).join('');
+  const tabs = FORMULA_SHORTCUT_GROUPS.map((group, index) => `<button type="button" role="tab" id="formula-tab-${group.id}" aria-label="${escapeHtml(group.ariaLabel)}" aria-controls="formula-panel-${group.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}" data-formula-category="${group.id}">${escapeHtml(group.label)}</button>`).join('');
   const panels = FORMULA_SHORTCUT_GROUPS.map((group, index) => {
-    const buttons = group.shortcuts.map(([label, insert, cursorBack = 0]) => `<button type="button" title="插入 ${escapeHtml(insert)}" aria-label="${escapeHtml(label)}：插入 ${escapeHtml(insert)}" data-formula-insert="${escapeHtml(insert)}"${cursorBack ? ` data-cursor-back="${cursorBack}"` : ''}>${escapeHtml(label)}</button>`).join('');
+    const buttons = group.shortcuts.map(([label, insert, cursorBack = 0, accessibleLabel = label]) => `<button type="button" title="${escapeHtml(insert)}" aria-label="${escapeHtml(accessibleLabel)}; insert ${escapeHtml(insert)}" data-formula-insert="${escapeHtml(insert)}"${cursorBack ? ` data-cursor-back="${cursorBack}"` : ''}>${escapeHtml(label)}</button>`).join('');
     return `<div class="symbol-group" role="tabpanel" id="formula-panel-${group.id}" aria-labelledby="formula-tab-${group.id}" data-formula-panel="${group.id}"${index === 0 ? '' : ' hidden'}>${buttons}</div>`;
   }).join('');
-  return `<div class="formula-category-tabs" role="tablist" aria-label="數學快捷鍵分類">${tabs}</div><div class="symbol-groups">${panels}</div>`;
+  return `<div class="formula-category-tabs" role="tablist" aria-label="Math shortcut categories">${tabs}</div><div class="symbol-groups">${panels}</div>`;
 }
 
 export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '') {
