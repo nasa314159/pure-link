@@ -63,6 +63,10 @@ PureLink 會自動把網址帶入建立頁，使用者仍能檢查目的地、�
 
 請勿把真實密鑰提交到 Git。可複製 `.dev.vars.example` 為 `.dev.vars` 做本機設定。
 
+## Android PureLink 工具
+
+[`android/`](../android/README.zh-Hant.md) 包含一個小型 Kotlin Android 解析器，可處理刻意寫下的短代號，例如 `PureLink: A3cd8`、`Link: Q9xK2` 與 `🔗: H72Ld`。它支援手動輸入、已選取／分享文字與啟動器捷徑，使用者可以繼續使用 Samsung Keyboard 或 Gboard。解析完全在本機進行；App 只會建立通過驗證的 `https://no-no.uk/<slug>` 或 `<slug>+` 網址，不加入分析、廣告、AccessibilityService 或背景監控。
+
 ## 隱私設計
 
 | 類別 | 保存內容 | 用途／期限 |

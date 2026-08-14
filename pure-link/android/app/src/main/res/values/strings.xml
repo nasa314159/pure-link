@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">PureLink tools</string>
+  <string name="resolver_title">PureLink</string>
+  <string name="resolver_intro">Paste a short identifier or marked text. Nothing is uploaded by this app.</string>
+  <string name="input_hint">PureLink: A3cd8\nLink: Q9xK2\n🔗: H72Ld</string>
+  <string name="find_purelinks">Find PureLinks</string>
+  <string name="no_match">No PureLink marker or valid slug found. Try “PureLink: A3cd8”.</string>
+  <string name="single_match">PureLink found</string>
+  <string name="select_purelink">Select a PureLink</string>
+  <string name="purelink_label">PureLink</string>
+  <string name="preview">+ Preview</string>
+  <string name="open">Open</string>
+  <string name="shortcut_resolve">Resolve a PureLink</string>
+  <string name="shortcut_resolve_long">Paste or type a PureLink identifier</string>
+</resources>

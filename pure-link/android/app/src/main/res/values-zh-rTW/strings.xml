@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">PureLink 工具</string>
+  <string name="resolver_title">PureLink</string>
+  <string name="resolver_intro">貼上短代號或含標記的文字。本應用程式不會上傳內容。</string>
+  <string name="input_hint">PureLink: A3cd8\nLink: Q9xK2\n🔗: H72Ld</string>
+  <string name="find_purelinks">尋找 PureLink</string>
+  <string name="no_match">找不到 PureLink 標記或有效短代號。可試試「PureLink: A3cd8」。</string>
+  <string name="single_match">找到 PureLink</string>
+  <string name="select_purelink">選擇一個 PureLink</string>
+  <string name="purelink_label">PureLink</string>
+  <string name="preview">+ 預覽</string>
+  <string name="open">開啟</string>
+  <string name="shortcut_resolve">解析 PureLink</string>
+  <string name="shortcut_resolve_long">貼上或輸入 PureLink 短代號</string>
+</resources>

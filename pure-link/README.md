@@ -49,6 +49,10 @@ https://no-no.uk/#url=[Shortcut Input]
 
 PureLink fills the creation form while still letting the user inspect the destination, choose cleanup rules, and explicitly confirm creation. Because the URL is placed after `#`, it is not sent to the server as a query parameter when the page first opens.
 
+## Android PureLink tools
+
+[`android/`](android/README.md) contains a small Kotlin Android resolver for deliberate compact identifiers such as `PureLink: A3cd8`, `Link: Q9xK2`, and `🔗: H72Ld`. It supports manual input, selected/shared text, and a launcher shortcut while users keep Samsung Keyboard or Gboard. Parsing is local; the app constructs only validated `https://no-no.uk/<slug>` or `<slug>+` URLs and adds no analytics, advertising, AccessibilityService, or background monitoring.
+
 ## Production configuration
 
 Public writes fail closed. If required protection is missing, creation and reporting return `503` instead of silently disabling safeguards.
