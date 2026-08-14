@@ -75,7 +75,7 @@ describe('Lemon Squeezy billing and voluntary support', () => {
     expect(await verifyLemonSqueezySignature(`${body} `, signature, 'webhook-secret')).toBe(false);
   });
 
-  it('grants a verified credit order once and safely removes remaining credits on refund', async () => {
+  it('applies cumulative partial, additional, duplicate, and full credit refunds without double-revoking', async () => {
     const db = new BillingDb();
     db.checkout = creditCheckout();
     const env = billingEnv(db);
@@ -86,13 +86,24 @@ describe('Lemon Squeezy billing and voluntary support', () => {
     await handleLemonSqueezyWebhook(await webhookRequest('order_created', purchase, env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
     expect(db.balance).toBe(150);
 
-    db.balance = 90;
-    await handleLemonSqueezyWebhook(await webhookRequest('order_refunded', refundedOrder('101'), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
+    await handleLemonSqueezyWebhook(await webhookRequest('order_refunded', refundedOrder('101', { status: 'partial_refund', total: 500, refunded_amount: 100, total_usd: 500, refunded_amount_usd: 100 }), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
+    expect(db.balance).toBe(120);
+    expect(db.creditOrder).toMatchObject({ credits_refunded: 30, refunded_amount_minor: 100, status: 'partial_refund' });
+
+    await handleLemonSqueezyWebhook(await webhookRequest('order_refunded', refundedOrder('101', { status: 'partial_refund', total: 500, refunded_amount: 100, total_usd: 500, refunded_amount_usd: 100 }), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
+    expect(db.balance).toBe(120);
+    expect(db.creditOrder.credits_refunded).toBe(30);
+
+    await handleLemonSqueezyWebhook(await webhookRequest('order_refunded', refundedOrder('101', { status: 'partial_refund', total: 500, refunded_amount: 250, total_usd: 500, refunded_amount_usd: 250 }), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
+    expect(db.balance).toBe(75);
+    expect(db.creditOrder.credits_refunded).toBe(75);
+
+    await handleLemonSqueezyWebhook(await webhookRequest('order_refunded', refundedOrder('101', { status: 'refunded', total: 500, refunded_amount: 500, total_usd: 500, refunded_amount_usd: 500 }), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
     expect(db.balance).toBe(0);
     expect(db.creditOrder.credits_refunded).toBe(150);
   });
 
-  it('records voluntary support separately, keeps attribution opt-in only, and removes it from net totals after a refund', async () => {
+  it('records voluntary support separately and subtracts only cumulative partial or full USD refunds', async () => {
     const db = new BillingDb();
     db.checkout = supportCheckout();
     const env = billingEnv(db);
@@ -104,7 +115,11 @@ describe('Lemon Squeezy billing and voluntary support', () => {
     expect(db.supportOrder).toMatchObject({ provider_order_id: '102', usd_amount_minor: 1200, public_attribution: 1, public_display_name: 'nasa', status: 'paid' });
     await expect(getSupportTotals(db)).resolves.toEqual({ netUsdMinor: 1200, contributionCount: 1, hasUnconvertedContributions: false, publicSupporters: ['nasa'] });
 
-    await handleLemonSqueezyWebhook(await webhookRequest('order_refunded', refundedOrder('102'), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
+    await handleLemonSqueezyWebhook(await webhookRequest('order_refunded', refundedOrder('102', { status: 'partial_refund', total: 1200, refunded_amount: 300, total_usd: 1200, refunded_amount_usd: 300 }), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
+    expect(db.supportOrder).toMatchObject({ refunded_amount_minor: 300, refunded_usd_amount_minor: 300, status: 'partial_refund' });
+    await expect(getSupportTotals(db)).resolves.toEqual({ netUsdMinor: 900, contributionCount: 1, hasUnconvertedContributions: false, publicSupporters: ['nasa'] });
+
+    await handleLemonSqueezyWebhook(await webhookRequest('order_refunded', refundedOrder('102', { status: 'refunded', total: 1200, refunded_amount: 1200, total_usd: 1200, refunded_amount_usd: 1200 }), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
     await expect(getSupportTotals(db)).resolves.toEqual({ netUsdMinor: 0, contributionCount: 0, hasUnconvertedContributions: false, publicSupporters: [] });
   });
 
@@ -158,8 +173,8 @@ function paidOrder(orderId, checkoutId, variantId, attributes = {}) {
   };
 }
 
-function refundedOrder(orderId) {
-  return { data: { type: 'orders', id: orderId, attributes: {} } };
+function refundedOrder(orderId, attributes) {
+  return { data: { type: 'orders', id: orderId, attributes } };
 }
 
 async function webhookRequest(eventName, payload, secret) {
@@ -196,9 +211,10 @@ class BillingDb {
           async first() {
             if (normalized.startsWith('SELECT id, kind, user_id')) return db.checkout?.id === values[0] ? db.checkout : null;
             if (normalized.startsWith('SELECT provider_order_id, credits_total')) return db.creditOrder?.provider_order_id === values[0] ? db.creditOrder : null;
+            if (normalized.startsWith('SELECT provider_order_id, amount_minor')) return db.supportOrder?.provider_order_id === values[0] ? db.supportOrder : null;
             if (normalized.startsWith('SELECT COALESCE(SUM')) {
-              const paid = db.supportOrder?.status === 'paid' ? db.supportOrder : null;
-              return { net_usd_minor: paid?.usd_amount_minor || 0, contribution_count: paid ? 1 : 0, unconverted_count: paid && paid.usd_amount_minor == null ? 1 : 0 };
+              const paid = db.supportOrder?.status !== 'refunded' ? db.supportOrder : null;
+              return { net_usd_minor: paid ? paid.usd_amount_minor - paid.refunded_usd_amount_minor : 0, contribution_count: paid ? 1 : 0, unconverted_count: paid && paid.usd_amount_minor == null ? 1 : 0 };
             }
             return null;
           },
@@ -211,13 +227,13 @@ class BillingDb {
             }
             if (normalized.startsWith('INSERT OR IGNORE INTO lemon_credit_orders')) {
               if (db.creditOrder) return changed(0);
-              db.creditOrder = { provider_order_id: values[0], checkout_request_id: values[1], credits_total: values[4], credits_refunded: 0, status: 'paid' };
+              db.creditOrder = { provider_order_id: values[0], checkout_request_id: values[1], credits_total: values[4], amount_minor: values[5], credits_refunded: 0, refunded_amount_minor: 0, status: 'paid' };
               db.balance += values[4];
               return changed(1);
             }
             if (normalized.startsWith('INSERT OR IGNORE INTO lemon_support_contributions')) {
               if (db.supportOrder) return changed(0);
-              db.supportOrder = { provider_order_id: values[0], checkout_request_id: values[1], amount_minor: values[2], currency: values[3], usd_amount_minor: values[4], public_attribution: values[5], public_display_name: values[6], status: 'paid' };
+              db.supportOrder = { provider_order_id: values[0], checkout_request_id: values[1], amount_minor: values[2], currency: values[3], usd_amount_minor: values[4], refunded_amount_minor: 0, refunded_usd_amount_minor: 0, public_attribution: values[5], public_display_name: values[6], status: 'paid' };
               return changed(1);
             }
             if (normalized.startsWith('UPDATE lemon_checkout_requests')) {
@@ -228,11 +244,16 @@ class BillingDb {
               const nextRefunded = Math.max(db.creditOrder.credits_refunded, values[0]);
               db.balance = Math.max(0, db.balance - (nextRefunded - db.creditOrder.credits_refunded));
               db.creditOrder.credits_refunded = nextRefunded;
-              db.creditOrder.status = 'refunded';
+              db.creditOrder.refunded_amount_minor = Math.max(db.creditOrder.refunded_amount_minor, values[1]);
+              db.creditOrder.status = db.creditOrder.refunded_amount_minor >= db.creditOrder.amount_minor ? 'refunded' : 'partial_refund';
               return changed(1);
             }
             if (normalized.startsWith('UPDATE lemon_support_contributions')) {
-              if (db.supportOrder?.provider_order_id === values[0]) db.supportOrder.status = 'refunded';
+              if (db.supportOrder?.provider_order_id === values[3]) {
+                db.supportOrder.refunded_amount_minor = Math.max(db.supportOrder.refunded_amount_minor, values[0]);
+                db.supportOrder.refunded_usd_amount_minor = Math.max(db.supportOrder.refunded_usd_amount_minor, values[1]);
+                db.supportOrder.status = db.supportOrder.refunded_amount_minor >= db.supportOrder.amount_minor ? 'refunded' : 'partial_refund';
+              }
               return changed(1);
             }
             if (normalized.startsWith('INSERT OR IGNORE INTO lemon_webhook_events')) {
@@ -244,7 +265,7 @@ class BillingDb {
           },
           async all() {
             if (normalized.startsWith('SELECT public_display_name')) {
-              const paid = db.supportOrder?.status === 'paid' && db.supportOrder.public_attribution === 1 && db.supportOrder.public_display_name;
+              const paid = db.supportOrder?.status !== 'refunded' && db.supportOrder.public_attribution === 1 && db.supportOrder.public_display_name;
               return { results: paid ? [{ public_display_name: db.supportOrder.public_display_name }] : [] };
             }
             return { results: [] };
@@ -254,14 +275,14 @@ class BillingDb {
     };
     statement.first = async () => {
       if (normalized.startsWith('SELECT COALESCE(SUM')) {
-        const paid = db.supportOrder?.status === 'paid' ? db.supportOrder : null;
-        return { net_usd_minor: paid?.usd_amount_minor || 0, contribution_count: paid ? 1 : 0, unconverted_count: paid && paid.usd_amount_minor == null ? 1 : 0 };
+        const paid = db.supportOrder?.status !== 'refunded' ? db.supportOrder : null;
+        return { net_usd_minor: paid ? paid.usd_amount_minor - paid.refunded_usd_amount_minor : 0, contribution_count: paid ? 1 : 0, unconverted_count: paid && paid.usd_amount_minor == null ? 1 : 0 };
       }
       return null;
     };
     statement.all = async () => {
       if (normalized.startsWith('SELECT public_display_name')) {
-        const paid = db.supportOrder?.status === 'paid' && db.supportOrder.public_attribution === 1 && db.supportOrder.public_display_name;
+        const paid = db.supportOrder?.status !== 'refunded' && db.supportOrder.public_attribution === 1 && db.supportOrder.public_display_name;
         return { results: paid ? [{ public_display_name: db.supportOrder.public_display_name }] : [] };
       }
       return { results: [] };

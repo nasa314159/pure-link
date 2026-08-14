@@ -35,15 +35,15 @@ export async function getSupportTotals(db) {
   if (!db) return { netUsdMinor: 0, contributionCount: 0, hasUnconvertedContributions: false, publicSupporters: [] };
   const row = await db.prepare(`
     SELECT
-      COALESCE(SUM(CASE WHEN status = 'paid' THEN COALESCE(usd_amount_minor, 0) ELSE 0 END), 0) AS net_usd_minor,
-      COALESCE(SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END), 0) AS contribution_count,
-      COALESCE(SUM(CASE WHEN status = 'paid' AND usd_amount_minor IS NULL THEN 1 ELSE 0 END), 0) AS unconverted_count
+      COALESCE(SUM(CASE WHEN status != 'refunded' THEN MAX(0, COALESCE(usd_amount_minor, 0) - refunded_usd_amount_minor) ELSE 0 END), 0) AS net_usd_minor,
+      COALESCE(SUM(CASE WHEN status != 'refunded' THEN 1 ELSE 0 END), 0) AS contribution_count,
+      COALESCE(SUM(CASE WHEN status != 'refunded' AND usd_amount_minor IS NULL THEN 1 ELSE 0 END), 0) AS unconverted_count
     FROM lemon_support_contributions
   `).first();
   const publicSupporters = await db.prepare(`
     SELECT public_display_name
     FROM lemon_support_contributions
-    WHERE status = 'paid' AND public_attribution = 1 AND public_display_name IS NOT NULL
+    WHERE status != 'refunded' AND public_attribution = 1 AND public_display_name IS NOT NULL
     ORDER BY created_at DESC
     LIMIT 24
   `).all();
@@ -126,7 +126,7 @@ export async function handleLemonSqueezyWebhook(request, env) {
   }
 
   if (eventName === 'order_created') await recordPaidOrder(env.pure_link_db, payload, env, orderId);
-  else await recordRefund(env.pure_link_db, orderId);
+  else await recordRefund(env.pure_link_db, payload, orderId);
   await recordWebhookEvent(env.pure_link_db, `${orderId}:${eventName}`, eventName, orderId);
   return json({ received: true });
 }
@@ -262,16 +262,40 @@ async function recordPaidOrder(db, payload, env, orderId) {
   }
 }
 
-async function recordRefund(db, orderId) {
-  const credit = await db.prepare('SELECT provider_order_id, credits_total FROM lemon_credit_orders WHERE provider_order_id = ?').bind(orderId).first();
+async function recordRefund(db, payload, orderId) {
+  const attributes = payload?.data?.attributes || {};
+  const status = String(attributes.status || '');
+  if (!['partial_refund', 'refunded'].includes(status)) return;
+  const total = nonNegativeInteger(attributes.total);
+  const refundedAmount = nonNegativeInteger(attributes.refunded_amount);
+  const credit = await db.prepare('SELECT provider_order_id, credits_total, credits_refunded, amount_minor FROM lemon_credit_orders WHERE provider_order_id = ?').bind(orderId).first();
   if (credit) {
+    if (!validCumulativeRefund(total, refundedAmount, credit.amount_minor)) return;
+    const cumulativeAmount = status === 'refunded' ? Number(credit.amount_minor) : refundedAmount;
+    const cumulativeCredits = refundedCredits(credit.credits_total, credit.amount_minor, cumulativeAmount);
     await db.prepare(`
-      UPDATE lemon_credit_orders SET credits_refunded = MAX(credits_refunded, ?), status = 'refunded', updated_at = CURRENT_TIMESTAMP
+      UPDATE lemon_credit_orders
+      SET credits_refunded = MAX(credits_refunded, ?),
+          refunded_amount_minor = MAX(refunded_amount_minor, ?),
+          status = CASE WHEN MAX(refunded_amount_minor, ?) >= amount_minor THEN 'refunded' ELSE 'partial_refund' END,
+          updated_at = CURRENT_TIMESTAMP
       WHERE provider_order_id = ?
-    `).bind(Number(credit.credits_total), orderId).run();
+    `).bind(cumulativeCredits, cumulativeAmount, cumulativeAmount, orderId).run();
     return;
   }
-  await db.prepare(`UPDATE lemon_support_contributions SET status = 'refunded', updated_at = CURRENT_TIMESTAMP WHERE provider_order_id = ?`).bind(orderId).run();
+  const support = await db.prepare('SELECT provider_order_id, amount_minor, usd_amount_minor FROM lemon_support_contributions WHERE provider_order_id = ?').bind(orderId).first();
+  if (!support || !validCumulativeRefund(total, refundedAmount, support.amount_minor)) return;
+  const cumulativeAmount = status === 'refunded' ? Number(support.amount_minor) : refundedAmount;
+  const refundedUsd = cumulativeUsdRefund(attributes, support.usd_amount_minor, status);
+  if (refundedUsd == null) return;
+  await db.prepare(`
+    UPDATE lemon_support_contributions
+    SET refunded_amount_minor = MAX(refunded_amount_minor, ?),
+        refunded_usd_amount_minor = MAX(refunded_usd_amount_minor, ?),
+        status = CASE WHEN MAX(refunded_amount_minor, ?) >= amount_minor THEN 'refunded' ELSE 'partial_refund' END,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE provider_order_id = ?
+  `).bind(cumulativeAmount, refundedUsd, cumulativeAmount, orderId).run();
 }
 
 async function markCheckoutCompleted(db, requestId) {
@@ -294,6 +318,26 @@ function normalizeDisplayName(value) {
 function providerUsdAmount(attributes) {
   const value = Number(attributes?.total_usd);
   return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function validCumulativeRefund(total, refundedAmount, storedAmount) {
+  return Number.isSafeInteger(total)
+    && Number.isSafeInteger(refundedAmount)
+    && total === Number(storedAmount)
+    && refundedAmount <= total;
+}
+
+function refundedCredits(creditsTotal, amountMinor, refundedAmount) {
+  if (!amountMinor || refundedAmount >= amountMinor) return Number(creditsTotal);
+  return Math.min(Number(creditsTotal), Math.floor((Number(creditsTotal) * refundedAmount) / amountMinor));
+}
+
+function cumulativeUsdRefund(attributes, storedUsdAmount, status) {
+  if (storedUsdAmount == null) return 0;
+  const totalUsd = nonNegativeInteger(attributes.total_usd);
+  const refundedUsd = nonNegativeInteger(attributes.refunded_amount_usd);
+  if (totalUsd !== Number(storedUsdAmount) || refundedUsd > totalUsd) return null;
+  return status === 'refunded' ? totalUsd : refundedUsd;
 }
 
 function nonNegativeInteger(value) {
