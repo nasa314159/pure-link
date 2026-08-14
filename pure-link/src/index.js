@@ -9,7 +9,7 @@ import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
 import { BillingError, createCheckout, getCreditBalance, handleCreemWebhook, isCheckoutConfigured } from './billing.js';
-import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale } from './i18n.js';
+import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
 
 export default {
   async fetch(request, env, context) {
@@ -200,7 +200,7 @@ function safeLocaleReturnTo(value, locale) {
 }
 
 async function createLink(request, requestUrl, repository, env, context) {
-  const messages = getMessages(resolveLocale(request));
+  const messages = getMessages(resolveResponseLocale(request));
   const input = await readCreateInput(request);
   const protectionResponse = await enforceWriteProtection({
     request,
@@ -218,7 +218,7 @@ async function createLink(request, requestUrl, repository, env, context) {
 
   let slug = normalized.slug;
   if (slug && await repository.exists(slug)) {
-    return json({ error: 'This custom link is already in use.', field: 'slug' }, { status: 409 });
+    return json({ error: messages.api.customLinkTaken, field: 'slug' }, { status: 409 });
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -248,18 +248,18 @@ async function createLink(request, requestUrl, repository, env, context) {
     }
   }
 
-  return json({ error: 'Could not allocate a unique link. Please try again.' }, { status: 503 });
+  return json({ error: messages.api.uniqueLinkFailed }, { status: 503 });
 }
 
 async function generateFormula(request, env) {
+  const messages = getMessages(resolveResponseLocale(request));
   if (!request.headers.get('origin') || !requireSameOrigin(request, env)) {
-    return json({ error: 'Invalid request origin.' }, { status: 403 });
+    return json({ error: messages.api.invalidRequest }, { status: 403 });
   }
   const user = await getCurrentUser(request, env);
   if (!user) {
-    const locale = resolveLocale(request);
-    const message = locale === 'zh-Hant' ? '請先登入再使用公式生成。' : 'Sign in before using formula generation.';
-    return json({ error: message, loginUrl: `/auth/google?returnTo=${encodeURIComponent(`${localizedPath(locale)}#formula-ai`)}` }, { status: 401 });
+    const locale = resolveResponseLocale(request);
+    return json({ error: messages.api.formulaSignIn, loginUrl: `/auth/google?returnTo=${encodeURIComponent(`${localizedPath(locale)}#formula-ai`)}` }, { status: 401 });
   }
 
   try {
@@ -271,6 +271,7 @@ async function generateFormula(request, env) {
       ai: env.AI,
       dailyLimit: Number(user.is_admin) === 1 ? 100 : 5,
       isAdmin: Number(user.is_admin) === 1,
+      errorMessages: messages.api,
     }));
   } catch (error) {
     if (error instanceof FormulaAiError) return json({ error: error.message }, { status: error.status });
@@ -279,6 +280,7 @@ async function generateFormula(request, env) {
 }
 
 async function submitReport(request, requestUrl, env, context) {
+  const messages = getMessages(resolveResponseLocale(request));
   const input = await readCreateInput(request);
   const protectionResponse = await enforceWriteProtection({
     request,
@@ -291,9 +293,9 @@ async function submitReport(request, requestUrl, env, context) {
   });
   if (protectionResponse) return protectionResponse;
 
-  const report = normalizeReportInput(input);
+  const report = normalizeReportInput(input, messages.api);
   const exists = await createLinkRepository(env.pure_link_db).exists(report.slug);
-  if (!exists) return json({ error: 'This PureLink could not be found.' }, { status: 404 });
+  if (!exists) return json({ error: messages.api.reportNotFound }, { status: 404 });
   await storeReport(env.pure_link_db, report);
   recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'report', contentType: 'none' });
   return json({ received: true, reference: report.id }, { status: 201 });

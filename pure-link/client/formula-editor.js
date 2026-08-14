@@ -69,7 +69,7 @@ async function generateFormula() {
   try {
     const response = await fetch('/api/formulas/generate', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-purelink-locale': document.documentElement.lang },
       body: JSON.stringify({ description }),
     });
     const payload = await response.json();

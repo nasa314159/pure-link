@@ -164,6 +164,56 @@ describe('PureLink worker', () => {
     expect(await signedOut.json()).toMatchObject({ loginUrl: '/auth/google?returnTo=%2Fen%2F%23formula-ai' });
   });
 
+  it('uses the active localized page locale for API-facing copy', async () => {
+    const chinesePage = await worker.fetch(new Request('https://pure.test/zh-Hant/', { headers: { 'accept-language': 'en-US' } }), env);
+    expect(await chinesePage.text()).toContain('<html lang="zh-Hant">');
+
+    const chineseCreate = await worker.fetch(new Request('https://pure.test/api/links', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-purelink-locale': 'zh-Hant', 'accept-language': 'en-US' },
+      body: JSON.stringify({ contentType: 'card', content: '繁體中文 API 複本' }),
+    }), env);
+    expect((await chineseCreate.json()).previewLabel).toBe('查看小卡');
+
+    const chineseFormula = await worker.fetch(new Request('https://pure.test/api/formulas/generate', {
+      method: 'POST',
+      headers: { origin: 'https://pure.test', 'content-type': 'application/json', 'x-purelink-locale': 'zh-Hant', 'accept-language': 'en-US' },
+      body: JSON.stringify({ description: 'E equals mc squared' }),
+    }), env);
+    expect(await chineseFormula.json()).toMatchObject({ error: '請先登入再使用公式生成。', loginUrl: '/auth/google?returnTo=%2Fzh-Hant%2F%23formula-ai' });
+
+    const chineseReport = await worker.fetch(new Request('https://pure.test/api/reports', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-purelink-locale': 'zh-Hant', 'accept-language': 'en-US' },
+      body: JSON.stringify({ slug: 'missing-zh', category: 'phishing' }),
+    }), env);
+    expect(await chineseReport.json()).toMatchObject({ error: '找不到這個 PureLink。' });
+
+    const englishPage = await worker.fetch(new Request('https://pure.test/en/', { headers: { 'accept-language': 'zh-TW' } }), env);
+    expect(await englishPage.text()).toContain('<html lang="en">');
+
+    const englishCreate = await worker.fetch(new Request('https://pure.test/api/links', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-purelink-locale': 'en', 'accept-language': 'zh-TW' },
+      body: JSON.stringify({ contentType: 'card', content: 'English API copy' }),
+    }), env);
+    expect((await englishCreate.json()).previewLabel).toBe('View card');
+
+    const englishFormula = await worker.fetch(new Request('https://pure.test/api/formulas/generate', {
+      method: 'POST',
+      headers: { origin: 'https://pure.test', 'content-type': 'application/json', 'x-purelink-locale': 'en', 'accept-language': 'zh-TW' },
+      body: JSON.stringify({ description: 'E equals mc squared' }),
+    }), env);
+    expect(await englishFormula.json()).toMatchObject({ error: 'Sign in before using formula generation.', loginUrl: '/auth/google?returnTo=%2Fen%2F%23formula-ai' });
+
+    const englishReport = await worker.fetch(new Request('https://pure.test/api/reports', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-purelink-locale': 'en', 'accept-language': 'zh-TW' },
+      body: JSON.stringify({ slug: 'missing-en', category: 'phishing' }),
+    }), env);
+    expect(await englishReport.json()).toMatchObject({ error: 'This PureLink could not be found.' });
+  });
+
   it('creates, redirects, and previews a URL', async () => {
     const created = await createLink(env, {
       contentType: 'url',

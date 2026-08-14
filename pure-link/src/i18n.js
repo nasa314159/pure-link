@@ -35,6 +35,12 @@ export function resolveLocale(request, routeLocale = null) {
   return normalizeLocale(routeLocale) || getCookieLocale(request) || localeFromAcceptLanguage(request.headers.get('accept-language')) || DEFAULT_LOCALE;
 }
 
+// This header carries the active locale of a rendered page to its same-origin API
+// request. It is deliberately limited to response copy, never access decisions.
+export function resolveResponseLocale(request, routeLocale = null) {
+  return normalizeLocale(routeLocale) || normalizeLocale(request.headers.get('x-purelink-locale')) || resolveLocale(request);
+}
+
 export function parseLocaleRoute(path) {
   const [prefix, ...rest] = String(path || '').split('/');
   if (!SUPPORTED_LOCALES.includes(prefix)) return null;
@@ -54,6 +60,7 @@ export const messages = Object.freeze({
   en: {
     localeName: 'English', otherLocaleName: '繁體中文',
     nav: { account: 'My PureLinks', signIn: 'Sign in', language: 'Language', github: 'GitHub source' },
+    api: { invalidRequest: 'Invalid request origin.', customLinkTaken: 'This custom link is already in use.', uniqueLinkFailed: 'Could not allocate a unique link. Please try again.', formulaSignIn: 'Sign in before using formula generation.', formulaUnavailable: 'Formula generation is unavailable right now. Please try again.', formulaProviderFailed: 'Cloudflare Workers AI could not complete this generation. This attempt still counts toward your daily allowance.', formulaInvalidDraft: 'AI did not return one safely editable LaTeX formula. Try a different description.', formulaDescriptionRequired: 'Describe the formula in one sentence first.', formulaDescriptionTooLong: 'Formula descriptions must be 500 characters or fewer.', reportNotFound: 'This PureLink could not be found.', reportInvalidSlug: 'Choose a valid PureLink to report.', reportInvalidCategory: 'Choose a reason for the report.', reportDetailsTooLong: 'Report details must be 1000 characters or fewer.' },
     page: {
       aiGuestLimit: '5 per day for regular accounts', aiLimit: '{count} per day', aiCreditsLink: 'AI credits, delivery and pricing', aiCreditsNav: 'AI credits', refundPolicyNav: 'Refund policy', policyNav: 'PureLink policies', quickOpenEyebrow: 'OPEN', createEyebrow: 'CREATE', readyEyebrow: 'READY', reportEyebrow: 'REPORT', managementEyebrow: 'PRIVATE MANAGEMENT', customShortcutsLabel: 'Custom formula shortcuts',
       shortcutCategories: 'Math shortcut categories', shortcutGroups: { common: 'Common math', algebra: 'Algebra', calculus: 'Calculus', matrices: 'Vectors and matrices', trigonometry: 'Trigonometry', symbols: 'Greek and symbols' }, insert: 'insert',
@@ -85,6 +92,7 @@ export const messages = Object.freeze({
   'zh-Hant': {
     localeName: '繁體中文', otherLocaleName: 'English',
     nav: { account: '我的 PureLink', signIn: '登入', language: '語言', github: 'GitHub 原始碼' },
+    api: { invalidRequest: '無效的請求來源。', customLinkTaken: '這個自訂短連結已被使用。', uniqueLinkFailed: '目前無法建立唯一短連結，請稍後再試。', formulaSignIn: '請先登入再使用公式生成。', formulaUnavailable: '公式生成目前無法使用，請稍後再試。', formulaProviderFailed: 'Cloudflare Workers AI 暫時沒有完成這次生成，這次嘗試仍計入每日額度。', formulaInvalidDraft: 'AI 沒有回傳可安全編輯的單一 LaTeX 公式，請換一種描述再試。', formulaDescriptionRequired: '請先用一句話描述要產生的公式。', formulaDescriptionTooLong: '公式描述不得超過 500 個字元。', reportNotFound: '找不到這個 PureLink。', reportInvalidSlug: '請選擇要回報的有效 PureLink。', reportInvalidCategory: '請選擇回報原因。', reportDetailsTooLong: '回報說明不得超過 1000 個字元。' },
     page: {
       aiGuestLimit: '一般帳號每日 5 次', aiLimit: '每日 {count} 次', aiCreditsLink: 'AI 額度、交付與價格', aiCreditsNav: 'AI 額度', refundPolicyNav: '退款政策', policyNav: 'PureLink 政策', quickOpenEyebrow: '開啟', createEyebrow: '建立', readyEyebrow: '完成', reportEyebrow: '回報', managementEyebrow: '私人管理', customShortcutsLabel: '自訂公式快捷鍵',
       shortcutCategories: '數學快捷分類', shortcutGroups: { common: '常用數學', algebra: '代數', calculus: '微積分', matrices: '向量與矩陣', trigonometry: '三角函數', symbols: '希臘字母與符號' }, insert: '插入',

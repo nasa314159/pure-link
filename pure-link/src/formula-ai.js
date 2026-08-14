@@ -15,10 +15,10 @@ export class FormulaAiError extends Error {
   }
 }
 
-export async function generateFormulaDraft({ description, userId, db, ai, dailyLimit = FORMULA_AI_DAILY_LIMIT, isAdmin = dailyLimit > FORMULA_AI_DAILY_LIMIT }) {
-  const prompt = normalizeDescription(description);
+export async function generateFormulaDraft({ description, userId, db, ai, dailyLimit = FORMULA_AI_DAILY_LIMIT, isAdmin = dailyLimit > FORMULA_AI_DAILY_LIMIT, errorMessages = null }) {
+  const prompt = normalizeDescription(description, errorMessages);
   if (!db || !ai || typeof ai.run !== 'function') {
-    throw new FormulaAiError('公式生成目前無法使用，請稍後再試。', 503);
+    throw new FormulaAiError(errorMessages?.formulaUnavailable || '公式生成目前無法使用，請稍後再試。', 503);
   }
 
   await db.prepare("DELETE FROM formula_ai_daily_usage WHERE usage_date < date('now', '-31 days')").run();
@@ -53,12 +53,12 @@ export async function generateFormulaDraft({ description, userId, db, ai, dailyL
     });
   } catch {
     if (allowance.source === 'purchased') await restorePurchasedFormulaCredit(db, userId);
-    throw new FormulaAiError('Cloudflare Workers AI 暫時沒有完成這次生成，這次嘗試仍計入每日額度。');
+    throw new FormulaAiError(errorMessages?.formulaProviderFailed || 'Cloudflare Workers AI 暫時沒有完成這次生成，這次嘗試仍計入每日額度。');
   }
 
   let latex;
   try {
-    latex = extractLatex(result);
+    latex = extractLatex(result, errorMessages?.formulaInvalidDraft);
   } catch (error) {
     if (allowance.source === 'purchased') await restorePurchasedFormulaCredit(db, userId);
     throw error;
@@ -73,16 +73,16 @@ export async function generateFormulaDraft({ description, userId, db, ai, dailyL
   };
 }
 
-export function normalizeDescription(value) {
+export function normalizeDescription(value, errorMessages = null) {
   const description = String(value || '').trim();
-  if (!description) throw new ValidationError('請先用一句話描述要產生的公式。', 'description');
+  if (!description) throw new ValidationError(errorMessages?.formulaDescriptionRequired || '請先用一句話描述要產生的公式。', 'description');
   if (description.length > MAX_DESCRIPTION_LENGTH) {
-    throw new ValidationError(`公式描述不得超過 ${MAX_DESCRIPTION_LENGTH} 個字元。`, 'description');
+    throw new ValidationError(errorMessages?.formulaDescriptionTooLong || `公式描述不得超過 ${MAX_DESCRIPTION_LENGTH} 個字元。`, 'description');
   }
   return description;
 }
 
-export function extractLatex(result) {
+export function extractLatex(result, invalidDraftMessage = '') {
   let payload = result?.response ?? result;
   if (typeof payload === 'string') {
     const trimmed = payload.trim();
@@ -98,7 +98,7 @@ export function extractLatex(result) {
   else if (latex.startsWith('$') && latex.endsWith('$')) latex = latex.slice(1, -1).trim();
 
   if (!latex || latex.length > MAX_LATEX_LENGTH || /<\/?[A-Za-z][^>]*>|```/.test(latex)) {
-    throw new FormulaAiError('AI 沒有回傳可安全編輯的單一 LaTeX 公式，請換一種描述再試。');
+    throw new FormulaAiError(invalidDraftMessage || 'AI 沒有回傳可安全編輯的單一 LaTeX 公式，請換一種描述再試。');
   }
   return latex;
 }

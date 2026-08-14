@@ -116,6 +116,16 @@ describe('interactive pages', () => {
     expect(chineseReport).toContain('button.textContent = "正在送出…"');
   });
 
+  it('sends the rendered page locale with locale-sensitive API requests', () => {
+    const chineseHome = renderHomePage('test-nonce', '', false, '', null, 'zh-Hant');
+    const englishHome = renderHomePage('test-nonce', '', false, '', null, 'en');
+    const englishReport = renderReportPage('locale-proof', 'test-nonce', '', 'en');
+
+    expect(chineseHome).toContain("'x-purelink-locale': \"zh-Hant\"");
+    expect(englishHome).toContain("'x-purelink-locale': \"en\"");
+    expect(englishReport).toContain("'x-purelink-locale': \"en\"");
+  });
+
   it('publishes review-ready AI credit and refund information in English', () => {
     const credits = renderLegalPage('ai-credits', 'en');
     const refunds = renderLegalPage('refund-policy', 'en');

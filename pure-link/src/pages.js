@@ -399,7 +399,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         try {
           const response = await fetch('/api/links', {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} },
             body: JSON.stringify(data),
           });
           const result = await response.json();
@@ -677,7 +677,7 @@ export function renderReportPage(slug, nonce, turnstileSiteKey = '', locale = 'z
         try {
           const response = await fetch('/api/reports', {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} },
             body: JSON.stringify(data),
           });
           const result = await response.json();
