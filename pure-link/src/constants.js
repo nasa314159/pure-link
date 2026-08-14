@@ -22,6 +22,7 @@ export const RESERVED_SLUGS = new Set([
   'transparency',
   'ai-credits',
   'refund-policy',
+  'support',
   'robots.txt',
   'sitemap.xml',
   'favicon.ico',

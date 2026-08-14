@@ -79,12 +79,12 @@ describe('PureLink worker', () => {
     expect(ordinary.headers.get('location')).toBeNull();
   });
 
-  it('serves privacy, terms, transparency, AI credit, and refund disclosures', async () => {
-    for (const path of ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy']) {
+  it('serves privacy, terms, transparency, AI credit, refund, and support disclosures', async () => {
+    for (const path of ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy', 'support']) {
       const response = await worker.fetch(new Request(`https://pure.test/en/${path}`), env);
       expect(response.status).toBe(200);
       const body = await response.text();
-      expect(body).toMatch(/MVP 說明版本|Last updated/);
+      expect(body).toMatch(/MVP 說明版本|Last updated|Support PureLink/);
     }
   });
 
@@ -105,6 +105,7 @@ describe('PureLink worker', () => {
     expect(sitemapBody).toContain('<loc>https://no-no.uk/en/</loc>');
     expect(sitemapBody).toContain('<loc>https://no-no.uk/en/privacy</loc>');
     expect(sitemapBody).toContain('<loc>https://no-no.uk/en/ai-credits</loc>');
+    expect(sitemapBody).toContain('<loc>https://no-no.uk/en/support</loc>');
     expect(sitemapBody).not.toContain('/account');
     expect(sitemapBody).not.toContain('/manage/');
 
@@ -357,6 +358,9 @@ class MemoryStatement {
     if (this.sql.startsWith('SELECT slug, content_type')) {
       return this.db.links.get(this.values[0]) || null;
     }
+    if (this.sql.startsWith('SELECT COALESCE(SUM')) {
+      return { net_usd_minor: 0, contribution_count: 0, unconverted_count: 0 };
+    }
     throw new Error(`Unsupported first query: ${this.sql}`);
   }
 
@@ -396,5 +400,10 @@ class MemoryStatement {
       return { success: true, meta: { changes: 1 } };
     }
     throw new Error(`Unsupported run query: ${this.sql}`);
+  }
+
+  async all() {
+    if (this.sql.startsWith('SELECT public_display_name')) return { results: [] };
+    throw new Error(`Unsupported all query: ${this.sql}`);
   }
 }

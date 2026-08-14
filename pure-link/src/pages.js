@@ -278,7 +278,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
         <footer class="home-footer">
           <p>${m.home.footer}</p>
-          <nav aria-label="${escapeHtml(m.nav.language)}">${googleAuthConfigured ? `<a href="${localizedHref(locale, 'account')}">${m.nav.account}</a>` : ''}<a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">${m.nav.github}</a></nav>
+          <nav aria-label="${escapeHtml(m.nav.language)}">${googleAuthConfigured ? `<a href="${localizedHref(locale, 'account')}">${m.nav.account}</a>` : ''}<a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'support')}">${m.support.button}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">${m.nav.github}</a></nav>
           ${languageSwitcher(locale)}
         </footer>
       </main>
@@ -747,10 +747,10 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
       intro: 'PureLink is free to use. Optional one-time credit packs extend the AI-assisted formula feature without turning the core URL, formula, or card tools into a subscription.',
       sections: [
         ['What the product does', 'A signed-in customer can describe a mathematical expression in natural language and receive an editable LaTeX draft with an immediate visual preview. The result is never published automatically, may contain mistakes, and must be reviewed by the customer before use.'],
-        ['One-time plans', 'US$5 provides 300 AI formula generations. US$10 provides 800 generations. US$20 provides 2,000 generations. These are one-time purchases, not subscriptions. Taxes may be added at checkout when required.'],
+        ['One-time credit packs', 'US$5 provides 150 additional AI formula drafts. US$10 provides 400 additional AI formula drafts. US$20 provides 1,000 additional AI formula drafts. These are one-time purchases, not subscriptions. Taxes may be added at checkout when required.'],
         ['Delivery', 'After a confirmed payment, credits are delivered automatically to the PureLink account that started checkout. Customers must be signed in before purchasing. The five free daily generations are used before purchased credits, and purchased credits are not shared between accounts.'],
         ['Credit lifetime and limits', 'Purchased credits do not expire while PureLink continues to operate the AI formula service. They are non-transferable, have no cash value, and remain subject to a daily safety limit that protects accounts and the public service from automated abuse.'],
-        ['Payment boundary', 'Creem is used only to sell AI formula credit packs and acts as the merchant of record for these purchases. Voluntary support for the open-source project is separate, does not grant credits or product benefits, and is not processed through Creem. Checkout is enabled only after payment-provider approval and integration testing.'],
+        ['Payment boundary', 'Lemon Squeezy is used only to sell AI formula draft packs and acts as the merchant of record for these purchases. Voluntary support for the open-source project is separate, grants no credits or product benefits, and uses a separate Pay What You Want checkout. Credits are added only after a verified payment webhook.'],
         ['Support', 'For purchase, delivery, or account questions, contact nasa3.14159@gmail.com. Include the email address used for your PureLink account and the order number, but never send a password, full card number, or Google credential.'],
       ],
     },
@@ -770,6 +770,9 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
   };
   const content = localizedLegalContent(page, locale, pages) || pages.transparency;
   const m = getMessages(locale);
+  const productActions = page === 'ai-credits'
+    ? `<p class="product-actions"><a class="primary-link compact" href="${localizedHref(locale, 'account')}">${m.billing.buy}</a><a class="secondary-link" href="${localizedHref(locale, 'support')}">${m.support.button}</a></p>`
+    : '';
   return documentShell({
     title: `${content.title} — PureLink`,
     description: content.intro,
@@ -784,7 +787,8 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
-          <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
+          ${productActions}
+          <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'support')}">${m.support.button}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
           ${languageSwitcher(locale, page)}
           <p class="legal-updated">${locale === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14'}</p>
         </article>
@@ -824,10 +828,10 @@ function localizedLegalContent(page, locale, defaults) {
     'zh-Hant': {
       'ai-credits': ['AI 公式額度', '需要時才購買更多公式草稿。', 'PureLink 核心功能免費使用；可選的一次性額度只延伸 AI 公式功能，不會把網址、公式或小卡變成訂閱服務。', [
         ['商品內容', '已登入的使用者可用自然語言描述數學式，取得可編輯、可立即預覽的 LaTeX 草稿。結果不會自動發布，可能有錯，使用前必須自行檢查。'],
-        ['一次性方案', 'US$5 可取得 300 次 AI 公式生成，US$10 可取得 800 次，US$20 可取得 2,000 次。這些都是一次性購買，不是訂閱；依法可能在結帳時加計稅金。'],
+        ['一次性額度組合', 'US$5 可取得 150 次額外 AI 公式草稿，US$10 可取得 400 次，US$20 可取得 1,000 次。這些都是一次性購買，不是訂閱；依法可能在結帳時加計稅金。'],
         ['交付', '付款確認後，額度會自動加入發起結帳的 PureLink 帳號。購買前必須登入。每日五次免費生成優先使用，已購額度不在帳號間共用。'],
         ['效期與限制', '只要 PureLink 持續營運 AI 公式服務，已購額度不會到期。它不可轉讓、沒有現金價值，並仍受每日安全上限保護帳號與公共服務免受自動化濫用。'],
-        ['付款邊界', 'Creem 只用於銷售 AI 公式額度，並作為這些購買的 merchant of record。開源專案的自願支持完全分開，不提供額度或產品權益，也不經由 Creem 處理。僅在付款供應商核准與整合測試後啟用結帳。'],
+        ['付款邊界', 'Lemon Squeezy 只用於銷售 AI 公式草稿額度，並作為這些購買的 merchant of record。開源專案的自願支持完全分開，使用獨立的 Pay What You Want 結帳，不提供額度或產品權益。只有驗證付款 webhook 後才會加入額度。'],
         ['支援', '若有購買、交付或帳號問題，請聯絡 nasa3.14159@gmail.com。請提供 PureLink 帳號電子郵件與訂單編號，但不要傳送密碼、完整卡號或 Google 憑證。'],
       ]],
       'refund-policy': ['退款政策', '購買出錯時的清楚處理方式。', '本政策適用於 PureLink AI 公式額度的一次性購買，不限制使用者所在地區適用的任何強制消費者權利。', [
@@ -983,10 +987,10 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
     ? links.map((link) => `<li><div><span>${escapeHtml(({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content)}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">${m.common.view}</a><a href="${localizedHref(locale, `manage/${link.slug}`)}">${m.common.manage}</a></li>`).join('')
     : `<li class="empty-account">${m.account.empty}</li>`;
   const purchaseNotice = purchaseStatus === 'success'
-    ? `<p class="auth-notice" role="status"><strong>${m.account.returned}</strong><span>${m.account.returnedHelp}</span></p>`
+    ? `<p class="auth-notice" role="status"><strong>${m.billing.returned}</strong><span>${m.billing.returnedHelp}</span></p>`
     : '';
   const checkoutAction = checkoutConfigured
-    ? `<button id="buy-credits-300" type="button">${m.account.buy}</button><p class="billing-status" id="billing-status" role="status" hidden></p>`
+    ? `<div class="credit-pack-actions"><p>${m.billing.packs}</p><button type="button" data-credit-tier="5">${m.billing.pack5}</button><button type="button" data-credit-tier="10">${m.billing.pack10}</button><button type="button" data-credit-tier="20">${m.billing.pack20}</button></div><p class="billing-status" id="billing-status" role="status" hidden></p>`
     : `<p class="billing-status">${m.account.billingDisabled}</p>`;
   return documentShell({
     title: m.account.title,
@@ -1006,7 +1010,7 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
             <h2 id="account-credits-title">${m.account.credits.replace('{count}', Math.max(0, Number(creditBalance || 0)))}</h2>
             <p>${m.account.creditsHelp}</p>
             ${checkoutAction}
-            <p><a href="${localizedHref(locale, 'ai-credits')}">${m.account.productInfo}</a> · <a href="${localizedHref(locale, 'refund-policy')}">${m.account.refund}</a></p>
+            <p><a href="${localizedHref(locale, 'ai-credits')}">${m.account.productInfo}</a> · <a href="${localizedHref(locale, 'support')}">${m.support.button}</a> · <a href="${localizedHref(locale, 'refund-policy')}">${m.account.refund}</a></p>
           </section>
           <ul class="account-links">${rows}</ul>
           <form action="/auth/logout" method="post"><button class="secondary-button" type="submit">${m.account.logOut}</button></form>
@@ -1015,26 +1019,99 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
       </main>
     `,
     script: checkoutConfigured ? `
-      const accountMessages = ${JSON.stringify(m.account).replaceAll('<', '\\u003c')};
-      const buyButton = document.getElementById('buy-credits-300');
+      const billingMessages = ${JSON.stringify(m.billing).replaceAll('<', '\\u003c')};
+      const buyButtons = [...document.querySelectorAll('[data-credit-tier]')];
       const billingStatus = document.getElementById('billing-status');
-      buyButton?.addEventListener('click', async () => {
-        buyButton.disabled = true;
+      buyButtons.forEach((buyButton) => buyButton.addEventListener('click', async () => {
+        buyButtons.forEach((button) => { button.disabled = true; });
         billingStatus.hidden = false;
-        billingStatus.textContent = accountMessages.checkout;
+        billingStatus.textContent = billingMessages.opening;
         try {
           const response = await fetch('/api/billing/checkout', {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: '{}',
+            headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} },
+            body: JSON.stringify({ tier: buyButton.dataset.creditTier }),
           });
           const payload = await response.json();
-          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || accountMessages.checkoutFailed);
+          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || billingMessages.failed);
           location.assign(payload.checkoutUrl);
         } catch (error) {
           billingStatus.textContent = error.message;
           billingStatus.dataset.error = 'true';
-          buyButton.disabled = false;
+          buyButtons.forEach((button) => { button.disabled = false; });
+        }
+      }));
+    ` : '',
+    nonce,
+  });
+}
+
+export function renderSupportPage(totals, checkoutConfigured = false, thanks = false, nonce = '', locale = 'zh-Hant') {
+  const m = getMessages(locale);
+  const netUsd = formatUsd(totals?.netUsdMinor || 0, locale);
+  const contributionCount = Math.max(0, Number(totals?.contributionCount || 0));
+  const publicSupporters = (totals?.publicSupporters || []).map(escapeHtml).filter(Boolean);
+  const checkout = checkoutConfigured
+    ? `<form id="support-form">
+        <label class="field-label" for="support-display-name">${m.support.optionalName}</label>
+        <input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname">
+        <p class="field-help">${m.support.optionalNameHelp}</p>
+        <label class="check-row"><input id="support-public-attribution" type="checkbox" name="publicAttribution" value="true"><span><strong>${m.support.attribute}</strong></span></label>
+        <button class="create-button" id="support-button" type="submit">${m.support.button}</button>
+        <p class="billing-status" id="support-status" role="status" hidden></p>
+      </form>`
+    : `<p class="billing-status">${m.support.unavailable}</p>`;
+  return documentShell({
+    title: `${m.support.title} — PureLink`,
+    description: m.support.description,
+    robots: 'index, follow',
+    canonicalPath: localizedHref(locale, 'support'),
+    locale,
+    body: `
+      <main class="page support-page">
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
+        <article class="panel support-panel">
+          <p class="eyebrow">${m.support.eyebrow}</p>
+          <h1 class="manage-title">${m.support.title}</h1>
+          <p class="lede manage-lede">${m.support.intro}</p>
+          ${thanks ? `<p class="auth-notice" role="status">${m.support.thanks}</p>` : ''}
+          <section class="support-totals" aria-label="${escapeHtml(m.support.totals)}">
+            <span>${m.support.totals}</span>
+            <strong>${netUsd}</strong>
+            <small>${m.support.contributions.replace('{count}', contributionCount)}</small>
+            ${totals?.hasUnconvertedContributions ? `<p>${m.support.limitedTotals}</p>` : ''}
+          </section>
+          ${publicSupporters.length ? `<p class="supporters"><strong>${m.support.supporters}</strong>: ${publicSupporters.join(', ')}</p>` : ''}
+          <p class="notice">${m.support.boundary}</p>
+          ${checkout}
+          <p><a href="${localizedHref(locale, 'ai-credits')}">${m.support.aiCredits}</a></p>
+          ${languageSwitcher(locale, 'support')}
+        </article>
+      </main>
+    `,
+    script: checkoutConfigured ? `
+      const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
+      const supportForm = document.getElementById('support-form');
+      const supportButton = document.getElementById('support-button');
+      const supportStatus = document.getElementById('support-status');
+      supportForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        supportButton.disabled = true;
+        supportStatus.hidden = false;
+        supportStatus.textContent = supportMessages.opening;
+        try {
+          const response = await fetch('/api/support/checkout', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} },
+            body: JSON.stringify(Object.fromEntries(new FormData(supportForm))),
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || supportMessages.failed);
+          location.assign(payload.checkoutUrl);
+        } catch (error) {
+          supportStatus.textContent = error.message;
+          supportStatus.dataset.error = 'true';
+          supportButton.disabled = false;
         }
       });
     ` : '',
@@ -1310,4 +1387,9 @@ function formatDate(value, locale = 'en') {
   const date = new Date(value.endsWith?.('Z') ? value : `${value}Z`);
   if (Number.isNaN(date.getTime())) return String(value);
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+}
+
+function formatUsd(minor, locale) {
+  const amount = Math.max(0, Number(minor || 0)) / 100;
+  return new Intl.NumberFormat(locale === 'zh-Hant' ? 'zh-Hant' : 'en', { style: 'currency', currency: 'USD' }).format(amount);
 }

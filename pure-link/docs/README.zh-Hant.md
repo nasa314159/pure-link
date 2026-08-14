@@ -60,6 +60,10 @@ PureLink 會自動把網址帶入建立頁，使用者仍能檢查目的地、�
 - `GOOGLE_CLIENT_SECRET`：使用 `wrangler secret put` 設定。
 - Google OAuth 授權重新導向 URI：`https://no-no.uk/auth/google/callback`。
 - Workers AI binding：`AI`（已寫入 `wrangler.jsonc`，不需要把 API key 寫進專案）。
+- `LEMON_SQUEEZY_CHECKOUT_ENABLED`：在商店、variant、webhook 與退款測試都確認前維持 `false`；確定可收款後才設為 `true`。
+- `LEMON_SQUEEZY_API_KEY` 與 `LEMON_SQUEEZY_WEBHOOK_SECRET`：使用 `wrangler secret put` 設定，絕不可放進 `wrangler.jsonc`。
+- `LEMON_SQUEEZY_STORE_ID`、`LEMON_SQUEEZY_VARIANT_5_ID`、`LEMON_SQUEEZY_VARIANT_10_ID`、`LEMON_SQUEEZY_VARIANT_20_ID`、`LEMON_SQUEEZY_SUPPORT_VARIANT_ID`：Lemon Squeezy 的數字資源 ID。額度 variant 必須分別對應 US$5／150 次、US$10／400 次、US$20／1,000 次草稿；支持 variant 必須是獨立的 Pay What You Want 商品。
+- 在 Lemon Squeezy 設定 webhook：`https://no-no.uk/api/webhooks/lemon-squeezy`。PureLink 只接受已簽章的 `order_created` 與 `order_refunded` 事件；使用者從結帳頁返回不會被視為付款確認。
 
 請勿把真實密鑰提交到 Git。可複製 `.dev.vars.example` 為 `.dev.vars` 做本機設定。
 
@@ -77,9 +81,9 @@ PureLink 會自動把網址帶入建立頁，使用者仍能檢查目的地、�
 
 ## AI 額度與付款邊界
 
-一般登入帳號每日仍有 5 次免費 AI 公式生成。額外額度是一次性數位商品，不是訂閱：US$5／300 次、US$10／800 次、US$20／2,000 次。付款確認後才會自動加入發起結帳的 PureLink 帳號；免費額度先使用，購買額度在 AI 公式服務持續營運期間不過期。
+一般登入帳號每日仍有 5 次免費 AI 公式生成。額外額度是一次性數位商品，不是訂閱：US$5／150 次、US$10／400 次、US$20／1,000 次額外草稿。只有驗證付款 webhook 後才會自動加入發起結帳的 PureLink 帳號；免費額度先使用，購買額度在 AI 公式服務持續營運期間不過期。
 
-Creem 只處理 AI 公式額度商品，並作為這些交易的 merchant of record；它不處理沒有商品對價的自願支持。自願支持與 AI 額度在介面、帳務和公開說明中保持分離。公開商品與退款說明位於 [`/ai-credits`](https://no-no.uk/ai-credits) 與 [`/refund-policy`](https://no-no.uk/refund-policy)。
+Lemon Squeezy 只處理 AI 公式額度商品，並作為這些交易的 merchant of record；沒有商品對價的自願支持使用獨立的 Pay What You Want 結帳，且不提供 AI 額度或產品權益。自願支持與 AI 額度在介面、帳務和公開說明中保持分離。公開商品、支持與退款說明位於 [`/ai-credits`](https://no-no.uk/ai-credits)、[`/support`](https://no-no.uk/support) 與 [`/refund-policy`](https://no-no.uk/refund-policy)。
 
 ## 專案結構
 
