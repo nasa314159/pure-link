@@ -5,6 +5,8 @@ No ads. No needless data.
 
 [Use PureLink](https://no-no.uk) · [繁體中文版](README.zh-Hant.md)
 
+Language: English | [繁體中文](README.zh-Hant.md)
+
 PureLink is a quiet, open-source sharing tool whose privacy promises can be inspected rather than merely trusted. Its MVP focuses on three things:
 
 - **Short links:** recipients can append `+` to inspect the complete destination and any referral or affiliate disclosure before continuing.
@@ -93,7 +95,7 @@ Creem acts as merchant of record only for AI formula credit purchases. Voluntary
 - `pure-link/migrations/`: ordered D1 schema migrations.
 - `pure-link/test/`: unit and workflow tests that run without external services.
 
-Product boundaries and the release checklist live in [`docs/PRODUCT.md`](pure-link/docs/PRODUCT.md) and [`docs/RELEASE_CHECKLIST.md`](pure-link/docs/RELEASE_CHECKLIST.md).
+Product boundaries and the release checklist live in [`docs/PRODUCT.en.md`](pure-link/docs/PRODUCT.en.md) and [`docs/RELEASE_CHECKLIST.en.md`](pure-link/docs/RELEASE_CHECKLIST.en.md). See [`docs/I18N.md`](pure-link/docs/I18N.md) for locale routing and manual QA.
 
 ## License
 

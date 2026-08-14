@@ -25,4 +25,6 @@ export const RESERVED_SLUGS = new Set([
   'robots.txt',
   'sitemap.xml',
   'favicon.ico',
+  'en',
+  'zh-hant',
 ]);

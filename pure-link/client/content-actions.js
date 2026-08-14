@@ -4,6 +4,7 @@ const rawContent = document.getElementById('raw-content');
 const captureTarget = document.getElementById('share-export');
 const brandToggle = document.querySelector('[data-export-brand-toggle]');
 const exportBrand = document.querySelector('[data-export-brand]');
+const messages = readMessages();
 
 brandToggle?.addEventListener('change', () => {
   exportBrand.hidden = !brandToggle.checked;
@@ -13,9 +14,9 @@ document.querySelector('[data-copy-content]')?.addEventListener('click', async (
   const button = event.currentTarget;
   try {
     await navigator.clipboard.writeText(rawContent.value);
-    setTemporaryLabel(button, '已複製');
+    setTemporaryLabel(button, messages.copied);
   } catch {
-    setTemporaryLabel(button, '無法複製');
+    setTemporaryLabel(button, messages.cannotCopy);
   }
 });
 
@@ -23,9 +24,9 @@ document.querySelector('[data-copy-link]')?.addEventListener('click', async (eve
   const button = event.currentTarget;
   try {
     await copyText(location.href);
-    setTemporaryLabel(button, '已複製連結');
+    setTemporaryLabel(button, messages.copiedLink);
   } catch {
-    setTemporaryLabel(button, '無法複製');
+    setTemporaryLabel(button, messages.cannotCopy);
   }
 });
 
@@ -34,9 +35,9 @@ document.querySelector('[data-share-link]')?.addEventListener('click', async (ev
   if (!navigator.share) {
     try {
       await copyText(location.href);
-      setTemporaryLabel(button, '已複製連結');
+      setTemporaryLabel(button, messages.copiedLink);
     } catch {
-      setTemporaryLabel(button, '無法分享');
+      setTemporaryLabel(button, messages.cannotShare);
     }
     return;
   }
@@ -48,7 +49,7 @@ document.querySelector('[data-share-link]')?.addEventListener('click', async (ev
       url: location.href,
     });
   } catch (error) {
-    if (error?.name !== 'AbortError') setTemporaryLabel(button, '無法分享');
+    if (error?.name !== 'AbortError') setTemporaryLabel(button, messages.cannotShare);
   }
 });
 
@@ -57,7 +58,7 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
   const originalLabel = button.textContent;
   button.dataset.exportState = 'working';
   button.disabled = true;
-  button.textContent = '正在製作…';
+  button.textContent = messages.working;
 
   try {
     await document.fonts.ready;
@@ -72,10 +73,10 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
     anchor.href = dataUrl;
     anchor.click();
     button.dataset.exportState = 'success';
-    button.textContent = '已儲存';
+    button.textContent = messages.saved;
   } catch {
     button.dataset.exportState = 'error';
-    button.textContent = '製作失敗';
+    button.textContent = messages.failed;
   } finally {
     setTimeout(() => {
       button.textContent = originalLabel;
@@ -106,4 +107,13 @@ async function copyText(value) {
   const copied = document.execCommand('copy');
   helper.remove();
   if (!copied) throw new Error('Copy was rejected.');
+}
+
+function readMessages() {
+  const fallback = { copied: 'Copied', cannotCopy: 'Could not copy', copiedLink: 'Copied link', cannotShare: 'Could not share', working: 'Preparing…', saved: 'Saved', failed: 'Could not create PNG' };
+  try {
+    return { ...fallback, ...(JSON.parse(document.getElementById('purelink-client-messages')?.textContent || '{}').content || {}) };
+  } catch {
+    return fallback;
+  }
 }
