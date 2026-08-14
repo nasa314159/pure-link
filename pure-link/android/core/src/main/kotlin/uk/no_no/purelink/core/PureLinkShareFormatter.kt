@@ -15,12 +15,13 @@ object PureLinkShareFormatter {
     return trimmed.substring(0, end)
   }
 
-  fun formatSingle(row: PureLinkSelection, description: CharSequence? = null): String =
-    listOfNotNull(
-      normalizeDescription(description).ifBlank { null },
+  fun formatSingle(row: PureLinkSelection, description: CharSequence? = null): String {
+    val item = listOfNotNull(
       row.candidate.label?.trim()?.ifBlank { null },
       PureLinkResolver.urlFor(row.candidate, row.preview),
-    ).joinToString("\n\n")
+    ).joinToString("\n")
+    return listOfNotNull(normalizeDescription(description).ifBlank { null }, item).joinToString("\n\n")
+  }
 
   fun formatBundle(rows: List<PureLinkSelection>, description: CharSequence? = null): String {
     require(rows.size >= 2) { "A bundle requires at least two selected PureLinks." }

@@ -10,13 +10,13 @@ import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 /**
- * Minimal native client for the existing anonymous card endpoint. It posts only the final,
- * user-approved bundle body and retains no response fields beyond the public URL.
+ * Minimal native client for the narrow, verified Android Card endpoint. It posts only the final,
+ * user-approved bundle body and one short-lived opaque authorization, then retains only a public URL.
  */
 class PureLinkCardClient(
-  private val endpoint: String = "https://no-no.uk/api/links",
+  private val endpoint: String = "https://no-no.uk/api/native/cards",
 ) {
-  fun createCard(body: String, locale: String): Result<String> = runCatching {
+  fun createCard(body: String, nativeCreateToken: String, locale: String): Result<String> = runCatching {
     val connection = (URL(endpoint).openConnection() as? HttpsURLConnection)
       ?: error("PureLink requires HTTPS")
     try {
@@ -26,7 +26,7 @@ class PureLinkCardClient(
       connection.doOutput = true
       connection.setRequestProperty("content-type", "application/json; charset=utf-8")
       connection.setRequestProperty("x-purelink-locale", locale)
-      val payload = JSONObject().put("contentType", "card").put("content", body).toString()
+      val payload = JSONObject().put("content", body).put("nativeCreateToken", nativeCreateToken).toString()
       OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(payload) }
       val responseText = BufferedReader(InputStreamReader(
         (if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream)

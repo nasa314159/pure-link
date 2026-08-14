@@ -28,8 +28,10 @@
   <string name="share">Share</string>
   <string name="description">Description</string>
   <string name="description_hint">Optional description for this share only</string>
+  <string name="paste_description">Paste description</string>
   <string name="manual_slug">Manual slug</string>
   <string name="manual_slug_hint">Type a PureLink slug</string>
+  <string name="manual_toggle">Manual</string>
   <string name="resolve">Resolve</string>
   <string name="select_all">Select all</string>
   <string name="preview_all">+ All</string>
@@ -38,10 +40,16 @@
   <string name="no_purelink_found">No PureLink found.</string>
   <string name="no_selected_links">No selected links.</string>
   <string name="creating_card">Creating a PureLink Card…</string>
+  <string name="verifying_card">Verifying this Card creation…</string>
+  <string name="verification_cancelled">Verification was cancelled. Your selection and description are still here.</string>
+  <string name="verification_failed">Verification could not finish. Your selection and description are still here.</string>
   <string name="card_creation_failed">Card creation failed. Your selection and description are still here.</string>
   <string name="retry">Retry</string>
   <string name="share_title">Share PureLink</string>
   <string name="preview_enabled">Preview enabled</string>
+  <string name="toggle_share_preview">Toggle + preview for the final share</string>
+  <string name="share_chooser_opened">Share chooser opened. Your session stays here until you choose Clear.</string>
+  <string name="clear_session">Clear</string>
   <string name="checking">Checking…</string>
   <string name="not_found">Not found</string>
   <string name="bundle_too_long">The selected links and description are too long for one PureLink Card.</string>

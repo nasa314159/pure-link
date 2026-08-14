@@ -65,7 +65,7 @@ PureLink 會自動把網址帶入建立頁，使用者仍能檢查目的地、�
 
 ## Android PureLink 鍵盤
 
-[`android/`](../android/README.zh-Hant.md) 包含一個輕量 Kotlin 輔助輸入法，可處理刻意標記與完整 `no-no.uk` 網址。使用者明確解析目前剪貼簿、選擇安全的 PureLink 候選項目後，就能切回 Samsung Keyboard 或 Gboard；`ACTION_SEND`、`ACTION_PROCESS_TEXT` 與手動解析仍保留為備用入口。解析完全在本機進行；不含預測、剪貼簿歷程、AccessibilityService、分析、廣告或背景監控。只有明確確認建立多連結小卡本文時才使用網路；單一連結直接透過 Android 分享。
+[`android/`](../android/README.zh-Hant.md) 包含一個輕量 Kotlin 輔助輸入法，可處理刻意標記與完整 `no-no.uk` 網址。使用者明確解析目前剪貼簿、選擇安全的 PureLink 候選項目後，就能切回 Samsung Keyboard 或 Gboard；`ACTION_SEND`、`ACTION_PROCESS_TEXT` 與手動解析仍保留為備用入口。解析完全在本機進行；不含預測、剪貼簿歷程、AccessibilityService、分析、廣告或背景監控。單一連結會直接分享，不使用網路。兩個以上連結建立小卡時，會使用受限的 `no-no.uk/native/verify` Turnstile WebView、短效單次不透明憑證與僅能建立小卡的端點；WebView 不會收到剪貼簿或小卡文字，端點只回傳公開小卡網址。
 
 ## 隱私設計
 
@@ -74,6 +74,7 @@ PureLink 會自動把網址帶入建立頁，使用者仍能檢查目的地、�
 | 分享內容 | 內容、類型、設定、狀態、時間、管理憑證雜湊 | 提供分享與匿名刪除 |
 | 每日統計 | 日期、動作、內容類型、國家代碼、總數 | 成本與使用狀況；沒有原始 IP 或個人歷程 |
 | 速率限制 | HMAC 短期代碼、次數、到期時間 | 阻止大量惡意寫入；到期後清除 |
+| Android 原生小卡憑證 | 短效不可逆憑證雜湊、到期時間與已使用狀態 | 授權一次已驗證的多連結小卡建立；不會和剪貼簿或小卡本文一起保存 |
 | 檢舉 | 類別、最少補充說明、狀態、時間 | 內容安全審查；不要求姓名或電子郵件 |
 | AI 每日額度 | 帳號、日期、當日次數 | 一般帳號每日最多 5 次，維運管理員 100 次；不保存描述或生成結果 |
 

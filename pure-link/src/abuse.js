@@ -2,7 +2,7 @@ import { json } from './http.js';
 
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
-export async function enforceWriteProtection({ request, requestUrl, env, db, action, token, context }) {
+export async function enforceWriteProtection({ request, requestUrl, env, db, action, token, context, expectedHostname = requestUrl.hostname }) {
   if (isTrustedDevelopment(requestUrl, env)) return null;
 
   if (!env.RATE_LIMIT_SECRET || !env.TURNSTILE_SECRET_KEY) {
@@ -18,7 +18,7 @@ export async function enforceWriteProtection({ request, requestUrl, env, db, act
     );
   }
 
-  const turnstile = await verifyTurnstile({ token, secret: env.TURNSTILE_SECRET_KEY, action, hostname: requestUrl.hostname });
+  const turnstile = await verifyTurnstile({ token, secret: env.TURNSTILE_SECRET_KEY, action, hostname: expectedHostname });
   if (!turnstile.success) {
     return json({ error: 'The anti-abuse check could not be verified. Please try again.' }, { status: 403 });
   }

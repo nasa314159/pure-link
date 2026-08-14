@@ -36,8 +36,8 @@ class PureLinkSelectionAndShareTest {
   @Test fun formats_single_shares_with_only_requested_sections() {
     val row = PureLinkSelection(first, preview = false)
     assertEquals("https://no-no.uk/A3cd8", PureLinkShareFormatter.formatSingle(PureLinkSelection(first.copy(label = null))))
-    assertEquals("論文\n\nhttps://no-no.uk/A3cd8", PureLinkShareFormatter.formatSingle(row))
-    assertEquals("今天討論的論文\n\n論文\n\nhttps://no-no.uk/A3cd8+", PureLinkShareFormatter.formatSingle(row.copy(preview = true), "今天討論的論文"))
+    assertEquals("論文\nhttps://no-no.uk/A3cd8", PureLinkShareFormatter.formatSingle(row))
+    assertEquals("今天討論的論文\n\n論文\nhttps://no-no.uk/A3cd8+", PureLinkShareFormatter.formatSingle(row.copy(preview = true), "今天討論的論文"))
   }
 
   @Test fun formats_multi_share_in_source_order_with_exact_blank_lines() {
@@ -72,5 +72,29 @@ class PureLinkSelectionAndShareTest {
     assertFalse(body.contains(rawClipboard))
     assertFalse(body.contains("destination.example"))
     assertFalse(body.contains("management-token"))
+  }
+
+  @Test fun description_paste_is_unicode_safe_and_never_changes_candidates() {
+    val model = PureLinkSelectionModel(listOf(first, second))
+    val before = model.rows()
+    val pasted = PureLinkDescriptionPaste.insert("前綴", 2, 2, "😀 說明")
+    assertEquals("前綴😀 說明", pasted)
+    assertEquals(before, model.rows())
+
+    val bounded = PureLinkDescriptionPaste.insert("", 0, 0, "😀".repeat(281))
+    assertEquals(280, bounded.codePointCount(0, bounded.length))
+  }
+
+  @Test fun session_gate_discards_stale_results_after_new_or_finished_sessions() {
+    val gate = PureLinkSessionGate()
+    gate.activate()
+    val firstOperation = gate.beginOperation()!!
+    assertTrue(gate.accepts(firstOperation))
+    gate.beginNewSessionState()
+    assertFalse(gate.accepts(firstOperation))
+    val secondOperation = gate.beginOperation()!!
+    assertTrue(gate.accepts(secondOperation))
+    gate.finish()
+    assertFalse(gate.accepts(secondOperation))
   }
 }

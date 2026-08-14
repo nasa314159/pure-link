@@ -28,8 +28,10 @@
   <string name="share">分享</string>
   <string name="description">說明</string>
   <string name="description_hint">僅用於這次分享的選填說明</string>
+  <string name="paste_description">貼上說明</string>
   <string name="manual_slug">手動短代號</string>
   <string name="manual_slug_hint">輸入 PureLink 短代號</string>
+  <string name="manual_toggle">手動</string>
   <string name="resolve">解析</string>
   <string name="select_all">全選</string>
   <string name="preview_all">+ 全部</string>
@@ -38,10 +40,16 @@
   <string name="no_purelink_found">找不到 PureLink。</string>
   <string name="no_selected_links">尚未選擇連結。</string>
   <string name="creating_card">正在建立 PureLink 小卡…</string>
+  <string name="verifying_card">正在確認這次建立小卡…</string>
+  <string name="verification_cancelled">已取消驗證。你的選擇與說明仍保留在這裡。</string>
+  <string name="verification_failed">驗證沒有完成。你的選擇與說明仍保留在這裡。</string>
   <string name="card_creation_failed">建立小卡失敗。你的選擇與說明仍保留在這裡。</string>
   <string name="retry">重試</string>
   <string name="share_title">分享 PureLink</string>
   <string name="preview_enabled">已啟用預覽</string>
+  <string name="toggle_share_preview">切換最後分享網址的 + 預覽</string>
+  <string name="share_chooser_opened">已開啟系統分享選單；在你選擇清除前，工作階段會保留。</string>
+  <string name="clear_session">清除</string>
   <string name="checking">確認中…</string>
   <string name="not_found">找不到</string>
   <string name="bundle_too_long">選取的連結與說明超過一張 PureLink 小卡的長度。</string>
