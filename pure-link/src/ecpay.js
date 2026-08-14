@@ -53,16 +53,22 @@ export async function handleEcpayCallback(request, env) {
   if (!await verifyCheckMacValue(fields, env)) return text('0|FAIL', { status: 400 });
   if (String(fields.MerchantID) !== String(env.ECPAY_MERCHANT_ID)) return text('0|FAIL', { status: 400 });
   if (String(fields.SimulatePaid || '0') === '1') return text('1|OK');
-  if (String(fields.RtnCode) !== '1') return text('0|FAIL', { status: 400 });
   const merchantTradeNo = String(fields.MerchantTradeNo || '');
-  const tradeNo = String(fields.TradeNo || '');
-  if (!/^[A-Za-z0-9]{1,20}$/.test(merchantTradeNo) || !/^[A-Za-z0-9]{1,64}$/.test(tradeNo)) return text('0|FAIL', { status: 400 });
+  if (!/^[A-Za-z0-9]{1,20}$/.test(merchantTradeNo)) return text('0|FAIL', { status: 400 });
   if (!/^\d+$/.test(String(fields.TradeAmt || ''))) return text('0|FAIL', { status: 400 });
   const checkout = await env.pure_link_db.prepare(`
     SELECT id, user_id, expected_amount, expected_credits, status
     FROM ecpay_checkout_requests WHERE merchant_trade_no = ?
   `).bind(merchantTradeNo).first();
-  if (!checkout || !['pending', 'completed'].includes(checkout.status) || Number(fields.TradeAmt) !== Number(checkout.expected_amount)) return text('0|FAIL', { status: 400 });
+  if (!checkout || !['pending', 'completed', 'failed'].includes(checkout.status) || Number(fields.TradeAmt) !== Number(checkout.expected_amount)) return text('0|FAIL', { status: 400 });
+  if (String(fields.RtnCode) !== '1') {
+    if (checkout.status === 'pending') {
+      await env.pure_link_db.prepare("UPDATE ecpay_checkout_requests SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(checkout.id).run();
+    }
+    return text('1|OK');
+  }
+  const tradeNo = String(fields.TradeNo || '');
+  if (!/^[A-Za-z0-9]{1,64}$/.test(tradeNo) || checkout.status === 'failed') return text('0|FAIL', { status: 400 });
   if (checkout.status === 'completed') {
     const order = await env.pure_link_db.prepare('SELECT trade_no FROM ecpay_orders WHERE checkout_request_id = ?').bind(checkout.id).first();
     return order?.trade_no === tradeNo ? text('1|OK') : text('0|FAIL', { status: 400 });
@@ -100,8 +106,9 @@ export function createMerchantTradeNo(now = Date.now(), random = Math.random) {
 }
 
 export function ecpayTradeDate(date) {
+  const taipei = new Date(date.getTime() + 8 * 60 * 60 * 1000);
   const pad = (value) => String(value).padStart(2, '0');
-  return `${date.getUTCFullYear()}/${pad(date.getUTCMonth() + 1)}/${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+  return `${taipei.getUTCFullYear()}/${pad(taipei.getUTCMonth() + 1)}/${pad(taipei.getUTCDate())} ${pad(taipei.getUTCHours())}:${pad(taipei.getUTCMinutes())}:${pad(taipei.getUTCSeconds())}`;
 }
 
 function ecpayUrlEncode(value) {

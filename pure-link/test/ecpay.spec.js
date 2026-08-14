@@ -4,6 +4,7 @@ import {
   createCheckMacValue,
   createEcpayCheckout,
   createMerchantTradeNo,
+  ecpayTradeDate,
   handleEcpayCallback,
   verifyCheckMacValue,
 } from '../src/ecpay.js';
@@ -64,6 +65,10 @@ describe('ECPay billing', () => {
     expect(merchantTradeNo.length).toBeLessThanOrEqual(20);
   });
 
+  it('formats MerchantTradeDate in Asia/Taipei without using the runtime timezone', () => {
+    expect(ecpayTradeDate(new Date('2026-01-01T18:30:45.000Z'))).toBe('2026/01/02 02:30:45');
+  });
+
   it('fulfills a valid callback once and accepts its duplicate safely', async () => {
     const { db, fields } = await pendingCallback('150');
     const configured = { ...env, pure_link_db: db };
@@ -84,7 +89,6 @@ describe('ECPay billing', () => {
     ['invalid CheckMacValue', (fields) => ({ ...fields, CheckMacValue: '0'.repeat(64) })],
     ['wrong merchant', (fields) => ({ ...fields, MerchantID: '9999999' })],
     ['wrong amount', (fields) => ({ ...fields, TradeAmt: '999' })],
-    ['unsuccessful RtnCode', (fields) => ({ ...fields, RtnCode: '0' })],
   ])('does not fulfill a callback with %s', async (_label, mutate) => {
     const { db, fields } = await pendingCallback('300');
     const changed = mutate(fields);
@@ -93,6 +97,18 @@ describe('ECPay billing', () => {
     expect(response.status).toBe(400);
     expect(db.balance).toBe(0);
     expect(db.orders).toHaveLength(0);
+  });
+
+  it('acknowledges an authenticated non-success payment without granting credits', async () => {
+    const { db, fields } = await pendingCallback('300');
+    const failed = { ...fields, RtnCode: '10200095', RtnMsg: 'Payment failed' };
+    failed.CheckMacValue = await createCheckMacValue(failed, env);
+    const response = await handleEcpayCallback(callbackRequest(failed), { ...env, pure_link_db: db });
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe('1|OK');
+    expect(db.balance).toBe(0);
+    expect(db.orders).toHaveLength(0);
+    expect(db.checkout.status).toBe('failed');
   });
 
   it('acknowledges but never fulfills SimulatePaid callbacks', async () => {
@@ -173,7 +189,10 @@ class EcpayDb {
               db.balance += values[5];
               return changed(1);
             }
-            if (normalized.startsWith('UPDATE ecpay_checkout_requests')) { db.checkout.status = 'completed'; return changed(1); }
+            if (normalized.startsWith('UPDATE ecpay_checkout_requests')) {
+              db.checkout.status = normalized.includes("'failed'") ? 'failed' : 'completed';
+              return changed(1);
+            }
             return changed(0);
           },
         };
