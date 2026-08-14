@@ -8,9 +8,14 @@ describe('locale resolution', () => {
     expect(localeFromAcceptLanguage(input)).toBe(expected === 'en' && input === 'fr-FR' ? null : expected);
   });
 
-  it('uses an explicit preference before the route and browser language', () => {
+  it('uses an explicit locale route before a saved preference and browser language', () => {
     const request = new Request('https://pure.test/en/', { headers: { cookie: 'purelink_locale=zh-Hant', 'accept-language': 'en-US' } });
-    expect(resolveLocale(request, 'en')).toBe('zh-Hant');
+    expect(resolveLocale(request, 'en')).toBe('en');
+  });
+
+  it('honors Accept-Language quality values', () => {
+    expect(localeFromAcceptLanguage('en-US;q=0.4, zh-TW;q=0.9')).toBe('zh-Hant');
+    expect(localeFromAcceptLanguage('zh-TW;q=0, en-GB;q=0.8')).toBe('en');
   });
 
   it('falls back to English for an unsupported browser locale', () => {

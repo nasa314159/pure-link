@@ -14,6 +14,7 @@ describe('PureLink worker', () => {
     const redirect = await worker.fetch(new Request('https://pure.test/', { redirect: 'manual' }), env);
     expect(redirect.status).toBe(302);
     expect(redirect.headers.get('location')).toBe('/en/');
+    expect(redirect.headers.get('set-cookie')).toBeNull();
     const response = await worker.fetch(new Request('https://pure.test/en/'), env);
     expect(response.status).toBe(200);
     const body = await response.text();
@@ -35,6 +36,7 @@ describe('PureLink worker', () => {
   it('resolves locale routes without touching shared-content semantics', async () => {
     const chinese = await worker.fetch(new Request('https://pure.test/', { headers: { 'accept-language': 'zh-TW' }, redirect: 'manual' }), env);
     expect(chinese.headers.get('location')).toBe('/zh-Hant/');
+    expect(chinese.headers.get('set-cookie')).toBeNull();
 
     const preference = await worker.fetch(new Request('https://pure.test/', { headers: { cookie: 'purelink_locale=en', 'accept-language': 'zh-TW' }, redirect: 'manual' }), env);
     expect(preference.headers.get('location')).toBe('/en/');
@@ -47,6 +49,12 @@ describe('PureLink worker', () => {
     expect(englishHtml).toContain('hreflang="zh-Hant"');
     expect(englishHtml).toContain('Quick open a PureLink');
 
+    const cookieChineseEnglishRoute = await worker.fetch(new Request('https://pure.test/en/', { headers: { cookie: 'purelink_locale=zh-Hant' } }), env);
+    expect(await cookieChineseEnglishRoute.text()).toContain('Quick open a PureLink');
+
+    const cookieEnglishChineseRoute = await worker.fetch(new Request('https://pure.test/zh-Hant/', { headers: { cookie: 'purelink_locale=en' } }), env);
+    expect(await cookieEnglishChineseRoute.text()).toContain('快速開啟 PureLink');
+
     const selected = await worker.fetch(new Request('https://pure.test/locale', {
       method: 'POST', headers: { origin: 'https://pure.test', 'content-type': 'application/x-www-form-urlencoded' },
       body: 'locale=zh-Hant&returnTo=%2Fzh-Hant%2Fprivacy', redirect: 'manual',
@@ -54,6 +62,7 @@ describe('PureLink worker', () => {
     expect(selected.status).toBe(303);
     expect(selected.headers.get('location')).toBe('/zh-Hant/privacy');
     expect(selected.headers.get('set-cookie')).toContain('purelink_locale=zh-Hant');
+    expect(selected.headers.get('set-cookie')).toContain('HttpOnly');
 
     const created = await createLink(env, { contentType: 'url', content: 'https://example.com', slug: 'locale-proof' });
     const open = await worker.fetch(new Request('https://pure.test/locale-proof', { headers: { 'accept-language': 'zh-TW' }, redirect: 'manual' }), env);

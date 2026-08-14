@@ -88,13 +88,13 @@ const FORMULA_SHORTCUT_GROUPS = [
   },
 ];
 
-function renderFormulaShortcutPalette() {
-  const tabs = FORMULA_SHORTCUT_GROUPS.map((group, index) => `<button type="button" role="tab" id="formula-tab-${group.id}" aria-label="${escapeHtml(group.ariaLabel)}" aria-controls="formula-panel-${group.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}" data-formula-category="${group.id}">${escapeHtml(group.label)}</button>`).join('');
+function renderFormulaShortcutPalette(m) {
+  const tabs = FORMULA_SHORTCUT_GROUPS.map((group, index) => `<button type="button" role="tab" id="formula-tab-${group.id}" aria-label="${escapeHtml(m.page.shortcutGroups[group.id])}" aria-controls="formula-panel-${group.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}" data-formula-category="${group.id}">${escapeHtml(group.label)}</button>`).join('');
   const panels = FORMULA_SHORTCUT_GROUPS.map((group, index) => {
-    const buttons = group.shortcuts.map(([label, insert, cursorBack = 0, accessibleLabel = label]) => `<button type="button" title="${escapeHtml(insert)}" aria-label="${escapeHtml(accessibleLabel)}; insert ${escapeHtml(insert)}" data-formula-insert="${escapeHtml(insert)}"${cursorBack ? ` data-cursor-back="${cursorBack}"` : ''}>${escapeHtml(label)}</button>`).join('');
+    const buttons = group.shortcuts.map(([label, insert, cursorBack = 0]) => `<button type="button" title="${escapeHtml(insert)}" aria-label="${escapeHtml(label)}; ${escapeHtml(m.page.insert)} ${escapeHtml(insert)}" data-formula-insert="${escapeHtml(insert)}"${cursorBack ? ` data-cursor-back="${cursorBack}"` : ''}>${escapeHtml(label)}</button>`).join('');
     return `<div class="symbol-group" role="tabpanel" id="formula-panel-${group.id}" aria-labelledby="formula-tab-${group.id}" data-formula-panel="${group.id}"${index === 0 ? '' : ' hidden'}>${buttons}</div>`;
   }).join('');
-  return `<div class="formula-category-tabs" role="tablist" aria-label="Math shortcut categories">${tabs}</div><div class="symbol-groups">${panels}</div>`;
+  return `<div class="formula-category-tabs" role="tablist" aria-label="${escapeHtml(m.page.shortcutCategories)}">${tabs}</div><div class="symbol-groups">${panels}</div>`;
 }
 
 export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '', user = null, locale = 'zh-Hant') {
@@ -103,9 +103,9 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="create"></div></div>`
     : '';
   const authNotice = authStatus === 'expired'
-    ? `<div class="auth-notice" role="status"><strong>${locale === 'en' ? 'Sign-in time expired.' : '登入等待時間已結束。'}</strong><span>${locale === 'en' ? 'For account protection, this one-time sign-in expired. Start again from My PureLinks.' : '為了保護帳戶，這次的一次性登入已失效；請從「我的 PureLink」重新開始。'}</span><a href="${localizedHref(locale, 'account')}">${locale === 'en' ? 'Sign in again' : '重新登入'}</a></div>`
+    ? `<div class="auth-notice" role="status"><strong>${m.home.authExpiredTitle}</strong><span>${m.home.authExpiredBody}</span><a href="${localizedHref(locale, 'account')}">${m.home.authRetry}</a></div>`
     : authStatus
-      ? `<div class="auth-notice" role="status"><strong>${locale === 'en' ? 'Sign-in did not finish.' : '這次登入沒有完成。'}</strong><span>${locale === 'en' ? 'No account session was created. Please try again.' : '沒有建立任何帳戶工作階段，請重新嘗試。'}</span><a href="${localizedHref(locale, 'account')}">${locale === 'en' ? 'Sign in again' : '重新登入'}</a></div>`
+      ? `<div class="auth-notice" role="status"><strong>${m.home.authFailedTitle}</strong><span>${m.home.authFailedBody}</span><a href="${localizedHref(locale, 'account')}">${m.home.authRetry}</a></div>`
       : '';
   const accountEntry = googleAuthConfigured
     ? `<nav class="account-entry" aria-label="${escapeHtml(m.nav.account)}"><a href="${user ? localizedHref(locale, 'account') : `/auth/google?returnTo=${encodeURIComponent(localizedHref(locale))}`}"${user ? '' : ` aria-label="${escapeHtml(m.nav.signIn)}"`}>${user ? m.nav.account : m.nav.signIn}</a></nav>`
@@ -113,9 +113,9 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
   const formulaAiLimit = Number(user?.is_admin) === 1 ? 100 : 5;
   const formulaAiPanel = user
     ? `<details class="formula-ai" id="formula-ai">
-        <summary>✦ ${m.home.aiTitle} <span>${m.home.aiSignedIn} ${formulaAiLimit} ${formulaAiLimit === 100 ? m.home.aiAdmin : ''}</span></summary>
+        <summary>✦ ${m.home.aiTitle} <span>${m.page.aiLimit.replace('{count}', formulaAiLimit)} ${formulaAiLimit === 100 ? m.home.aiAdmin : ''}</span></summary>
         <p>${m.home.aiPrivacy}</p>
-        <p><a href="${localizedHref(locale, 'ai-credits')}">AI credits, delivery and pricing</a></p>
+        <p><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsLink}</a></p>
         <label class="field-label" for="formula-ai-description">${m.home.aiLabel}</label>
         <div class="formula-ai-compose">
           <textarea id="formula-ai-description" maxlength="500" rows="3" placeholder="${escapeHtml(m.home.aiPlaceholder)}"></textarea>
@@ -129,9 +129,9 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         </section>
       </details>`
     : `<details class="formula-ai" id="formula-ai">
-        <summary>✦ ${m.home.aiTitle} <span>${locale === 'en' ? '5 per day for regular accounts' : '一般帳號每日 5 次'}</span></summary>
+        <summary>✦ ${m.home.aiTitle} <span>${m.page.aiGuestLimit}</span></summary>
         <p>${m.home.aiSignedOut}</p>
-        <p><a href="${localizedHref(locale, 'ai-credits')}">AI credits, delivery and pricing</a></p>
+        <p><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsLink}</a></p>
         ${googleAuthConfigured ? `<a class="google-link" href="/auth/google?returnTo=${encodeURIComponent(`${localizedHref(locale)}#formula-ai`)}">${m.home.aiSignIn}</a>` : `<p>${m.home.aiUnavailable}</p>`}
       </details>`;
   return documentShell({
@@ -145,14 +145,14 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       <main class="home creator-home">
         <header class="hero">
           <p class="eyebrow">PURELINK</p>
-          <h1>Just share.</h1>
-          <p class="lede">No ads. No needless data.</p>
-          <p class="hero-summary">A privacy-friendly URL shortener for clean short links, readable LaTeX formula sharing, and quiet note cards.</p>
+          <h1>${m.home.heroTitle}</h1>
+          <p class="lede">${m.home.heroLead}</p>
+          <p class="hero-summary">${m.home.heroSummary}</p>
         </header>
 
         <section class="quick-open" aria-labelledby="quick-open-title">
           <div class="quick-open-heading">
-            <p class="eyebrow">OPEN</p>
+            <p class="eyebrow">${m.page.quickOpenEyebrow}</p>
           <h2 id="quick-open-title">${m.home.quickOpen}</h2>
           </div>
           <form class="quick-open-form" id="quick-open-form" novalidate>
@@ -173,7 +173,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         <section class="creator-panel panel" id="creator-panel" aria-labelledby="creator-title">
           <div class="creator-heading">
             <div>
-              <p class="eyebrow">CREATE</p>
+              <p class="eyebrow">${m.page.createEyebrow}</p>
               <h2 id="creator-title">${m.home.create}</h2>
             </div>
             <button class="suggestion" id="suggestion" type="button" hidden></button>
@@ -203,7 +203,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
             <div class="formula-tools" id="formula-tools" hidden>
               <div class="formula-tool-heading"><strong>${m.home.mathShortcuts}</strong><span>${m.home.mathShortcutsHelp}</span></div>
               ${formulaAiPanel}
-              ${renderFormulaShortcutPalette()}
+              ${renderFormulaShortcutPalette(m)}
               <details class="custom-formula-shortcuts">
                 <summary>＋ ${m.home.customShortcuts}</summary>
                 <p>${m.home.localOnly}</p>
@@ -213,7 +213,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
                   <button type="button" id="add-custom-formula">${m.home.add}</button>
                 </div>
                 <p class="custom-formula-status" id="custom-formula-status" role="status" hidden></p>
-                <div class="custom-formula-list" id="custom-formula-list" aria-label="自訂公式快捷鍵"></div>
+                <div class="custom-formula-list" id="custom-formula-list" aria-label="${escapeHtml(m.page.customShortcutsLabel)}"></div>
               </details>
             </div>
 
@@ -254,7 +254,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           </form>
 
           <section class="result-panel" id="result-panel" aria-live="polite" hidden>
-            <p class="eyebrow">READY</p>
+            <p class="eyebrow">${m.page.readyEyebrow}</p>
             <h2>${m.home.ready}</h2>
             <span class="result-label">${m.home.sharedUrl}</span>
             <a class="result-url" id="result-url" href=""></a>
@@ -278,7 +278,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
         <footer class="home-footer">
           <p>${m.home.footer}</p>
-          <nav aria-label="${escapeHtml(m.nav.language)}">${googleAuthConfigured ? `<a href="${localizedHref(locale, 'account')}">${m.nav.account}</a>` : ''}<a href="${localizedHref(locale, 'ai-credits')}">AI credits</a><a href="${localizedHref(locale, 'refund-policy')}">Refund policy</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">${m.nav.github}</a></nav>
+          <nav aria-label="${escapeHtml(m.nav.language)}">${googleAuthConfigured ? `<a href="${localizedHref(locale, 'account')}">${m.nav.account}</a>` : ''}<a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">${m.nav.github}</a></nav>
           ${languageSwitcher(locale)}
         </footer>
       </main>
@@ -439,7 +439,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
       shareResult.addEventListener('click', async () => {
         try {
-          await navigator.share({ title: 'PureLink', text: 'Just share.', url: latestResult.url });
+          await navigator.share({ title: 'PureLink', text: ${JSON.stringify(m.page.shareText)}, url: latestResult.url });
           resultStatus.textContent = messages.systemShare.replace('{url}', latestResult.url);
         } catch (error) {
           if (error.name !== 'AbortError') resultStatus.textContent = messages.shareFailed;
@@ -474,7 +474,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
       document.getElementById('download-recovery').addEventListener('click', () => {
         const typeName = typeNames[latestResult.contentType] || ${JSON.stringify(m.common.content)};
-        const text = messages.recoveryTitle + '\\n\\n' + messages.recoveryType + '：' + typeName + '\\n' + messages.recoveryContent + '：\\n' + latestResult.url + '\\n\\n' + messages.recoveryPrivate + '：\\n' + latestResult.managementUrl + '\\n\\n' + messages.recoveryHelp + '\\n';
+        const text = messages.recoveryTitle + '\\n\\n' + messages.recoveryType + ${JSON.stringify(m.page.labelSeparator)} + typeName + '\\n' + messages.recoveryContent + ${JSON.stringify(m.page.labelSeparator)} + '\\n' + latestResult.url + '\\n\\n' + messages.recoveryPrivate + ${JSON.stringify(m.page.labelSeparator)} + '\\n' + latestResult.managementUrl + '\\n\\n' + messages.recoveryHelp + '\\n';
         const anchor = document.createElement('a');
         anchor.download = 'purelink-' + latestResult.slug + '-recovery.txt';
         anchor.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text);
@@ -521,12 +521,12 @@ export function renderUrlPreview(link, locale = 'zh-Hant') {
   const affiliate = Number(link.is_affiliate) === 1;
   return documentShell({
     title: `${m.content.preview}: ${destination.hostname} — PureLink`,
-    description: locale === 'en' ? 'Review a PureLink destination before continuing.' : '在前往前查看 PureLink 的完整目的地。',
+    description: m.page.previewDescription,
     robots: 'noindex, nofollow, noarchive',
     locale,
     body: `
       <main class="page">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel preview-panel">
           <p class="eyebrow">${m.content.preview.toUpperCase()}</p>
           <h1 class="destination-host">${escapeHtml(destination.hostname)}</h1>
@@ -550,13 +550,13 @@ export function renderFormulaPage(link, locale = 'zh-Hant') {
   const m = getMessages(locale);
   return documentShell({
     title: `${m.common.formula} — PureLink`,
-    description: locale === 'en' ? 'A formula shared with PureLink.' : '透過 PureLink 分享的公式。',
+    description: m.page.formulaDescription,
     robots: 'noindex, nofollow, noarchive',
     canonicalPath: `/${link.slug}`,
     locale,
     body: `
       <main class="page">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel content-panel">
           <div class="share-export formula-export" id="share-export">
             <p class="eyebrow" data-export-brand>PURELINK · FORMULA</p>
@@ -588,14 +588,14 @@ export function renderCardPage(link, locale = 'zh-Hant') {
   const m = getMessages(locale);
   const signature = link.signature ? `<p class="signature">— ${escapeHtml(link.signature)}</p>` : '';
   return documentShell({
-    title: `${locale === 'en' ? 'A small card' : '一張小卡'} — PureLink`,
-    description: locale === 'en' ? 'A small card shared with PureLink.' : '透過 PureLink 分享的一張小卡。',
+    title: `${m.page.cardTitle} — PureLink`,
+    description: m.page.cardDescription,
     robots: 'noindex, nofollow, noarchive',
     canonicalPath: `/${link.slug}`,
     locale,
     body: `
       <main class="page card-page theme-${escapeHtml(link.theme || 'paper')}">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel content-panel card-panel">
           <div class="share-export card-export" id="share-export">
             <p class="eyebrow" data-export-brand>PURELINK · A SMALL CARD</p>
@@ -604,7 +604,7 @@ export function renderCardPage(link, locale = 'zh-Hant') {
           </div>
           <label class="export-brand-option"><input type="checkbox" data-export-brand-toggle checked><span><strong>${m.content.addBrandCard}</strong><small>${m.content.brandHelp}</small></span></label>
           <div class="content-actions">
-            <button class="secondary-button" type="button" data-copy-content>${locale === 'en' ? 'Copy text' : '複製文字'}</button>
+            <button class="secondary-button" type="button" data-copy-content>${m.page.copyText}</button>
             <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-card.png">${m.content.downloadPng}</button>
             <button class="secondary-button" type="button" data-copy-link>${m.content.copyLink}</button>
             <button class="secondary-button" type="button" data-share-link>${m.common.share}</button>
@@ -633,24 +633,24 @@ export function renderReportPage(slug, nonce, turnstileSiteKey = '', locale = 'z
     locale,
     body: `
       <main class="page">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel report-panel">
-          <p class="eyebrow">REPORT</p>
+          <p class="eyebrow">${m.page.reportEyebrow}</p>
           <h1 class="manage-title">${m.report.title}</h1>
-          <p class="lede manage-lede">${locale === 'en' ? `You are reporting ` : '你正在回報 '}<strong>/${escapeHtml(slug)}</strong>。${locale === 'en' ? 'A report does not automatically remove content; we review it against content, safety, and applicable rules.' : '回報不會自動下架；我們會依內容、安全風險與適用規範進行審查。'}</p>
+          <p class="lede manage-lede">${m.page.reportBefore}<strong>/${escapeHtml(slug)}</strong>${m.page.reportAfter}</p>
           <form id="report-form">
             <label class="field-label" for="category">${m.report.category}</label>
             <select id="category" name="category" required>
-              <option value="">${locale === 'en' ? 'Choose one' : '請選擇'}</option>
-              <option value="phishing">${locale === 'en' ? 'Phishing or fraud' : '釣魚或詐騙'}</option>
-              <option value="malware">${locale === 'en' ? 'Malware or dangerous download' : '惡意程式或危險下載'}</option>
-              <option value="impersonation">${locale === 'en' ? 'Impersonation' : '冒用身分'}</option>
-              <option value="copyright">${locale === 'en' ? 'Copyright or other rights issue' : '著作權或其他權利問題'}</option>
-              <option value="privacy">${locale === 'en' ? 'Personal data disclosed without consent' : '未經同意揭露個人資料'}</option>
-              <option value="other">${locale === 'en' ? 'Other' : '其他'}</option>
+              <option value="">${m.page.reportChoose}</option>
+              <option value="phishing">${m.page.reportPhishing}</option>
+              <option value="malware">${m.page.reportMalware}</option>
+              <option value="impersonation">${m.page.reportImpersonation}</option>
+              <option value="copyright">${m.page.reportCopyright}</option>
+              <option value="privacy">${m.page.reportPrivacy}</option>
+              <option value="other">${m.page.reportOther}</option>
             </select>
             <label class="field-label" for="details">${m.report.details}</label>
-            <textarea id="details" name="details" maxlength="1000" placeholder="${escapeHtml(locale === 'en' ? 'Provide only the minimum information needed for review; do not include passwords, identity documents, or other sensitive data.' : '請提供判斷所需的最少資訊；不要填入密碼、證件或其他敏感資料。')}"></textarea>
+            <textarea id="details" name="details" maxlength="1000" placeholder="${escapeHtml(m.page.reportDetailsPlaceholder)}"></textarea>
             ${turnstileWidget}
             <p class="form-error" id="report-error" role="alert" hidden></p>
             <button class="create-button" id="report-button" type="submit">${m.report.submit}</button>
@@ -671,7 +671,7 @@ export function renderReportPage(slug, nonce, turnstileSiteKey = '', locale = 'z
         event.preventDefault();
         errorBox.hidden = true;
         button.disabled = true;
-        button.textContent = ${JSON.stringify(locale === 'en' ? 'Sending…' : '正在送出…')};
+        button.textContent = ${JSON.stringify(m.page.reportSending)};
         const data = Object.fromEntries(new FormData(form));
         data.slug = slug;
         try {
@@ -683,7 +683,7 @@ export function renderReportPage(slug, nonce, turnstileSiteKey = '', locale = 'z
           const result = await response.json();
           if (!response.ok) {
             window.turnstile?.reset();
-            throw new Error(result.error || ${JSON.stringify(locale === 'en' ? 'The report could not be sent.' : '回報未能送出。')});
+            throw new Error(result.error || ${JSON.stringify(m.page.reportFailed)});
           }
           form.hidden = true;
           status.textContent = reportMessages.received;
@@ -784,7 +784,7 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
-          <nav class="legal-nav" aria-label="PureLink policies"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">AI credits</a><a href="${localizedHref(locale, 'refund-policy')}">Refund policy</a><a href="${localizedHref(locale, 'privacy')}">Privacy</a><a href="${localizedHref(locale, 'terms')}">Terms</a><a href="${localizedHref(locale, 'transparency')}">Transparency</a></nav>
+          <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
           ${languageSwitcher(locale, page)}
           <p class="legal-updated">${locale === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14'}</p>
         </article>
@@ -851,9 +851,9 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
   const accountAccess = Boolean(user && link.owner_user_id === user.id);
   const contentTypeName = ({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content;
   const accountPanel = user
-    ? `<div class="account-connect"><p>已使用 Google 登入：<strong>${escapeHtml(user.email)}</strong></p>${accountAccess ? '<p>這個 PureLink 已保存在你的帳號。</p>' : '<button class="secondary-button" id="claim-link" type="button">把這個 PureLink 加入我的帳號</button>'}<a href="/account">查看我的 PureLink</a></div>`
+    ? `<div class="account-connect"><p>${m.page.signedIn}${m.page.labelSeparator}<strong>${escapeHtml(user.email)}</strong></p>${accountAccess ? `<p>${m.page.alreadyLinked}</p>` : `<button class="secondary-button" id="claim-link" type="button">${m.manage.claim}</button>`}<a href="${localizedHref(locale, 'account')}">${m.page.viewAccount}</a></div>`
     : googleAuthConfigured
-      ? `<div class="account-connect"><strong>想跨裝置管理？</strong><p>匿名憑證仍可直接使用；也可以自願連結 Google 帳號，之後從其他裝置登入找回。</p><a class="google-link" href="/auth/google?returnTo=${encodeURIComponent(`/manage/${slug}`)}">使用 Google 繼續</a></div>`
+      ? `<div class="account-connect"><strong>${m.page.crossDevice}</strong><p>${m.page.crossDeviceHelp}</p><a class="google-link" href="/auth/google?returnTo=${encodeURIComponent(localizedHref(locale, `manage/${slug}`))}">${m.page.continueGoogle}</a></div>`
       : '';
   return documentShell({
     title: m.manage.title,
@@ -864,7 +864,7 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
       <main class="page">
         <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel manage-panel">
-          <p class="eyebrow">PRIVATE MANAGEMENT</p>
+          <p class="eyebrow">${m.page.managementEyebrow}</p>
           <h1 class="manage-title">${m.manage.title}</h1>
           <p class="lede manage-lede">${m.manage.intro}</p>
           <div class="managed-content-card">
@@ -886,7 +886,9 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
     script: `
       const manageMessages = ${JSON.stringify(m.manage).replaceAll('<', '\\u003c')};
       const homeMessages = ${JSON.stringify(m.home).replaceAll('<', '\\u003c')};
+      const pageMessages = ${JSON.stringify(m.page).replaceAll('<', '\\u003c')};
       const slug = ${safeSlugScript};
+      const contentTypeName = ${JSON.stringify(contentTypeName).replaceAll('<', '\\u003c')};
       const storageKey = 'purelink:management:' + slug;
       const fragmentToken = location.hash.slice(1);
       if (fragmentToken) localStorage.setItem(storageKey, fragmentToken);
@@ -916,7 +918,7 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
       });
 
       downloadRecovery.addEventListener('click', () => {
-        const recoveryText = 'PureLink 匿名管理與分享資訊\\n\\n內容類型：${contentTypeName}\\n分享／查看內容：\\n' + location.origin + '/' + encodeURIComponent(slug) + '\\n\\n私人管理地址（請勿分享）：\\n' + canonicalAddress + '\\n\\n分享連結可交給接收者；管理地址只留給建立者。\\n';
+        const recoveryText = homeMessages.client.recoveryTitle + '\\n\\n' + homeMessages.client.recoveryType + pageMessages.labelSeparator + contentTypeName + '\\n' + homeMessages.client.recoveryContent + pageMessages.labelSeparator + '\\n' + location.origin + '/' + encodeURIComponent(slug) + '\\n\\n' + homeMessages.client.recoveryPrivate + pageMessages.labelSeparator + '\\n' + canonicalAddress + '\\n\\n' + homeMessages.client.recoveryHelp + '\\n';
         const anchor = document.createElement('a');
         anchor.download = 'purelink-' + slug + '-recovery.txt';
         anchor.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(recoveryText);
@@ -995,12 +997,12 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
       <main class="page account-page">
         <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel account-panel">
-          <p class="eyebrow">YOUR PURELINKS</p>
-          <h1 class="manage-title">${locale === 'en' ? `Hello, ${escapeHtml(user.display_name || user.email)}.` : `你好，${escapeHtml(user.display_name || user.email)}。`}</h1>
+          <p class="eyebrow">${m.page.accountEyebrow}</p>
+          <h1 class="manage-title">${m.page.greeting.replace('{name}', escapeHtml(user.display_name || user.email))}</h1>
           <p class="lede manage-lede">${m.account.intro}</p>
           ${purchaseNotice}
           <section class="account-credits" aria-labelledby="account-credits-title">
-            <p class="eyebrow">AI FORMULA CREDITS</p>
+            <p class="eyebrow">${m.page.creditsEyebrow}</p>
             <h2 id="account-credits-title">${m.account.credits.replace('{count}', Math.max(0, Number(creditBalance || 0)))}</h2>
             <p>${m.account.creditsHelp}</p>
             ${checkoutAction}
@@ -1041,18 +1043,18 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
 }
 
 export function renderNotFoundPage(locale = 'zh-Hant') {
-  const english = locale === 'en';
+  const m = getMessages(locale);
   return documentShell({
-    title: `${english ? 'Not found' : '找不到內容'} — PureLink`,
-    description: english ? 'This PureLink could not be found.' : '找不到這個 PureLink。',
+    title: `${m.page.notFoundTitle} — PureLink`,
+    description: m.page.notFoundDescription,
     robots: 'noindex, nofollow',
     locale,
     body: `
       <main class="home">
         <p class="eyebrow">404</p>
-        <h1>${english ? 'This PureLink is not here.' : '這個 PureLink 不在這裡。'}</h1>
-        <p class="lede">${english ? 'It may have been removed, expired, or typed incorrectly.' : '它可能已被刪除、過期，或輸入有誤。'}</p>
-        <a class="primary-link compact" href="${localizedHref(locale)}">${english ? 'Return home' : '返回首頁'}</a>
+        <h1>${m.page.notFoundHeading}</h1>
+        <p class="lede">${m.page.notFoundBody}</p>
+        <a class="primary-link compact" href="${localizedHref(locale)}">${m.page.returnHome}</a>
       </main>
     `,
   });

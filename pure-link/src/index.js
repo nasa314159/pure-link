@@ -46,7 +46,7 @@ export async function routeRequest(request, env, context) {
   }
 
   if (isPublicRead && originalPath === '') {
-    return redirect(localizedPath(locale), 302, { headers: { 'set-cookie': localeCookie(locale) } });
+    return redirect(localizedPath(locale), 302);
   }
   if (isPublicRead && localeRoute && path === '') {
     const nonce = createSlug() + createSlug();
@@ -81,7 +81,7 @@ export async function routeRequest(request, env, context) {
     }));
   }
   if (isPublicRead && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
-    if (!localeRoute) return redirect(localizedPath(locale, path), 302, { headers: { 'set-cookie': localeCookie(locale) } });
+    if (!localeRoute) return redirect(localizedPath(locale, path), 302);
     return publicReadResponse(request, html(renderLegalPage(path, locale)));
   }
 
@@ -100,7 +100,7 @@ export async function routeRequest(request, env, context) {
     return handleCreemWebhook(request, env);
   }
   if (request.method === 'GET' && path === 'account') {
-    if (!localeRoute) return redirect(localizedPath(locale, 'account'), 302, { headers: { 'set-cookie': localeCookie(locale) } });
+    if (!localeRoute) return redirect(localizedPath(locale, 'account'), 302);
     const user = await getCurrentUser(request, env);
     if (!user) return redirect(`/auth/google?returnTo=${encodeURIComponent(localizedPath(locale, 'account'))}`);
     const nonce = createSlug() + createSlug();

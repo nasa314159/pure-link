@@ -19,7 +19,7 @@ describe('interactive pages', () => {
     expect(html).toContain('data-formula-insert="\\begin{bmatrix}');
     expect(html).toContain('data-formula-insert="\\operatorname{arsinh} ');
     expect(html).toContain('data-formula-insert="\\Omega"');
-    expect(html).toContain('aria-label="Calculus"');
+    expect(html).toContain('aria-label="微積分"');
     expect(html).toContain('>∂ ∫</button>');
     expect(html).toContain('>□/□</button>');
     expect(html).toContain('data-formula-insert="\\frac{a}{b}"');
@@ -100,7 +100,20 @@ describe('interactive pages', () => {
 
   it('shows the administrator formula allowance without changing regular accounts', () => {
     const html = renderHomePage('test-nonce', '', true, '', { id: 'admin-1', email: 'owner@example.com', is_admin: 1 });
-    expect(html).toContain('每日 100 （管理員）');
+    expect(html).toContain('每日 100 次 （管理員）');
+  });
+
+  it('uses localized catalog copy for account, management, and report interfaces', () => {
+    const link = { slug: 'locale-proof', content_type: 'url', owner_user_id: 'user-1' };
+    const account = renderAccountPage({ id: 'user-1', email: 'person@example.com' }, [], 0, false, '', '', 'en');
+    const manage = renderManagePage(link, 'test-nonce', { id: 'user-1', email: 'person@example.com' }, true, 'en');
+    const englishReport = renderReportPage('locale-proof', 'test-nonce', '', 'en');
+    const chineseReport = renderReportPage('locale-proof', 'test-nonce', '', 'zh-Hant');
+
+    expect(account).toContain('Hello, person@example.com.');
+    expect(manage).toContain('Signed in with Google:');
+    expect(englishReport).toContain('button.textContent = "Sending…"');
+    expect(chineseReport).toContain('button.textContent = "正在送出…"');
   });
 
   it('publishes review-ready AI credit and refund information in English', () => {
