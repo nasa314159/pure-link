@@ -9,6 +9,7 @@ import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
 import { BillingError, createCheckout, getCreditBalance, handleCreemWebhook, isCheckoutConfigured } from './billing.js';
+import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
 
 export default {
   async fetch(request, env, context) {
@@ -29,16 +30,30 @@ export default {
 
 export async function routeRequest(request, env, context) {
   const requestUrl = new URL(request.url);
-  const path = safePathname(requestUrl.pathname);
+  const originalPath = safePathname(requestUrl.pathname);
+  const localeRoute = parseLocaleRoute(originalPath);
+  const locale = resolveLocale(request, localeRoute?.locale);
+  const path = localeRoute ? localeRoute.path : originalPath;
   const repository = createLinkRepository(env.pure_link_db);
   const isPublicRead = request.method === 'GET' || request.method === 'HEAD';
 
-  if (isPublicRead && path === '') {
+  if (request.method === 'POST' && originalPath === 'locale') {
+    if (!requireSameOrigin(request, env)) return json({ error: 'Invalid request origin.' }, { status: 403 });
+    const form = await request.formData();
+    const selected = normalizeLocale(form.get('locale')) || resolveLocale(request);
+    const returnTo = safeLocaleReturnTo(form.get('returnTo'), selected);
+    return redirect(returnTo, 303, { headers: { 'set-cookie': localeCookie(selected) } });
+  }
+
+  if (isPublicRead && originalPath === '') {
+    return redirect(localizedPath(locale), 302);
+  }
+  if (isPublicRead && localeRoute && path === '') {
     const nonce = createSlug() + createSlug();
     const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
     const googleAuthConfigured = isGoogleAuthConfigured(env);
     const user = googleAuthConfigured ? await getCurrentUser(request, env) : null;
-    return publicReadResponse(request, html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) }));
+    return publicReadResponse(request, html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user, locale), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) }));
   }
   if (isPublicRead && path === 'robots.txt') {
     const origin = publicOrigin(requestUrl, env);
@@ -50,6 +65,12 @@ export async function routeRequest(request, env, context) {
       'Disallow: /manage/',
       'Disallow: /report/',
       'Disallow: /api/',
+      'Disallow: /en/account',
+      'Disallow: /zh-Hant/account',
+      'Disallow: /en/manage/',
+      'Disallow: /zh-Hant/manage/',
+      'Disallow: /en/report/',
+      'Disallow: /zh-Hant/report/',
       `Sitemap: ${origin}/sitemap.xml`,
       '',
     ].join('\n'), { headers: { 'cache-control': 'public, max-age=3600' } }));
@@ -60,7 +81,8 @@ export async function routeRequest(request, env, context) {
     }));
   }
   if (isPublicRead && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
-    return publicReadResponse(request, html(renderLegalPage(path)));
+    if (!localeRoute) return redirect(localizedPath(locale, path), 302);
+    return publicReadResponse(request, html(renderLegalPage(path, locale)));
   }
 
   if (isPublicRead && (path.startsWith('assets/') || ['favicon.svg', 'og.png'].includes(path))) {
@@ -78,8 +100,9 @@ export async function routeRequest(request, env, context) {
     return handleCreemWebhook(request, env);
   }
   if (request.method === 'GET' && path === 'account') {
+    if (!localeRoute) return redirect(localizedPath(locale, 'account'), 302);
     const user = await getCurrentUser(request, env);
-    if (!user) return redirect('/auth/google?returnTo=/account');
+    if (!user) return redirect(`/auth/google?returnTo=${encodeURIComponent(localizedPath(locale, 'account'))}`);
     const nonce = createSlug() + createSlug();
     return html(renderAccountPage(
       user,
@@ -88,6 +111,7 @@ export async function routeRequest(request, env, context) {
       isCheckoutConfigured(env),
       requestUrl.searchParams.get('purchase'),
       nonce,
+      locale,
     ), {}, { scriptNonce: nonce });
   }
 
@@ -125,47 +149,58 @@ export async function routeRequest(request, env, context) {
 
   if (request.method === 'GET' && path.startsWith('manage/')) {
     const slug = path.slice('manage/'.length);
-    if (!slug || slug.includes('/')) return html(renderNotFoundPage(), { status: 404 });
+    if (!slug || slug.includes('/')) return html(renderNotFoundPage(locale), { status: 404 });
     const link = await repository.findBySlug(slug);
-    if (!isAvailable(link)) return html(renderNotFoundPage(), { status: 404 });
+    if (!isAvailable(link)) return html(renderNotFoundPage(locale), { status: 404 });
     const nonce = createSlug() + createSlug();
     const user = await getCurrentUser(request, env);
-    return html(renderManagePage(link, nonce, user, isGoogleAuthConfigured(env)), {}, { scriptNonce: nonce });
+    return html(renderManagePage(link, nonce, user, isGoogleAuthConfigured(env), locale), {}, { scriptNonce: nonce });
   }
 
   if (request.method === 'GET' && path.startsWith('report/')) {
     const slug = path.slice('report/'.length);
-    if (!slug || slug.includes('/')) return html(renderNotFoundPage(), { status: 404 });
+    if (!slug || slug.includes('/')) return html(renderNotFoundPage(locale), { status: 404 });
     const nonce = createSlug() + createSlug();
     const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
-    return html(renderReportPage(slug, nonce, turnstileSiteKey), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
+    return html(renderReportPage(slug, nonce, turnstileSiteKey, locale), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) });
   }
 
-  if (!['GET', 'HEAD'].includes(request.method) || path.includes('/')) return html(renderNotFoundPage(), { status: 404 });
+  // A supported locale prefix is never a second spelling of a shared link.
+  // Keep /slug and /slug+ as the only shared-content routes.
+  if (localeRoute) return html(renderNotFoundPage(locale), { status: 404 });
+
+  if (!['GET', 'HEAD'].includes(request.method) || path.includes('/')) return html(renderNotFoundPage(locale), { status: 404 });
 
   const isPreview = path.endsWith('+');
   const slug = isPreview ? path.slice(0, -1) : path;
-  if (!slug) return html(renderNotFoundPage(), { status: 404 });
+  if (!slug) return html(renderNotFoundPage(locale), { status: 404 });
 
   const link = await repository.findBySlug(slug);
-  if (!isAvailable(link)) return html(renderNotFoundPage(), { status: 404 });
+  if (!isAvailable(link)) return html(renderNotFoundPage(locale), { status: 404 });
 
   if (link.content_type === 'url') {
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: isPreview ? 'preview' : 'open', contentType: 'url' });
-    return isPreview ? html(renderUrlPreview(link)) : redirect(link.content, 302);
+    return isPreview ? html(renderUrlPreview(link, locale)) : redirect(link.content, 302);
   }
   if (link.content_type === 'formula') {
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'formula' });
-    return html(renderFormulaPage(link));
+    return html(renderFormulaPage(link, locale));
   }
   if (link.content_type === 'card') {
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'card' });
-    return html(renderCardPage(link));
+    return html(renderCardPage(link, locale));
   }
-  return html(renderNotFoundPage(), { status: 404 });
+  return html(renderNotFoundPage(locale), { status: 404 });
+}
+
+function safeLocaleReturnTo(value, locale) {
+  const path = String(value || '');
+  if (path.startsWith('/') && !path.startsWith('//')) return path;
+  return localizedPath(locale);
 }
 
 async function createLink(request, requestUrl, repository, env, context) {
+  const messages = getMessages(resolveResponseLocale(request));
   const input = await readCreateInput(request);
   const protectionResponse = await enforceWriteProtection({
     request,
@@ -183,7 +218,7 @@ async function createLink(request, requestUrl, repository, env, context) {
 
   let slug = normalized.slug;
   if (slug && await repository.exists(slug)) {
-    return json({ error: 'This custom link is already in use.', field: 'slug' }, { status: 409 });
+    return json({ error: messages.api.customLinkTaken, field: 'slug' }, { status: 409 });
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -203,7 +238,7 @@ async function createLink(request, requestUrl, repository, env, context) {
         contentType: normalized.contentType,
         url: `${origin}/${slug}`,
         previewUrl: normalized.contentType === 'url' ? `${origin}/${slug}+` : `${origin}/${slug}`,
-        previewLabel: normalized.contentType === 'url' ? '查看 + 預覽' : normalized.contentType === 'formula' ? '查看公式' : '查看小卡',
+        previewLabel: normalized.contentType === 'url' ? messages.home.client.previewUrl : normalized.contentType === 'formula' ? messages.home.client.previewFormula : messages.home.client.previewCard,
         managementUrl: `${origin}/manage/${slug}#${managementToken}`,
         managementToken,
       }, { status: 201 });
@@ -213,16 +248,18 @@ async function createLink(request, requestUrl, repository, env, context) {
     }
   }
 
-  return json({ error: 'Could not allocate a unique link. Please try again.' }, { status: 503 });
+  return json({ error: messages.api.uniqueLinkFailed }, { status: 503 });
 }
 
 async function generateFormula(request, env) {
+  const messages = getMessages(resolveResponseLocale(request));
   if (!request.headers.get('origin') || !requireSameOrigin(request, env)) {
-    return json({ error: 'Invalid request origin.' }, { status: 403 });
+    return json({ error: messages.api.invalidRequest }, { status: 403 });
   }
   const user = await getCurrentUser(request, env);
   if (!user) {
-    return json({ error: '請先登入再使用公式生成。', loginUrl: '/auth/google?returnTo=%2F%23formula-ai' }, { status: 401 });
+    const locale = resolveResponseLocale(request);
+    return json({ error: messages.api.formulaSignIn, loginUrl: `/auth/google?returnTo=${encodeURIComponent(`${localizedPath(locale)}#formula-ai`)}` }, { status: 401 });
   }
 
   try {
@@ -234,6 +271,7 @@ async function generateFormula(request, env) {
       ai: env.AI,
       dailyLimit: Number(user.is_admin) === 1 ? 100 : 5,
       isAdmin: Number(user.is_admin) === 1,
+      errorMessages: messages.api,
     }));
   } catch (error) {
     if (error instanceof FormulaAiError) return json({ error: error.message }, { status: error.status });
@@ -242,6 +280,7 @@ async function generateFormula(request, env) {
 }
 
 async function submitReport(request, requestUrl, env, context) {
+  const messages = getMessages(resolveResponseLocale(request));
   const input = await readCreateInput(request);
   const protectionResponse = await enforceWriteProtection({
     request,
@@ -254,9 +293,9 @@ async function submitReport(request, requestUrl, env, context) {
   });
   if (protectionResponse) return protectionResponse;
 
-  const report = normalizeReportInput(input);
+  const report = normalizeReportInput(input, messages.api);
   const exists = await createLinkRepository(env.pure_link_db).exists(report.slug);
-  if (!exists) return json({ error: 'This PureLink could not be found.' }, { status: 404 });
+  if (!exists) return json({ error: messages.api.reportNotFound }, { status: 404 });
   await storeReport(env.pure_link_db, report);
   recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'report', contentType: 'none' });
   return json({ received: true, reference: report.id }, { status: 201 });
@@ -324,7 +363,7 @@ function publicOrigin(requestUrl, env) {
 
 function renderSitemap(origin) {
   const paths = ['', 'privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'];
-  const urls = paths.map((path) => `  <url><loc>${origin}/${path}</loc></url>`).join('\n');
+  const urls = ['zh-Hant', 'en'].flatMap((locale) => paths.map((path) => `  <url><loc>${origin}${localizedPath(locale, path)}</loc></url>`)).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
 

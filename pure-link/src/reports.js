@@ -3,18 +3,18 @@ import { randomBase58 } from './security.js';
 
 const REPORT_CATEGORIES = new Set(['phishing', 'malware', 'impersonation', 'copyright', 'privacy', 'other']);
 
-export function normalizeReportInput(input) {
+export function normalizeReportInput(input, errorMessages = null) {
   const slug = String(input?.slug || '').trim();
   const category = String(input?.category || '').toLowerCase();
   const details = String(input?.details || '').replace(/\r\n?/g, '\n').trim();
   if (!slug || slug.length > 30 || !/^[A-Za-z0-9_-]+$/.test(slug)) {
-    throw new ValidationError('Choose a valid PureLink to report.', 'slug');
+    throw new ValidationError(errorMessages?.reportInvalidSlug || 'Choose a valid PureLink to report.', 'slug');
   }
   if (!REPORT_CATEGORIES.has(category)) {
-    throw new ValidationError('Choose a reason for the report.', 'category');
+    throw new ValidationError(errorMessages?.reportInvalidCategory || 'Choose a reason for the report.', 'category');
   }
   if (details.length > 1000) {
-    throw new ValidationError('Report details must be 1000 characters or fewer.', 'details');
+    throw new ValidationError(errorMessages?.reportDetailsTooLong || 'Report details must be 1000 characters or fewer.', 'details');
   }
   return { id: randomBase58(16), slug, category, details: details || null };
 }

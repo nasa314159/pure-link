@@ -28,6 +28,11 @@ describe('content validation', () => {
     expect(() => normalizeUrl('https://example.com/?x=1', true, { remove: 'bad rule!' })).toThrow(ValidationError);
   });
 
+  it('reserves supported locale names from custom slugs', () => {
+    expect(() => normalizeCreateInput({ contentType: 'card', content: 'hello', slug: 'en' })).toThrow('reserved');
+    expect(() => normalizeCreateInput({ contentType: 'card', content: 'hello', slug: 'zh-Hant' })).toThrow('reserved');
+  });
+
   it('rejects unsafe URL schemes and embedded credentials', () => {
     expect(() => normalizeUrl('javascript:alert(1)', false)).toThrow(ValidationError);
     expect(() => normalizeUrl('https://name:secret@example.com', false)).toThrow(/credentials/);

@@ -20,6 +20,7 @@ const aiUse = document.getElementById('use-formula-ai');
 const customStorageKey = 'purelink:formula-shortcuts:v1';
 const customShortcutLimit = 24;
 let generatedLatex = '';
+const messages = readMessages();
 
 if (input && preview && rendered) {
   input.addEventListener('input', renderPreview);
@@ -53,26 +54,26 @@ function initializeFormulaAi() {
   aiUse.addEventListener('click', () => {
     if (!generatedLatex) return;
     insertAtSelection(generatedLatex, 0);
-    setAiStatus('已插入主公式輸入框；請在右側預覽檢查後再建立。');
+    setAiStatus(messages.inserted);
   });
 }
 
 async function generateFormula() {
   const description = aiDescription.value.trim();
-  if (!description) return setAiStatus('請先用一句話描述要產生的公式。', true);
+  if (!description) return setAiStatus(messages.describe, true);
 
   aiGenerate.disabled = true;
-  aiGenerate.textContent = '生成中…';
+  aiGenerate.textContent = messages.generating;
   aiResult.hidden = true;
-  setAiStatus('正在產生可編輯的 LaTeX 草稿…');
+  setAiStatus(messages.generating);
   try {
     const response = await fetch('/api/formulas/generate', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-purelink-locale': document.documentElement.lang },
       body: JSON.stringify({ description }),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || '公式生成失敗，請稍後再試。');
+    if (!response.ok) throw new Error(payload.error || messages.failed);
 
     generatedLatex = payload.latex;
     aiPreview.replaceChildren();
@@ -80,15 +81,15 @@ async function generateFormula() {
     aiSource.textContent = generatedLatex;
     aiResult.hidden = false;
     const allowance = payload.allowanceSource === 'purchased'
-      ? `購買額度剩餘 ${payload.remaining} 次`
-      : `今日免費額度剩餘 ${payload.remaining} 次`;
-    setAiStatus(`草稿已生成。${allowance}；不會自動發布。`);
+      ? messages.purchased.replace('{count}', payload.remaining)
+      : messages.free.replace('{count}', payload.remaining);
+    setAiStatus(messages.generated.replace('{allowance}', allowance));
   } catch (error) {
     generatedLatex = '';
     setAiStatus(error.message, true);
   } finally {
     aiGenerate.disabled = false;
-    aiGenerate.textContent = '生成草稿';
+    aiGenerate.textContent = messages.generate;
   }
 }
 
@@ -107,13 +108,13 @@ function initializeCustomShortcuts() {
   customAdd.addEventListener('click', () => {
     const label = customLabel.value.trim();
     const latex = customLatex.value.trim();
-    if (!label || !latex) return setCustomStatus('請同時填寫按鍵名稱與 LaTeX。');
-    if (shortcuts.length >= customShortcutLimit) return setCustomStatus(`最多保存 ${customShortcutLimit} 個快捷鍵。`);
+    if (!label || !latex) return setCustomStatus(messages.customRequired);
+    if (shortcuts.length >= customShortcutLimit) return setCustomStatus(messages.customLimit.replace('{count}', customShortcutLimit));
     shortcuts = [...shortcuts, { id: crypto.randomUUID(), label, latex }];
     if (!writeCustomShortcuts(shortcuts)) return;
     customLabel.value = '';
     customLatex.value = '';
-    setCustomStatus('已只在這個瀏覽器保存。', false);
+    setCustomStatus(messages.customSaved, false);
     renderCustomShortcuts(shortcuts);
   });
 
@@ -124,7 +125,7 @@ function initializeCustomShortcuts() {
     if (!removeButton) return;
     shortcuts = shortcuts.filter((shortcut) => shortcut.id !== removeButton.dataset.customFormulaRemove);
     if (!writeCustomShortcuts(shortcuts)) return;
-    setCustomStatus('已從這個瀏覽器移除。', false);
+    setCustomStatus(messages.customRemoved, false);
     renderCustomShortcuts(shortcuts);
   });
 }
@@ -137,7 +138,7 @@ function readCustomShortcuts() {
       .slice(0, customShortcutLimit)
       .map((item) => ({ id: item.id, label: item.label.slice(0, 12), latex: item.latex.slice(0, 200) }));
   } catch {
-    setCustomStatus('這個瀏覽器目前無法讀取自訂快捷鍵。');
+    setCustomStatus(messages.customReadFailed);
     return [];
   }
 }
@@ -147,7 +148,7 @@ function writeCustomShortcuts(shortcuts) {
     localStorage.setItem(customStorageKey, JSON.stringify(shortcuts));
     return true;
   } catch {
-    setCustomStatus('這個瀏覽器目前不允許保存自訂快捷鍵。');
+    setCustomStatus(messages.customWriteFailed);
     return false;
   }
 }
@@ -167,7 +168,7 @@ function renderCustomShortcuts(shortcuts) {
     remove.type = 'button';
     remove.textContent = '×';
     remove.dataset.customFormulaRemove = shortcut.id;
-    remove.setAttribute('aria-label', `移除 ${shortcut.label}`);
+    remove.setAttribute('aria-label', messages.remove.replace('{label}', shortcut.label));
     item.append(insert, remove);
     customList.append(item);
   }
@@ -259,4 +260,13 @@ function appendText(target, value) {
     if (index) target.append(document.createElement('br'));
     target.append(document.createTextNode(line));
   });
+}
+
+function readMessages() {
+  try {
+    const source = document.getElementById('purelink-client-messages')?.textContent;
+    return JSON.parse(source || '{}').formula || {};
+  } catch {
+    return {};
+  }
 }

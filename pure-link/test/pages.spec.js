@@ -19,7 +19,7 @@ describe('interactive pages', () => {
     expect(html).toContain('data-formula-insert="\\begin{bmatrix}');
     expect(html).toContain('data-formula-insert="\\operatorname{arsinh} ');
     expect(html).toContain('data-formula-insert="\\Omega"');
-    expect(html).toContain('aria-label="Calculus"');
+    expect(html).toContain('aria-label="微積分"');
     expect(html).toContain('>∂ ∫</button>');
     expect(html).toContain('>□/□</button>');
     expect(html).toContain('data-formula-insert="\\frac{a}{b}"');
@@ -60,11 +60,13 @@ describe('interactive pages', () => {
   });
 
   it('publishes descriptive homepage SEO and social preview metadata', () => {
-    const html = renderHomePage('test-nonce');
+    const html = renderHomePage('test-nonce', '', false, '', null, 'en');
     expect(html).toContain('Privacy-friendly URL shortener and formula sharing');
     expect(html).toContain('privacy-friendly URL shortener for clean short links');
     expect(html).toContain('<meta name="robots" content="index, follow">');
-    expect(html).toContain('<link rel="canonical" href="https://no-no.uk/">');
+    expect(html).toContain('<link rel="canonical" href="https://no-no.uk/en/">');
+    expect(html).toContain('hreflang="zh-Hant"');
+    expect(html).toContain('hreflang="x-default"');
     expect(html).toContain('<meta property="og:image" content="https://no-no.uk/og.png?v=1">');
     expect(html).toContain('<link rel="icon" type="image/svg+xml" href="/favicon.svg">');
     expect(html).not.toContain('name="keywords"');
@@ -73,16 +75,16 @@ describe('interactive pages', () => {
   it('shows a clear retry path when an OAuth attempt expires', () => {
     const html = renderHomePage('test-nonce', '', true, 'expired');
     expect(html).toContain('登入等待時間已結束');
-    expect(html).toContain('href="/account">重新登入');
+    expect(html).toContain('href="/zh-Hant/account">重新登入');
   });
 
   it('keeps a sign-in entry in the top-right corner', () => {
     const signedOut = renderHomePage('test-nonce', '', true);
     const signedIn = renderHomePage('test-nonce', '', true, '', { email: 'person@example.com' });
     expect(signedOut).toContain('class="account-entry"');
-    expect(signedOut).toContain('href="/auth/google?returnTo=%2F"');
+    expect(signedOut).toContain('href="/auth/google?returnTo=%2Fzh-Hant%2F"');
     expect(signedOut).toContain('>登入</a>');
-    expect(signedIn).toContain('href="/account"');
+    expect(signedIn).toContain('href="/zh-Hant/account"');
     expect(signedIn).toContain('>我的 PureLink</a>');
     expect(signedIn).not.toContain('href="/auth/google?returnTo=%2F"');
   });
@@ -98,12 +100,35 @@ describe('interactive pages', () => {
 
   it('shows the administrator formula allowance without changing regular accounts', () => {
     const html = renderHomePage('test-nonce', '', true, '', { id: 'admin-1', email: 'owner@example.com', is_admin: 1 });
-    expect(html).toContain('每日 100 次（管理員）');
+    expect(html).toContain('每日 100 次 （管理員）');
+  });
+
+  it('uses localized catalog copy for account, management, and report interfaces', () => {
+    const link = { slug: 'locale-proof', content_type: 'url', owner_user_id: 'user-1' };
+    const account = renderAccountPage({ id: 'user-1', email: 'person@example.com' }, [], 0, false, '', '', 'en');
+    const manage = renderManagePage(link, 'test-nonce', { id: 'user-1', email: 'person@example.com' }, true, 'en');
+    const englishReport = renderReportPage('locale-proof', 'test-nonce', '', 'en');
+    const chineseReport = renderReportPage('locale-proof', 'test-nonce', '', 'zh-Hant');
+
+    expect(account).toContain('Hello, person@example.com.');
+    expect(manage).toContain('Signed in with Google:');
+    expect(englishReport).toContain('button.textContent = "Sending…"');
+    expect(chineseReport).toContain('button.textContent = "正在送出…"');
+  });
+
+  it('sends the rendered page locale with locale-sensitive API requests', () => {
+    const chineseHome = renderHomePage('test-nonce', '', false, '', null, 'zh-Hant');
+    const englishHome = renderHomePage('test-nonce', '', false, '', null, 'en');
+    const englishReport = renderReportPage('locale-proof', 'test-nonce', '', 'en');
+
+    expect(chineseHome).toContain("'x-purelink-locale': \"zh-Hant\"");
+    expect(englishHome).toContain("'x-purelink-locale': \"en\"");
+    expect(englishReport).toContain("'x-purelink-locale': \"en\"");
   });
 
   it('publishes review-ready AI credit and refund information in English', () => {
-    const credits = renderLegalPage('ai-credits');
-    const refunds = renderLegalPage('refund-policy');
+    const credits = renderLegalPage('ai-credits', 'en');
+    const refunds = renderLegalPage('refund-policy', 'en');
     expect(credits).toContain('<html lang="en">');
     expect(credits).toContain('US$5 provides 300 AI formula generations');
     expect(credits).toContain('not processed through Creem');

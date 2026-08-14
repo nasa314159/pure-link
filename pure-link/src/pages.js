@@ -1,7 +1,25 @@
 import { escapeHtml } from './http.js';
 import { renderFormulaContent } from './formula.js';
+import { getMessages, localizedPath } from './i18n.js';
 
 const PLATFORM_NOTICE = '透過 PureLink 分享的內容與外部網站由建立者提供，不代表 PureLink 的立場、推薦、背書或安全保證。';
+
+function clientMessagesMarkup(locale) {
+  return `<script id="purelink-client-messages" type="application/json">${JSON.stringify(getMessages(locale).client).replaceAll('<', '\\u003c')}</script>`;
+}
+
+function localizedHref(locale, path = '') {
+  return localizedPath(locale, path);
+}
+
+function languageSwitcher(locale, page = '') {
+  const messages = getMessages(locale);
+  const choices = ['zh-Hant', 'en'].map((choice) => {
+    const destination = String(page).startsWith('/') ? page : localizedHref(choice, page);
+    return `<form method="post" action="/locale"><input type="hidden" name="locale" value="${choice}"><input type="hidden" name="returnTo" value="${escapeHtml(destination)}"><button type="submit"${choice === locale ? ' aria-current="true"' : ''}>${escapeHtml(getMessages(choice).localeName)}</button></form>`;
+  }).join('');
+  return `<nav class="language-switcher" aria-label="${escapeHtml(messages.nav.language)}">${choices}</nav>`;
+}
 
 const FORMULA_SHORTCUT_GROUPS = [
   {
@@ -70,80 +88,82 @@ const FORMULA_SHORTCUT_GROUPS = [
   },
 ];
 
-function renderFormulaShortcutPalette() {
-  const tabs = FORMULA_SHORTCUT_GROUPS.map((group, index) => `<button type="button" role="tab" id="formula-tab-${group.id}" aria-label="${escapeHtml(group.ariaLabel)}" aria-controls="formula-panel-${group.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}" data-formula-category="${group.id}">${escapeHtml(group.label)}</button>`).join('');
+function renderFormulaShortcutPalette(m) {
+  const tabs = FORMULA_SHORTCUT_GROUPS.map((group, index) => `<button type="button" role="tab" id="formula-tab-${group.id}" aria-label="${escapeHtml(m.page.shortcutGroups[group.id])}" aria-controls="formula-panel-${group.id}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}" data-formula-category="${group.id}">${escapeHtml(group.label)}</button>`).join('');
   const panels = FORMULA_SHORTCUT_GROUPS.map((group, index) => {
-    const buttons = group.shortcuts.map(([label, insert, cursorBack = 0, accessibleLabel = label]) => `<button type="button" title="${escapeHtml(insert)}" aria-label="${escapeHtml(accessibleLabel)}; insert ${escapeHtml(insert)}" data-formula-insert="${escapeHtml(insert)}"${cursorBack ? ` data-cursor-back="${cursorBack}"` : ''}>${escapeHtml(label)}</button>`).join('');
+    const buttons = group.shortcuts.map(([label, insert, cursorBack = 0]) => `<button type="button" title="${escapeHtml(insert)}" aria-label="${escapeHtml(label)}; ${escapeHtml(m.page.insert)} ${escapeHtml(insert)}" data-formula-insert="${escapeHtml(insert)}"${cursorBack ? ` data-cursor-back="${cursorBack}"` : ''}>${escapeHtml(label)}</button>`).join('');
     return `<div class="symbol-group" role="tabpanel" id="formula-panel-${group.id}" aria-labelledby="formula-tab-${group.id}" data-formula-panel="${group.id}"${index === 0 ? '' : ' hidden'}>${buttons}</div>`;
   }).join('');
-  return `<div class="formula-category-tabs" role="tablist" aria-label="Math shortcut categories">${tabs}</div><div class="symbol-groups">${panels}</div>`;
+  return `<div class="formula-category-tabs" role="tablist" aria-label="${escapeHtml(m.page.shortcutCategories)}">${tabs}</div><div class="symbol-groups">${panels}</div>`;
 }
 
-export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '', user = null) {
+export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '', user = null, locale = 'zh-Hant') {
+  const m = getMessages(locale);
   const turnstileWidget = turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="create"></div></div>`
     : '';
   const authNotice = authStatus === 'expired'
-    ? '<div class="auth-notice" role="status"><strong>登入等待時間已結束。</strong><span>為了保護帳戶，這次的一次性登入已失效；請從「我的 PureLink」重新開始。</span><a href="/account">重新登入</a></div>'
+    ? `<div class="auth-notice" role="status"><strong>${m.home.authExpiredTitle}</strong><span>${m.home.authExpiredBody}</span><a href="${localizedHref(locale, 'account')}">${m.home.authRetry}</a></div>`
     : authStatus
-      ? '<div class="auth-notice" role="status"><strong>這次登入沒有完成。</strong><span>沒有建立任何帳戶工作階段，請重新嘗試。</span><a href="/account">重新登入</a></div>'
+      ? `<div class="auth-notice" role="status"><strong>${m.home.authFailedTitle}</strong><span>${m.home.authFailedBody}</span><a href="${localizedHref(locale, 'account')}">${m.home.authRetry}</a></div>`
       : '';
   const accountEntry = googleAuthConfigured
-    ? `<nav class="account-entry" aria-label="帳戶"><a href="${user ? '/account' : '/auth/google?returnTo=%2F'}"${user ? '' : ' aria-label="使用 Google 登入"'}>${user ? '我的 PureLink' : '登入'}</a></nav>`
+    ? `<nav class="account-entry" aria-label="${escapeHtml(m.nav.account)}"><a href="${user ? localizedHref(locale, 'account') : `/auth/google?returnTo=${encodeURIComponent(localizedHref(locale))}`}"${user ? '' : ` aria-label="${escapeHtml(m.nav.signIn)}"`}>${user ? m.nav.account : m.nav.signIn}</a></nav>`
     : '';
   const formulaAiLimit = Number(user?.is_admin) === 1 ? 100 : 5;
   const formulaAiPanel = user
     ? `<details class="formula-ai" id="formula-ai">
-        <summary>✦ 用一句話生成公式 <span>每日 ${formulaAiLimit} 次${formulaAiLimit === 100 ? '（管理員）' : ''}</span></summary>
-        <p>你的描述會傳送給 Cloudflare Workers AI；PureLink 不儲存描述或生成結果。AI 只會產生一個可編輯的 LaTeX 草稿，使用前請自行檢查。</p>
-        <p><a href="/ai-credits">AI credits, delivery and pricing</a></p>
-        <label class="field-label" for="formula-ai-description">用自然語言描述公式</label>
+        <summary>✦ ${m.home.aiTitle} <span>${m.page.aiLimit.replace('{count}', formulaAiLimit)} ${formulaAiLimit === 100 ? m.home.aiAdmin : ''}</span></summary>
+        <p>${m.home.aiPrivacy}</p>
+        <p><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsLink}</a></p>
+        <label class="field-label" for="formula-ai-description">${m.home.aiLabel}</label>
         <div class="formula-ai-compose">
-          <textarea id="formula-ai-description" maxlength="500" rows="3" placeholder="例如：質量 m 與能量 E 的質能等價關係"></textarea>
-          <button type="button" id="generate-formula-ai">生成草稿</button>
+          <textarea id="formula-ai-description" maxlength="500" rows="3" placeholder="${escapeHtml(m.home.aiPlaceholder)}"></textarea>
+          <button type="button" id="generate-formula-ai">${m.home.aiGenerate}</button>
         </div>
         <p class="formula-ai-status" id="formula-ai-status" role="status" hidden></p>
-        <section class="formula-ai-result" id="formula-ai-result" aria-label="AI 公式草稿" hidden>
+        <section class="formula-ai-result" id="formula-ai-result" aria-label="${escapeHtml(m.home.aiResult)}" hidden>
           <div id="formula-ai-preview" class="formula-ai-preview"></div>
           <code id="formula-ai-source"></code>
-          <button type="button" class="secondary-button" id="use-formula-ai">插入公式輸入框</button>
+          <button type="button" class="secondary-button" id="use-formula-ai">${m.home.aiUse}</button>
         </section>
       </details>`
     : `<details class="formula-ai" id="formula-ai">
-        <summary>✦ 用一句話生成公式 <span>一般帳號每日 5 次</span></summary>
-        <p>公式生成需要登入，以限制每人每日使用次數與控制公共服務成本。匿名建立、手動公式輸入與預覽仍完全免登入。</p>
-        <p><a href="/ai-credits">AI credits, delivery and pricing</a></p>
-        ${googleAuthConfigured ? '<a class="google-link" href="/auth/google?returnTo=%2F%23formula-ai">使用 Google 登入後繼續</a>' : '<p>公式生成目前尚未開放。</p>'}
+        <summary>✦ ${m.home.aiTitle} <span>${m.page.aiGuestLimit}</span></summary>
+        <p>${m.home.aiSignedOut}</p>
+        <p><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsLink}</a></p>
+        ${googleAuthConfigured ? `<a class="google-link" href="/auth/google?returnTo=${encodeURIComponent(`${localizedHref(locale)}#formula-ai`)}">${m.home.aiSignIn}</a>` : `<p>${m.home.aiUnavailable}</p>`}
       </details>`;
   return documentShell({
-    title: 'PureLink — Privacy-friendly URL shortener and formula sharing',
-    description: 'Shorten links without ads or needless tracking, share readable LaTeX formulas, and create quiet note cards with PureLink.',
+    title: m.home.title,
+    description: m.home.description,
     robots: 'index, follow',
-    canonicalPath: '/',
+    canonicalPath: localizedHref(locale),
+    locale,
     body: `
       ${accountEntry}
       <main class="home creator-home">
         <header class="hero">
           <p class="eyebrow">PURELINK</p>
-          <h1>Just share.</h1>
-          <p class="lede">No ads. No needless data.</p>
-          <p class="hero-summary">A privacy-friendly URL shortener for clean short links, readable LaTeX formula sharing, and quiet note cards.</p>
+          <h1>${m.home.heroTitle}</h1>
+          <p class="lede">${m.home.heroLead}</p>
+          <p class="hero-summary">${m.home.heroSummary}</p>
         </header>
 
         <section class="quick-open" aria-labelledby="quick-open-title">
           <div class="quick-open-heading">
-            <p class="eyebrow">OPEN</p>
-            <h2 id="quick-open-title">快速開啟 PureLink</h2>
+            <p class="eyebrow">${m.page.quickOpenEyebrow}</p>
+          <h2 id="quick-open-title">${m.home.quickOpen}</h2>
           </div>
           <form class="quick-open-form" id="quick-open-form" novalidate>
-            <label class="quick-preview-toggle" title="先查看完整目的地再決定是否前往">
+            <label class="quick-preview-toggle" title="${escapeHtml(m.home.previewTitle)}">
               <input type="checkbox" id="quick-open-preview">
               <span aria-hidden="true">+</span>
-              <small>先預覽</small>
+              <small>${m.home.preview}</small>
             </label>
-            <label class="visually-hidden" for="quick-open-input">PureLink 短網址或後綴</label>
-            <input id="quick-open-input" maxlength="128" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="貼上 no-no.uk/abc，或只輸入 abc">
-            <button type="submit" aria-label="開啟 PureLink">前往 →</button>
+            <label class="visually-hidden" for="quick-open-input">${m.home.quickLabel}</label>
+            <input id="quick-open-input" maxlength="128" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${escapeHtml(m.home.quickPlaceholder)}">
+            <button type="submit" aria-label="${escapeHtml(m.home.quickOpen)}">${m.home.go}</button>
           </form>
           <p class="quick-open-status" id="quick-open-status" role="alert" hidden></p>
         </section>
@@ -153,116 +173,119 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         <section class="creator-panel panel" id="creator-panel" aria-labelledby="creator-title">
           <div class="creator-heading">
             <div>
-              <p class="eyebrow">CREATE</p>
-              <h2 id="creator-title">你想分享什麼？</h2>
+              <p class="eyebrow">${m.page.createEyebrow}</p>
+              <h2 id="creator-title">${m.home.create}</h2>
             </div>
             <button class="suggestion" id="suggestion" type="button" hidden></button>
           </div>
 
           <form id="create-form" novalidate>
             <input type="hidden" id="content-type" name="contentType" value="url">
-            <div class="type-tabs" role="group" aria-label="內容類型">
-              <button class="type-tab active" type="button" data-type="url" aria-pressed="true"><span>↗</span>網址</button>
-              <button class="type-tab" type="button" data-type="formula" aria-pressed="false"><span>∑</span>公式</button>
-              <button class="type-tab" type="button" data-type="card" aria-pressed="false"><span>✦</span>小卡</button>
+            <div class="type-tabs" role="group" aria-label="${escapeHtml(m.home.contentTypes)}">
+              <button class="type-tab active" type="button" data-type="url" aria-pressed="true"><span>↗</span>${m.common.url}</button>
+              <button class="type-tab" type="button" data-type="formula" aria-pressed="false"><span>∑</span>${m.common.formula}</button>
+              <button class="type-tab" type="button" data-type="card" aria-pressed="false"><span>✦</span>${m.common.card}</button>
             </div>
 
             <div class="content-workspace" id="content-workspace">
               <div class="content-input-pane">
-                <label class="field-label" for="content">內容</label>
+                <label class="field-label" for="content">${m.common.content}</label>
                 <textarea id="content" name="content" maxlength="4096" placeholder="example.com" required></textarea>
-                <div class="field-meta"><span id="content-help">我們會補上 HTTPS，但不會暗中改寫網址。</span><span id="character-count">0 / 4096</span></div>
+                <div class="field-meta"><span id="content-help">${m.home.urlHelp}</span><span id="character-count">0 / 4096</span></div>
               </div>
-              <aside class="formula-preview" id="formula-live-preview" aria-label="公式即時預覽" hidden>
-                <span class="preview-label">即時預覽</span>
-                <p id="formula-preview-empty">輸入 LaTeX 或 Unicode 數學符號後，這裡會立即排版。</p>
+              <aside class="formula-preview" id="formula-live-preview" aria-label="${escapeHtml(m.home.formulaPreview)}" hidden>
+                <span class="preview-label">${m.home.formulaPreview}</span>
+                <p id="formula-preview-empty">${m.home.formulaEmpty}</p>
                 <div id="formula-preview-rendered" class="formula-preview-rendered" hidden></div>
               </aside>
             </div>
 
             <div class="formula-tools" id="formula-tools" hidden>
-              <div class="formula-tool-heading"><strong>數學快捷輸入</strong><span>每個按鍵只插入 LaTeX；右側會立即預覽。</span></div>
+              <div class="formula-tool-heading"><strong>${m.home.mathShortcuts}</strong><span>${m.home.mathShortcutsHelp}</span></div>
               ${formulaAiPanel}
-              ${renderFormulaShortcutPalette()}
+              ${renderFormulaShortcutPalette(m)}
               <details class="custom-formula-shortcuts">
-                <summary>＋ 自訂公式快捷鍵</summary>
-                <p>只儲存在這個瀏覽器，不會上傳到 PureLink。最多 24 個。</p>
+                <summary>＋ ${m.home.customShortcuts}</summary>
+                <p>${m.home.localOnly}</p>
                 <div class="custom-formula-fields">
-                  <label><span>按鍵名稱</span><input id="custom-formula-label" maxlength="12" placeholder="例如：Ĥ"></label>
-                  <label><span>插入的 LaTeX</span><input id="custom-formula-latex" maxlength="200" placeholder="例如：\\hat{H}"></label>
-                  <button type="button" id="add-custom-formula">加入</button>
+                  <label><span>${m.home.buttonLabel}</span><input id="custom-formula-label" maxlength="12" placeholder="例如：Ĥ"></label>
+                  <label><span>${m.home.insertLatex}</span><input id="custom-formula-latex" maxlength="200" placeholder="例如：\\hat{H}"></label>
+                  <button type="button" id="add-custom-formula">${m.home.add}</button>
                 </div>
                 <p class="custom-formula-status" id="custom-formula-status" role="status" hidden></p>
-                <div class="custom-formula-list" id="custom-formula-list" aria-label="自訂公式快捷鍵"></div>
+                <div class="custom-formula-list" id="custom-formula-list" aria-label="${escapeHtml(m.page.customShortcutsLabel)}"></div>
               </details>
             </div>
 
             <div class="conditional-options" id="url-options">
-              <label class="check-row"><input type="checkbox" name="cleanTracking" value="true"><span><strong>清理常見追蹤參數</strong><small>建立前移除 utm、fbclid 等已知參數。</small></span></label>
+              <label class="check-row"><input type="checkbox" name="cleanTracking" value="true"><span><strong>${m.home.cleanTracking}</strong><small>${m.home.cleanTrackingHelp}</small></span></label>
               <details class="tracking-rules">
-                <summary>自訂本次清理規則</summary>
-                <p>只套用於這次建立，不會保存到瀏覽器或帳號；保留名單優先於移除名單。</p>
-                <label class="field-label" for="tracking-remove">另外移除（逗號或空格分隔）</label>
+                <summary>${m.home.customRules}</summary>
+                <p>${m.home.customRulesHelp}</p>
+                <label class="field-label" for="tracking-remove">${m.home.removeAlso}</label>
                 <input id="tracking-remove" name="trackingRemove" maxlength="512" placeholder="例如：campaign_id, ref_*">
-                <label class="field-label" for="tracking-keep">始終保留（逗號或空格分隔）</label>
+                <label class="field-label" for="tracking-keep">${m.home.alwaysKeep}</label>
                 <input id="tracking-keep" name="trackingKeep" maxlength="512" placeholder="例如：utm_source, ref_code">
               </details>
-              <label class="check-row"><input type="checkbox" name="isAffiliate" value="true"><span><strong>這可能是推薦或分潤連結</strong><small>會在 + 預覽頁誠實告知接收者。</small></span></label>
+              <label class="check-row"><input type="checkbox" name="isAffiliate" value="true"><span><strong>${m.home.affiliate}</strong><small>${m.home.affiliateHelp}</small></span></label>
             </div>
 
             <div class="conditional-options" id="card-options" hidden>
-              <label class="field-label" for="signature">署名（選填）</label>
+              <label class="field-label" for="signature">${m.home.signature}</label>
               <input id="signature" name="signature" maxlength="60" placeholder="例如：一直惦記你的我">
               <fieldset class="theme-picker">
-                <legend>安靜主題</legend>
-                <label><input type="radio" name="theme" value="paper" checked><span class="theme-swatch paper-swatch">紙白</span></label>
-                <label><input type="radio" name="theme" value="mist"><span class="theme-swatch mist-swatch">薄霧</span></label>
-                <label><input type="radio" name="theme" value="night"><span class="theme-swatch night-swatch">夜色</span></label>
+                <legend>${m.home.quietThemes}</legend>
+                <label><input type="radio" name="theme" value="paper" checked><span class="theme-swatch paper-swatch">${m.home.paper}</span></label>
+                <label><input type="radio" name="theme" value="mist"><span class="theme-swatch mist-swatch">${m.home.mist}</span></label>
+                <label><input type="radio" name="theme" value="night"><span class="theme-swatch night-swatch">${m.home.night}</span></label>
               </fieldset>
             </div>
 
             <details class="advanced-options">
-              <summary>自訂短連結</summary>
+              <summary>${m.home.customLink}</summary>
               <label class="field-label" for="slug">no-no.uk/</label>
-              <input id="slug" name="slug" maxlength="30" pattern="[A-Za-z0-9_-]+" placeholder="留白就會安全地自動產生">
+              <input id="slug" name="slug" maxlength="30" pattern="[A-Za-z0-9_-]+" placeholder="${escapeHtml(m.home.customLinkPlaceholder)}">
             </details>
 
             <p class="form-error" id="form-error" role="alert" hidden></p>
             ${turnstileWidget}
-            <button class="create-button" id="create-button" type="submit">建立 PureLink</button>
-            <p class="privacy-note">不用先註冊。建立時只處理維持服務與防止濫用所需的最低限度資料。</p>
+            <button class="create-button" id="create-button" type="submit">${m.home.createButton}</button>
+            <p class="privacy-note">${m.home.privacy}</p>
           </form>
 
           <section class="result-panel" id="result-panel" aria-live="polite" hidden>
-            <p class="eyebrow">READY</p>
-            <h2>你的 PureLink 準備好了。</h2>
-            <span class="result-label">分享網址（可直接開啟）</span>
+            <p class="eyebrow">${m.page.readyEyebrow}</p>
+            <h2>${m.home.ready}</h2>
+            <span class="result-label">${m.home.sharedUrl}</span>
             <a class="result-url" id="result-url" href=""></a>
             <div class="result-actions">
-              <button class="create-button" type="button" data-copy-target="result-url">複製分享連結</button>
+              <button class="create-button" type="button" data-copy-target="result-url">${m.home.copyShare}</button>
               <a class="secondary-link" id="preview-link" href="" hidden></a>
-              <button class="secondary-button" id="share-result" type="button" hidden>分享</button>
+              <button class="secondary-button" id="share-result" type="button" hidden>${m.common.share}</button>
             </div>
             <p class="copy-status" id="result-status" role="status"></p>
             <div class="recovery-box">
-              <strong>請保存匿名管理憑證</strong>
-              <p>PureLink 不知道你是誰。若這個瀏覽器與你的備份都遺失，我們無法替你找回刪除權限。</p>
+              <strong>${m.home.saveCredential}</strong>
+              <p>${m.home.saveCredentialHelp}</p>
               <div class="recovery-actions">
-                <button class="secondary-button" id="copy-management" type="button">複製管理地址</button>
-                <button class="secondary-button" id="download-recovery" type="button">下載恢復檔案</button>
+                <button class="secondary-button" id="copy-management" type="button">${m.home.copyManagement}</button>
+                <button class="secondary-button" id="download-recovery" type="button">${m.home.downloadRecovery}</button>
               </div>
             </div>
-            <button class="quiet-button" id="create-another" type="button">再建立一個</button>
+            <button class="quiet-button" id="create-another" type="button">${m.home.createAnother}</button>
           </section>
         </section>
 
         <footer class="home-footer">
-          <p>內容由建立者提供，不代表 PureLink 的立場、推薦或安全保證。</p>
-          <nav aria-label="服務資訊">${googleAuthConfigured ? '<a href="/account">我的 PureLink</a>' : ''}<a href="/ai-credits">AI credits</a><a href="/refund-policy">Refund policy</a><a href="/privacy">隱私說明</a><a href="/terms">使用與內容規範</a><a href="/transparency">透明度</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">GitHub 原始碼</a></nav>
+          <p>${m.home.footer}</p>
+          <nav aria-label="${escapeHtml(m.nav.language)}">${googleAuthConfigured ? `<a href="${localizedHref(locale, 'account')}">${m.nav.account}</a>` : ''}<a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">${m.nav.github}</a></nav>
+          ${languageSwitcher(locale)}
         </footer>
       </main>
     `,
     script: `
+      const messages = ${JSON.stringify(m.home.client).replaceAll('<', '\\u003c')};
+      const typeNames = ${JSON.stringify({ url: m.common.url, formula: m.common.formula, card: m.common.card }).replaceAll('<', '\\u003c')};
       const form = document.getElementById('create-form');
       const quickOpenForm = document.getElementById('quick-open-form');
       const quickOpenInput = document.getElementById('quick-open-input');
@@ -305,16 +328,16 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           if (!/^[A-Za-z0-9_-]{1,30}$/.test(candidate)) throw new Error();
           location.assign('/' + candidate + (preview ? '+' : ''));
         } catch {
-          quickOpenStatus.textContent = '請輸入 no-no.uk 的完整短網址，或 1–30 字元的短網址後綴。';
+          quickOpenStatus.textContent = messages.invalidQuickOpen;
           quickOpenStatus.hidden = false;
           quickOpenInput.focus();
         }
       });
 
       const typeCopy = {
-        url: { placeholder: 'example.com', help: '我們會補上 HTTPS，但不會暗中改寫網址。', limit: 4096 },
-        formula: { placeholder: '例如：能量是 $E=mc^2$，或直接貼上 \\\\frac{a}{b}', help: '支援純公式，以及使用 $...$、$$...$$ 混合文字與公式。', limit: 5000 },
-        card: { placeholder: '寫下一段想好好送出去的話…', help: '一段話、可選署名、三種安靜主題。', limit: 1000 },
+        url: { placeholder: 'example.com', help: ${JSON.stringify(m.home.urlHelp)}, limit: 4096 },
+        formula: { placeholder: ${JSON.stringify(m.home.formulaPlaceholder)}, help: ${JSON.stringify(m.home.formulaHelp)}, limit: 5000 },
+        card: { placeholder: ${JSON.stringify(m.home.cardPlaceholder)}, help: ${JSON.stringify(m.home.cardHelp)}, limit: 1000 },
       };
 
       function selectType(type) {
@@ -352,7 +375,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           return;
         }
         suggestion.dataset.type = type;
-        suggestion.textContent = '建議：' + ({ url: '網址', formula: '公式', card: '小卡' })[type] + ' · 點一下採用';
+        suggestion.textContent = messages.suggestion.replace('{type}', typeNames[type]);
         suggestion.hidden = false;
       }
 
@@ -368,7 +391,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         event.preventDefault();
         errorBox.hidden = true;
         submitButton.disabled = true;
-        submitButton.textContent = '正在建立…';
+        submitButton.textContent = messages.creating;
         const data = Object.fromEntries(new FormData(form));
         data.cleanTracking = data.cleanTracking === 'true';
         data.isAffiliate = data.isAffiliate === 'true';
@@ -376,13 +399,13 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         try {
           const response = await fetch('/api/links', {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} },
             body: JSON.stringify(data),
           });
           const result = await response.json();
           if (!response.ok) {
             window.turnstile?.reset();
-            throw new Error(result.error || '建立失敗，請稍後再試。');
+            throw new Error(result.error || messages.createFailed);
           }
           latestResult = result;
           localStorage.setItem('purelink:management:' + result.slug, result.managementToken);
@@ -391,7 +414,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           const previewLink = document.getElementById('preview-link');
           previewLink.hidden = !result.previewUrl;
           previewLink.href = result.previewUrl || '';
-          previewLink.textContent = result.previewLabel || '查看分享內容';
+          previewLink.textContent = result.previewLabel || messages.viewShared;
           shareResult.hidden = !navigator.share;
           resultStatus.textContent = '';
           form.hidden = true;
@@ -402,32 +425,32 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           errorBox.hidden = false;
         } finally {
           submitButton.disabled = false;
-          submitButton.textContent = '建立 PureLink';
+          submitButton.textContent = ${JSON.stringify(m.home.createButton)};
         }
       });
 
       document.querySelector('[data-copy-target="result-url"]').addEventListener('click', async (event) => {
         const button = event.currentTarget;
         const copied = await copyText(latestResult.url);
-        button.textContent = copied ? '已複製' : '複製失敗';
-        resultStatus.textContent = copied ? '已複製：' + latestResult.url : '瀏覽器不允許自動複製，請手動選取上方完整網址。';
-        setTimeout(() => { button.textContent = '複製分享連結'; }, 1600);
+        button.textContent = copied ? messages.copied : messages.copyFailed;
+        resultStatus.textContent = copied ? messages.copiedUrl.replace('{url}', latestResult.url) : messages.browserCopy;
+        setTimeout(() => { button.textContent = messages.copyShare; }, 1600);
       });
 
       shareResult.addEventListener('click', async () => {
         try {
-          await navigator.share({ title: 'PureLink', text: 'Just share.', url: latestResult.url });
-          resultStatus.textContent = '已開啟系統分享選單：' + latestResult.url;
+          await navigator.share({ title: 'PureLink', text: ${JSON.stringify(m.page.shareText)}, url: latestResult.url });
+          resultStatus.textContent = messages.systemShare.replace('{url}', latestResult.url);
         } catch (error) {
-          if (error.name !== 'AbortError') resultStatus.textContent = '無法開啟分享選單，仍可複製上方網址。';
+          if (error.name !== 'AbortError') resultStatus.textContent = messages.shareFailed;
         }
       });
 
       document.getElementById('copy-management').addEventListener('click', async (event) => {
         const button = event.currentTarget;
         const copied = await copyText(latestResult.managementUrl);
-        button.textContent = copied ? '已複製' : '複製失敗';
-        setTimeout(() => { button.textContent = '複製管理地址'; }, 1600);
+        button.textContent = copied ? messages.copied : messages.copyFailed;
+        setTimeout(() => { button.textContent = ${JSON.stringify(m.home.copyManagement)}; }, 1600);
       });
 
       async function copyText(value) {
@@ -450,8 +473,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       }
 
       document.getElementById('download-recovery').addEventListener('click', () => {
-        const typeName = ({ url: '網址', formula: '公式', card: '小卡' })[latestResult.contentType] || '內容';
-        const text = 'PureLink 匿名管理與分享資訊\\n\\n內容類型：' + typeName + '\\n分享／查看內容：\\n' + latestResult.url + '\\n\\n私人管理地址（請勿分享）：\\n' + latestResult.managementUrl + '\\n\\n分享連結可交給接收者；管理地址只留給建立者。PureLink 無法恢復遺失的匿名管理憑證。\\n';
+        const typeName = typeNames[latestResult.contentType] || ${JSON.stringify(m.common.content)};
+        const text = messages.recoveryTitle + '\\n\\n' + messages.recoveryType + ${JSON.stringify(m.page.labelSeparator)} + typeName + '\\n' + messages.recoveryContent + ${JSON.stringify(m.page.labelSeparator)} + '\\n' + latestResult.url + '\\n\\n' + messages.recoveryPrivate + ${JSON.stringify(m.page.labelSeparator)} + '\\n' + latestResult.managementUrl + '\\n\\n' + messages.recoveryHelp + '\\n';
         const anchor = document.createElement('a');
         anchor.download = 'purelink-' + latestResult.slug + '-recovery.txt';
         anchor.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text);
@@ -492,62 +515,68 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
   });
 }
 
-export function renderUrlPreview(link) {
+export function renderUrlPreview(link, locale = 'zh-Hant') {
+  const m = getMessages(locale);
   const destination = new URL(link.content);
   const affiliate = Number(link.is_affiliate) === 1;
   return documentShell({
-    title: `Preview ${destination.hostname} — PureLink`,
-    description: 'Review a PureLink destination before continuing.',
+    title: `${m.content.preview}: ${destination.hostname} — PureLink`,
+    description: m.page.previewDescription,
     robots: 'noindex, nofollow, noarchive',
+    locale,
     body: `
       <main class="page">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel preview-panel">
-          <p class="eyebrow">DESTINATION PREVIEW</p>
+          <p class="eyebrow">${m.content.preview.toUpperCase()}</p>
           <h1 class="destination-host">${escapeHtml(destination.hostname)}</h1>
           <p class="destination-url">${escapeHtml(destination.toString())}</p>
           <div class="facts">
-            <p><strong>Connection</strong><span>${destination.protocol === 'https:' ? 'HTTPS' : 'HTTP — not encrypted'}</span></p>
-            <p><strong>Shared</strong><span>${escapeHtml(formatDate(link.created_at))}</span></p>
-            <p><strong>Referral</strong><span>${affiliate ? 'Creator says this may provide referral or affiliate benefit.' : 'Creator did not declare an affiliate relationship.'}</span></p>
+            <p><strong>${m.content.connection}</strong><span>${destination.protocol === 'https:' ? 'HTTPS' : m.content.insecure}</span></p>
+            <p><strong>${m.content.shared}</strong><span>${escapeHtml(formatDate(link.created_at, locale))}</span></p>
+            <p><strong>${m.content.referral}</strong><span>${affiliate ? m.content.affiliate : m.content.noAffiliate}</span></p>
           </div>
-          <a class="primary-link" href="${escapeHtml(destination.toString())}" rel="noreferrer">Continue to destination</a>
-          <a class="report-link" href="/report/${escapeHtml(link.slug)}">回報這個 PureLink</a>
-          <p class="notice">${escapeHtml(PLATFORM_NOTICE)} This preview is informational and is not a security certification.</p>
+          <a class="primary-link" href="${escapeHtml(destination.toString())}" rel="noreferrer">${m.content.continue}</a>
+          <a class="report-link" href="${localizedHref(locale, `report/${link.slug}`)}">${m.content.report}</a>
+          <p class="notice">${escapeHtml(m.content.platformNotice)} ${m.content.previewNotice}</p>
+          ${languageSwitcher(locale, `/${link.slug}+`)}
         </article>
       </main>
     `,
   });
 }
 
-export function renderFormulaPage(link) {
+export function renderFormulaPage(link, locale = 'zh-Hant') {
+  const m = getMessages(locale);
   return documentShell({
-    title: 'Formula — PureLink',
-    description: 'A formula shared with PureLink.',
+    title: `${m.common.formula} — PureLink`,
+    description: m.page.formulaDescription,
     robots: 'noindex, nofollow, noarchive',
     canonicalPath: `/${link.slug}`,
+    locale,
     body: `
       <main class="page">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel content-panel">
           <div class="share-export formula-export" id="share-export">
             <p class="eyebrow" data-export-brand>PURELINK · FORMULA</p>
             <div class="shared-content formula-rendered">${renderFormulaContent(link.content)}</div>
           </div>
-          <label class="export-brand-option"><input type="checkbox" data-export-brand-toggle checked><span><strong>PNG 加入「PURELINK · FORMULA」</strong><small>可隨時取消；分享內容本身不受影響。</small></span></label>
+          <label class="export-brand-option"><input type="checkbox" data-export-brand-toggle checked><span><strong>${m.content.addBrandFormula}</strong><small>${m.content.brandHelp}</small></span></label>
           <div class="content-actions">
-            <button class="secondary-button" type="button" data-copy-content>複製原始內容</button>
-            <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-formula.png">下載 PNG</button>
-            <button class="secondary-button" type="button" data-copy-link>複製連結</button>
-            <button class="secondary-button" type="button" data-share-link>分享</button>
+            <button class="secondary-button" type="button" data-copy-content>${m.content.copySource}</button>
+            <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-formula.png">${m.content.downloadPng}</button>
+            <button class="secondary-button" type="button" data-copy-link>${m.content.copyLink}</button>
+            <button class="secondary-button" type="button" data-share-link>${m.common.share}</button>
           </div>
           <details class="source-details">
-            <summary>查看原始輸入（LaTeX／Unicode）</summary>
+            <summary>${m.content.sourceInput}</summary>
             <pre class="formula-source">${escapeHtml(link.content)}</pre>
           </details>
           <textarea id="raw-content" hidden>${escapeHtml(link.content)}</textarea>
-          <p class="notice">${escapeHtml(PLATFORM_NOTICE)}</p>
-          <a class="report-link" href="/report/${escapeHtml(link.slug)}">回報這個 PureLink</a>
+          <p class="notice">${escapeHtml(m.content.platformNotice)}</p>
+          <a class="report-link" href="${localizedHref(locale, `report/${link.slug}`)}">${m.content.report}</a>
+          ${languageSwitcher(locale, `/${link.slug}`)}
         </article>
       </main>
     `,
@@ -555,32 +584,35 @@ export function renderFormulaPage(link) {
   });
 }
 
-export function renderCardPage(link) {
+export function renderCardPage(link, locale = 'zh-Hant') {
+  const m = getMessages(locale);
   const signature = link.signature ? `<p class="signature">— ${escapeHtml(link.signature)}</p>` : '';
   return documentShell({
-    title: 'A small card — PureLink',
-    description: 'A small card shared with PureLink.',
+    title: `${m.page.cardTitle} — PureLink`,
+    description: m.page.cardDescription,
     robots: 'noindex, nofollow, noarchive',
     canonicalPath: `/${link.slug}`,
+    locale,
     body: `
       <main class="page card-page theme-${escapeHtml(link.theme || 'paper')}">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel content-panel card-panel">
           <div class="share-export card-export" id="share-export">
             <p class="eyebrow" data-export-brand>PURELINK · A SMALL CARD</p>
             <p class="shared-content card-copy">${escapeHtml(link.content)}</p>
             ${signature}
           </div>
-          <label class="export-brand-option"><input type="checkbox" data-export-brand-toggle checked><span><strong>PNG 加入「PURELINK · A SMALL CARD」</strong><small>可隨時取消；小卡內容本身不受影響。</small></span></label>
+          <label class="export-brand-option"><input type="checkbox" data-export-brand-toggle checked><span><strong>${m.content.addBrandCard}</strong><small>${m.content.brandHelp}</small></span></label>
           <div class="content-actions">
-            <button class="secondary-button" type="button" data-copy-content>複製文字</button>
-            <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-card.png">下載 PNG</button>
-            <button class="secondary-button" type="button" data-copy-link>複製連結</button>
-            <button class="secondary-button" type="button" data-share-link>分享</button>
+            <button class="secondary-button" type="button" data-copy-content>${m.page.copyText}</button>
+            <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-card.png">${m.content.downloadPng}</button>
+            <button class="secondary-button" type="button" data-copy-link>${m.content.copyLink}</button>
+            <button class="secondary-button" type="button" data-share-link>${m.common.share}</button>
           </div>
           <textarea id="raw-content" hidden>${escapeHtml(link.content)}</textarea>
-          <p class="notice">${escapeHtml(PLATFORM_NOTICE)}</p>
-          <a class="report-link" href="/report/${escapeHtml(link.slug)}">回報這個 PureLink</a>
+          <p class="notice">${escapeHtml(m.content.platformNotice)}</p>
+          <a class="report-link" href="${localizedHref(locale, `report/${link.slug}`)}">${m.content.report}</a>
+          ${languageSwitcher(locale, `/${link.slug}`)}
         </article>
       </main>
     `,
@@ -588,44 +620,48 @@ export function renderCardPage(link) {
   });
 }
 
-export function renderReportPage(slug, nonce, turnstileSiteKey = '') {
+export function renderReportPage(slug, nonce, turnstileSiteKey = '', locale = 'zh-Hant') {
+  const m = getMessages(locale);
   const safeSlugScript = JSON.stringify(slug).replaceAll('<', '\\u003c');
   const turnstileWidget = turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="report"></div></div>`
     : '';
   return documentShell({
-    title: '回報內容 — PureLink',
-    description: '回報可能有害或不當的 PureLink。',
+    title: `${m.common.report} — PureLink`,
+    description: m.report.intro,
     robots: 'noindex, nofollow, noarchive',
+    locale,
     body: `
       <main class="page">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel report-panel">
-          <p class="eyebrow">REPORT</p>
-          <h1 class="manage-title">協助我們保持這裡乾淨。</h1>
-          <p class="lede manage-lede">你正在回報 <strong>/${escapeHtml(slug)}</strong>。回報不會自動下架；我們會依內容、安全風險與適用規範進行審查。</p>
+          <p class="eyebrow">${m.page.reportEyebrow}</p>
+          <h1 class="manage-title">${m.report.title}</h1>
+          <p class="lede manage-lede">${m.page.reportBefore}<strong>/${escapeHtml(slug)}</strong>${m.page.reportAfter}</p>
           <form id="report-form">
-            <label class="field-label" for="category">原因</label>
+            <label class="field-label" for="category">${m.report.category}</label>
             <select id="category" name="category" required>
-              <option value="">請選擇</option>
-              <option value="phishing">釣魚或詐騙</option>
-              <option value="malware">惡意程式或危險下載</option>
-              <option value="impersonation">冒用身分</option>
-              <option value="copyright">著作權或其他權利問題</option>
-              <option value="privacy">未經同意揭露個人資料</option>
-              <option value="other">其他</option>
+              <option value="">${m.page.reportChoose}</option>
+              <option value="phishing">${m.page.reportPhishing}</option>
+              <option value="malware">${m.page.reportMalware}</option>
+              <option value="impersonation">${m.page.reportImpersonation}</option>
+              <option value="copyright">${m.page.reportCopyright}</option>
+              <option value="privacy">${m.page.reportPrivacy}</option>
+              <option value="other">${m.page.reportOther}</option>
             </select>
-            <label class="field-label" for="details">補充說明（選填）</label>
-            <textarea id="details" name="details" maxlength="1000" placeholder="請提供判斷所需的最少資訊；不要填入密碼、證件或其他敏感資料。"></textarea>
+            <label class="field-label" for="details">${m.report.details}</label>
+            <textarea id="details" name="details" maxlength="1000" placeholder="${escapeHtml(m.page.reportDetailsPlaceholder)}"></textarea>
             ${turnstileWidget}
             <p class="form-error" id="report-error" role="alert" hidden></p>
-            <button class="create-button" id="report-button" type="submit">送出回報</button>
+            <button class="create-button" id="report-button" type="submit">${m.report.submit}</button>
           </form>
-          <p class="notice" id="report-status" role="status">${escapeHtml(PLATFORM_NOTICE)}</p>
+          <p class="notice" id="report-status" role="status">${escapeHtml(m.content.platformNotice)}</p>
+          ${languageSwitcher(locale, `report/${slug}`)}
         </article>
       </main>
     `,
     script: `
+      const reportMessages = ${JSON.stringify(m.report).replaceAll('<', '\\u003c')};
       const slug = ${safeSlugScript};
       const form = document.getElementById('report-form');
       const button = document.getElementById('report-button');
@@ -635,27 +671,27 @@ export function renderReportPage(slug, nonce, turnstileSiteKey = '') {
         event.preventDefault();
         errorBox.hidden = true;
         button.disabled = true;
-        button.textContent = '正在送出…';
+        button.textContent = ${JSON.stringify(m.page.reportSending)};
         const data = Object.fromEntries(new FormData(form));
         data.slug = slug;
         try {
           const response = await fetch('/api/reports', {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} },
             body: JSON.stringify(data),
           });
           const result = await response.json();
           if (!response.ok) {
             window.turnstile?.reset();
-            throw new Error(result.error || '回報未能送出。');
+            throw new Error(result.error || ${JSON.stringify(m.page.reportFailed)});
           }
           form.hidden = true;
-          status.textContent = '回報已收到。謝謝你協助保護其他使用者。';
+          status.textContent = reportMessages.received;
         } catch (error) {
           errorBox.textContent = error.message;
           errorBox.hidden = false;
           button.disabled = false;
-          button.textContent = '送出回報';
+          button.textContent = reportMessages.submit;
         }
       });
     `,
@@ -664,7 +700,7 @@ export function renderReportPage(slug, nonce, turnstileSiteKey = '') {
   });
 }
 
-export function renderLegalPage(page) {
+export function renderLegalPage(page, locale = 'zh-Hant') {
   const pages = {
     privacy: {
       eyebrow: 'PRIVACY',
@@ -732,67 +768,127 @@ export function renderLegalPage(page) {
       ],
     },
   };
-  const content = pages[page] || pages.transparency;
+  const content = localizedLegalContent(page, locale, pages) || pages.transparency;
+  const m = getMessages(locale);
   return documentShell({
     title: `${content.title} — PureLink`,
     description: content.intro,
     robots: 'index, follow',
-    canonicalPath: `/${page}`,
-    lang: content.lang || 'zh-Hant',
+    canonicalPath: localizedHref(locale, page),
+    locale,
     body: `
       <main class="page legal-page">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel legal-panel">
           <p class="eyebrow">${content.eyebrow}</p>
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
-          <nav class="legal-nav" aria-label="PureLink policies"><a href="/">PureLink</a><a href="/ai-credits">AI credits</a><a href="/refund-policy">Refund policy</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/transparency">Transparency</a></nav>
-          <p class="legal-updated">${content.lang === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14'}</p>
+          <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
+          ${languageSwitcher(locale, page)}
+          <p class="legal-updated">${locale === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14'}</p>
         </article>
       </main>
     `,
   });
 }
 
-export function renderManagePage(link, nonce, user = null, googleAuthConfigured = false) {
+function localizedLegalContent(page, locale, defaults) {
+  if (locale === 'zh-Hant' && !['ai-credits', 'refund-policy'].includes(page)) return defaults[page];
+  const content = {
+    en: {
+      privacy: ['PRIVACY', 'Keep only the data the service actually needs.', 'PureLink is not built for advertising, cross-site tracking, or personal profiles.', [
+        ['What we store', 'The URLs, formulas, or cards you create, their necessary settings, timestamps, status, and a one-way hash of the anonymous management credential. The credential itself is given only to its creator and cannot be recovered by PureLink.'],
+        ['Minimal analytics', 'We add daily totals by feature type and country or region code to estimate usage, cost, and service health. We do not retain raw IP addresses or individual browsing histories; unknown regions are recorded as ZZ.'],
+        ['Abuse prevention', 'Public writes use Turnstile and a short-lived, one-way rate-limit identifier derived from IP address, time window, and a server secret. It is used only to limit automated abuse and expires.'],
+        ['Optional sign-in', 'You can create and manage anonymous content without signing in. If you choose Google sign-in, PureLink stores the stable Google account identifier, email, display name, and a one-way session hash to show content you deliberately link across devices. It does not store Google passwords or long-lived access tokens.'],
+        ['Optional AI formula generation', 'Regular signed-in users can generate up to five formula drafts each day; the operator test limit is 100. A description is sent to Cloudflare Workers AI to create one LaTeX draft. PureLink stores only account, date, and count—not descriptions or results. Results can be wrong and must be reviewed.'],
+        ['What we deliberately do not do', 'PureLink does not sell data, serve behavioural ads, track people across sites, build interest profiles, or train models on shared content. Browsers and network providers still necessarily handle network data while requests are transmitted.'],
+        ['Deletion and contact', 'Anonymous creators can permanently delete content with the management address. A lost credential cannot verify ownership. Use the report option on a content page for safety, privacy, or rights concerns.'],
+      ]],
+      terms: ['TERMS & CONTENT', 'Sharing freely does not mean sharing without boundaries.', 'Content and external websites shared through PureLink are supplied by their creators and do not represent PureLink’s views, recommendation, endorsement, or security guarantee.', [
+        ['Your responsibility', 'Share only material you have a right to share and check external URLs, formulas, and text yourself. Do not use PureLink for phishing, fraud, malware, impersonation, privacy infringement, or other unlawful activity.'],
+        ['A preview is not a security certification', 'Adding + to a URL shows the complete destination and the creator’s affiliate disclosure so recipients can decide for themselves. It is not a malicious-site scan, legal review, or security guarantee.'],
+        ['Review and removal', 'After a report, PureLink may restrict access to or remove content based on risk, these rules, and applicable law. A report alone does not establish a violation or trigger automatic removal.'],
+        ['Service availability', 'PureLink is provided on a best-effort basis and may be paused for maintenance, cost, security incidents, or events outside our control. Do not store important material only in PureLink.'],
+        ['Support and paid features', 'The core service is intended to remain available to everyone. Voluntary support does not provide goods, AI credits, or platform privileges and is separate from product payments. AI formula credits are clearly priced one-time digital goods; pricing, delivery, and refunds are described on the AI credits and refund policy pages.'],
+      ]],
+      transparency: ['TRANSPARENCY', 'A promise not to track should be inspectable.', 'PureLink’s product design, data fields, and abuse controls are intended to be publicly reviewable rather than merely asserted.', [
+        ['Current data boundary', 'The content database holds shared content, settings, and anonymous management hashes. Optional sign-in adds minimal Google account data and session hashes. Analytics stores only daily aggregates, rate limiting stores short-lived one-way identifiers, and reports do not require a name or email.'],
+        ['Human verification', 'Turnstile protects public writes such as creation and reporting. It does not block ordinary reading and is an anti-automation measure, not membership or reader tracking.'],
+        ['AI formula boundary', 'A formula description is sent to Cloudflare Workers AI only after the user requests generation. PureLink does not retain prompts or responses; it records only daily usage. Drafts are never published automatically.'],
+        ['Open source and verification', 'Source, data structures, deployment notes, and project history are public so people can inspect the promises, raise questions, or self-host. Material changes to versions or policies should leave a public record.'],
+        ['Current limits', 'This is an MVP under validation. Custom domains, formal monitoring, incident processes, and regular transparency reports will mature before launch or as the service grows.'],
+      ]],
+    },
+    'zh-Hant': {
+      'ai-credits': ['AI 公式額度', '需要時才購買更多公式草稿。', 'PureLink 核心功能免費使用；可選的一次性額度只延伸 AI 公式功能，不會把網址、公式或小卡變成訂閱服務。', [
+        ['商品內容', '已登入的使用者可用自然語言描述數學式，取得可編輯、可立即預覽的 LaTeX 草稿。結果不會自動發布，可能有錯，使用前必須自行檢查。'],
+        ['一次性方案', 'US$5 可取得 300 次 AI 公式生成，US$10 可取得 800 次，US$20 可取得 2,000 次。這些都是一次性購買，不是訂閱；依法可能在結帳時加計稅金。'],
+        ['交付', '付款確認後，額度會自動加入發起結帳的 PureLink 帳號。購買前必須登入。每日五次免費生成優先使用，已購額度不在帳號間共用。'],
+        ['效期與限制', '只要 PureLink 持續營運 AI 公式服務，已購額度不會到期。它不可轉讓、沒有現金價值，並仍受每日安全上限保護帳號與公共服務免受自動化濫用。'],
+        ['付款邊界', 'Creem 只用於銷售 AI 公式額度，並作為這些購買的 merchant of record。開源專案的自願支持完全分開，不提供額度或產品權益，也不經由 Creem 處理。僅在付款供應商核准與整合測試後啟用結帳。'],
+        ['支援', '若有購買、交付或帳號問題，請聯絡 nasa3.14159@gmail.com。請提供 PureLink 帳號電子郵件與訂單編號，但不要傳送密碼、完整卡號或 Google 憑證。'],
+      ]],
+      'refund-policy': ['退款政策', '購買出錯時的清楚處理方式。', '本政策適用於 PureLink AI 公式額度的一次性購買，不限制使用者所在地區適用的任何強制消費者權利。', [
+        ['未使用額度', '若已購額度尚未使用，使用者可在購買後 14 個日曆日內申請退款。核准的退款會退回原付款方式。'],
+        ['交付或技術失敗', '若確認付款沒有加到正確的 PureLink 帳號，請聯絡支援以驗證並交付訂單。若 PureLink 無法交付已購額度，或功能有重大且未解決的缺陷，使用者可視情況獲得全額或相稱退款。'],
+        ['已使用額度', '已消耗的額度通常不退款，因為數位服務在請求生成時立即交付；法律要求或 PureLink 確認付費生成因服務失敗時則例外。'],
+        ['如何申請協助', '請以訂單編號、購買日期、PureLink 帳號電子郵件與簡短問題描述寄信至 nasa3.14159@gmail.com。不要包含卡片資料或帳號密碼。PureLink 目標在五個工作天內確認收到請求。'],
+        ['處理與濫用', '退款由原付款供應商處理，入帳可能需要額外時間。詐欺使用、轉售、試圖繞過限制的自動化，或反覆濫用，可能使額度在交易審查期間暫停。'],
+      ]],
+    },
+  }[locale]?.[page];
+  if (!content) return defaults[page];
+  const [eyebrow, title, intro, sections] = content;
+  return { eyebrow, title, intro, sections, lang: locale };
+}
+
+export function renderManagePage(link, nonce, user = null, googleAuthConfigured = false, locale = 'zh-Hant') {
+  const m = getMessages(locale);
   const slug = link.slug;
   const safeSlugScript = JSON.stringify(slug).replaceAll('<', '\\u003c');
   const accountAccess = Boolean(user && link.owner_user_id === user.id);
-  const contentTypeName = ({ url: '網址', formula: '公式', card: '小卡' })[link.content_type] || '內容';
+  const contentTypeName = ({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content;
   const accountPanel = user
-    ? `<div class="account-connect"><p>已使用 Google 登入：<strong>${escapeHtml(user.email)}</strong></p>${accountAccess ? '<p>這個 PureLink 已保存在你的帳號。</p>' : '<button class="secondary-button" id="claim-link" type="button">把這個 PureLink 加入我的帳號</button>'}<a href="/account">查看我的 PureLink</a></div>`
+    ? `<div class="account-connect"><p>${m.page.signedIn}${m.page.labelSeparator}<strong>${escapeHtml(user.email)}</strong></p>${accountAccess ? `<p>${m.page.alreadyLinked}</p>` : `<button class="secondary-button" id="claim-link" type="button">${m.manage.claim}</button>`}<a href="${localizedHref(locale, 'account')}">${m.page.viewAccount}</a></div>`
     : googleAuthConfigured
-      ? `<div class="account-connect"><strong>想跨裝置管理？</strong><p>匿名憑證仍可直接使用；也可以自願連結 Google 帳號，之後從其他裝置登入找回。</p><a class="google-link" href="/auth/google?returnTo=${encodeURIComponent(`/manage/${slug}`)}">使用 Google 繼續</a></div>`
+      ? `<div class="account-connect"><strong>${m.page.crossDevice}</strong><p>${m.page.crossDeviceHelp}</p><a class="google-link" href="/auth/google?returnTo=${encodeURIComponent(localizedHref(locale, `manage/${slug}`))}">${m.page.continueGoogle}</a></div>`
       : '';
   return documentShell({
-    title: '管理你的 PureLink',
-    description: '使用匿名管理憑證或自願連結的帳號管理 PureLink。',
+    title: m.manage.title,
+    description: m.manage.intro,
     robots: 'noindex, nofollow, noarchive',
+    locale,
     body: `
       <main class="page">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel manage-panel">
-          <p class="eyebrow">PRIVATE MANAGEMENT</p>
-          <h1 class="manage-title">管理這個 PureLink。</h1>
-          <p class="lede manage-lede">匿名憑證本身就是管理權限，不需要強迫登入；請不要把這個管理地址交給別人。</p>
+          <p class="eyebrow">${m.page.managementEyebrow}</p>
+          <h1 class="manage-title">${m.manage.title}</h1>
+          <p class="lede manage-lede">${m.manage.intro}</p>
           <div class="managed-content-card">
             <span>${escapeHtml(contentTypeName)}</span>
             <strong>/${escapeHtml(slug)}</strong>
-            <a class="primary-link" href="/${escapeHtml(slug)}">查看分享內容</a>
+            <a class="primary-link" href="/${escapeHtml(slug)}">${m.manage.view}</a>
           </div>
           ${accountPanel}
           <div class="manage-actions" id="manage-actions" hidden>
-            <button class="secondary-button" id="copy-management" type="button">複製管理地址</button>
-            <button class="secondary-button" id="download-recovery" type="button">下載恢復檔案</button>
-            <button class="danger-button" id="delete-link" type="button">刪除這個 PureLink</button>
+            <button class="secondary-button" id="copy-management" type="button">${m.home.copyManagement}</button>
+            <button class="secondary-button" id="download-recovery" type="button">${m.home.downloadRecovery}</button>
+            <button class="danger-button" id="delete-link" type="button">${m.manage.delete}</button>
           </div>
-          <p class="notice" id="management-status" role="status">正在確認管理權限…</p>
+          <p class="notice" id="management-status" role="status">${m.manage.checking}</p>
+          ${languageSwitcher(locale, `manage/${slug}`)}
         </article>
       </main>
     `,
     script: `
+      const manageMessages = ${JSON.stringify(m.manage).replaceAll('<', '\\u003c')};
+      const homeMessages = ${JSON.stringify(m.home).replaceAll('<', '\\u003c')};
+      const pageMessages = ${JSON.stringify(m.page).replaceAll('<', '\\u003c')};
       const slug = ${safeSlugScript};
+      const contentTypeName = ${JSON.stringify(contentTypeName).replaceAll('<', '\\u003c')};
       const storageKey = 'purelink:management:' + slug;
       const fragmentToken = location.hash.slice(1);
       if (fragmentToken) localStorage.setItem(storageKey, fragmentToken);
@@ -809,20 +905,20 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
 
       if (token || accountAccess) {
         actions.hidden = false;
-        status.textContent = accountAccess ? '已透過你的 Google 帳號取得管理權限。' : '此裝置已有匿名管理權限。';
+        status.textContent = accountAccess ? manageMessages.accountAccess : manageMessages.anonymousAccess;
       } else {
-        status.textContent = '找不到匿名管理憑證。若曾連結 Google 帳號，請先登入；未連結的匿名憑證無法恢復。';
+        status.textContent = manageMessages.missingCredential;
       }
 
       copyManagement.addEventListener('click', async (event) => {
         await navigator.clipboard.writeText(canonicalAddress);
         const button = event.currentTarget;
-        button.textContent = '已複製';
-        setTimeout(() => { button.textContent = '複製管理地址'; }, 1600);
+        button.textContent = ${JSON.stringify(m.common.copy)};
+        setTimeout(() => { button.textContent = homeMessages.copyManagement; }, 1600);
       });
 
       downloadRecovery.addEventListener('click', () => {
-        const recoveryText = 'PureLink 匿名管理與分享資訊\\n\\n內容類型：${contentTypeName}\\n分享／查看內容：\\n' + location.origin + '/' + encodeURIComponent(slug) + '\\n\\n私人管理地址（請勿分享）：\\n' + canonicalAddress + '\\n\\n分享連結可交給接收者；管理地址只留給建立者。\\n';
+        const recoveryText = homeMessages.client.recoveryTitle + '\\n\\n' + homeMessages.client.recoveryType + pageMessages.labelSeparator + contentTypeName + '\\n' + homeMessages.client.recoveryContent + pageMessages.labelSeparator + '\\n' + location.origin + '/' + encodeURIComponent(slug) + '\\n\\n' + homeMessages.client.recoveryPrivate + pageMessages.labelSeparator + '\\n' + canonicalAddress + '\\n\\n' + homeMessages.client.recoveryHelp + '\\n';
         const anchor = document.createElement('a');
         anchor.download = 'purelink-' + slug + '-recovery.txt';
         anchor.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(recoveryText);
@@ -832,7 +928,7 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
       document.getElementById('claim-link')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
         if (!token) {
-          status.textContent = '需要先用原本的匿名管理地址開啟此頁，才能綁定帳號。';
+          status.textContent = manageMessages.claimMissing;
           return;
         }
         button.disabled = true;
@@ -841,11 +937,11 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
           headers: { authorization: 'Bearer ' + token },
         });
         if (response.ok) {
-          button.replaceWith(document.createTextNode('已加入你的帳號。'));
-          status.textContent = '之後可在任何裝置使用 Google 登入管理。';
+          button.replaceWith(document.createTextNode(manageMessages.claimed));
+          status.textContent = manageMessages.claimNext;
         } else {
           button.disabled = false;
-          status.textContent = '帳號連結失敗，請重新開啟完整管理地址後再試。';
+          status.textContent = manageMessages.claimFailed;
         }
       });
 
@@ -854,8 +950,8 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
         const button = event.currentTarget;
         if (!deleteArmed) {
           deleteArmed = true;
-          button.textContent = '再按一次，永久刪除';
-          setTimeout(() => { deleteArmed = false; button.textContent = '刪除這個 PureLink'; }, 5000);
+          button.textContent = manageMessages.deleteAgain;
+          setTimeout(() => { deleteArmed = false; button.textContent = manageMessages.delete; }, 5000);
           return;
         }
 
@@ -868,12 +964,12 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
           localStorage.removeItem(storageKey);
           actions.hidden = true;
           history.replaceState(null, '', location.pathname);
-          status.textContent = '這個 PureLink 已永久刪除。';
+          status.textContent = manageMessages.deleted;
         } else {
           button.disabled = false;
           deleteArmed = false;
-          button.textContent = '刪除這個 PureLink';
-          status.textContent = '刪除失敗，請確認管理地址或帳號權限。';
+          button.textContent = manageMessages.delete;
+          status.textContent = manageMessages.deleteFailed;
         }
       });
     `,
@@ -881,47 +977,51 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
   });
 }
 
-export function renderAccountPage(user, links, creditBalance = 0, checkoutConfigured = false, purchaseStatus = '', nonce = '') {
+export function renderAccountPage(user, links, creditBalance = 0, checkoutConfigured = false, purchaseStatus = '', nonce = '', locale = 'zh-Hant') {
+  const m = getMessages(locale);
   const rows = links.length
-    ? links.map((link) => `<li><div><span>${escapeHtml(({ url: '網址', formula: '公式', card: '小卡' })[link.content_type] || '內容')}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">查看</a><a href="/manage/${escapeHtml(link.slug)}">管理</a></li>`).join('')
-    : '<li class="empty-account">還沒有連結到這個帳號的 PureLink。</li>';
+    ? links.map((link) => `<li><div><span>${escapeHtml(({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content)}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">${m.common.view}</a><a href="${localizedHref(locale, `manage/${link.slug}`)}">${m.common.manage}</a></li>`).join('')
+    : `<li class="empty-account">${m.account.empty}</li>`;
   const purchaseNotice = purchaseStatus === 'success'
-    ? '<p class="auth-notice" role="status"><strong>付款流程已返回 PureLink。</strong><span>付款確認後，額度會由 Creem 的簽章通知自動加入；若尚未顯示，請稍候再重新整理。</span></p>'
+    ? `<p class="auth-notice" role="status"><strong>${m.account.returned}</strong><span>${m.account.returnedHelp}</span></p>`
     : '';
   const checkoutAction = checkoutConfigured
-    ? '<button id="buy-credits-300" type="button">US$5 · 購買 300 次</button><p class="billing-status" id="billing-status" role="status" hidden></p>'
-    : '<p class="billing-status">付款功能正在完成最後驗證，目前不會向你收費。</p>';
+    ? `<button id="buy-credits-300" type="button">${m.account.buy}</button><p class="billing-status" id="billing-status" role="status" hidden></p>`
+    : `<p class="billing-status">${m.account.billingDisabled}</p>`;
   return documentShell({
-    title: '我的 PureLink',
-    description: '跨裝置管理自願連結到 Google 帳號的 PureLink。',
+    title: m.account.title,
+    description: m.account.intro,
     robots: 'noindex, nofollow, noarchive',
+    locale,
     body: `
       <main class="page account-page">
-        <a class="wordmark" href="/">PureLink</a>
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel account-panel">
-          <p class="eyebrow">YOUR PURELINKS</p>
-          <h1 class="manage-title">你好，${escapeHtml(user.display_name || user.email)}。</h1>
-          <p class="lede manage-lede">只有你主動連結或登入後建立的內容會出現在這裡。匿名建立仍然可以完全不登入。</p>
+          <p class="eyebrow">${m.page.accountEyebrow}</p>
+          <h1 class="manage-title">${m.page.greeting.replace('{name}', escapeHtml(user.display_name || user.email))}</h1>
+          <p class="lede manage-lede">${m.account.intro}</p>
           ${purchaseNotice}
           <section class="account-credits" aria-labelledby="account-credits-title">
-            <p class="eyebrow">AI FORMULA CREDITS</p>
-            <h2 id="account-credits-title">可用購買額度：${Math.max(0, Number(creditBalance || 0))} 次</h2>
-            <p>每天 5 次免費生成會優先使用；購買額度是一次性商品，不是訂閱。</p>
+            <p class="eyebrow">${m.page.creditsEyebrow}</p>
+            <h2 id="account-credits-title">${m.account.credits.replace('{count}', Math.max(0, Number(creditBalance || 0)))}</h2>
+            <p>${m.account.creditsHelp}</p>
             ${checkoutAction}
-            <p><a href="/ai-credits">商品與交付說明</a> · <a href="/refund-policy">退款政策</a></p>
+            <p><a href="${localizedHref(locale, 'ai-credits')}">${m.account.productInfo}</a> · <a href="${localizedHref(locale, 'refund-policy')}">${m.account.refund}</a></p>
           </section>
           <ul class="account-links">${rows}</ul>
-          <form action="/auth/logout" method="post"><button class="secondary-button" type="submit">登出</button></form>
+          <form action="/auth/logout" method="post"><button class="secondary-button" type="submit">${m.account.logOut}</button></form>
+          ${languageSwitcher(locale, 'account')}
         </article>
       </main>
     `,
     script: checkoutConfigured ? `
+      const accountMessages = ${JSON.stringify(m.account).replaceAll('<', '\\u003c')};
       const buyButton = document.getElementById('buy-credits-300');
       const billingStatus = document.getElementById('billing-status');
       buyButton?.addEventListener('click', async () => {
         buyButton.disabled = true;
         billingStatus.hidden = false;
-        billingStatus.textContent = '正在建立安全結帳頁…';
+        billingStatus.textContent = accountMessages.checkout;
         try {
           const response = await fetch('/api/billing/checkout', {
             method: 'POST',
@@ -929,7 +1029,7 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
             body: '{}',
           });
           const payload = await response.json();
-          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || '目前無法開啟付款頁。');
+          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || accountMessages.checkoutFailed);
           location.assign(payload.checkoutUrl);
         } catch (error) {
           billingStatus.textContent = error.message;
@@ -942,32 +1042,36 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
   });
 }
 
-export function renderNotFoundPage() {
+export function renderNotFoundPage(locale = 'zh-Hant') {
+  const m = getMessages(locale);
   return documentShell({
-    title: 'Not found — PureLink',
-    description: 'This PureLink could not be found.',
+    title: `${m.page.notFoundTitle} — PureLink`,
+    description: m.page.notFoundDescription,
     robots: 'noindex, nofollow',
+    locale,
     body: `
       <main class="home">
         <p class="eyebrow">404</p>
-        <h1>This PureLink is not here.</h1>
-        <p class="lede">It may have been removed, expired, or typed incorrectly.</p>
-        <a class="primary-link compact" href="/">Return home</a>
+        <h1>${m.page.notFoundHeading}</h1>
+        <p class="lede">${m.page.notFoundBody}</p>
+        <a class="primary-link compact" href="${localizedHref(locale)}">${m.page.returnHome}</a>
       </main>
     `,
   });
 }
 
-function documentShell({ title, description, body, robots = 'noindex, nofollow', lang = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
+function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
   const scripts = [externalScript, ...externalScripts].filter(Boolean);
   const canonicalUrl = canonicalPath ? `https://no-no.uk${canonicalPath}` : '';
   const canonicalMarkup = canonicalUrl ? `<link rel="canonical" href="${escapeHtml(canonicalUrl)}">` : '';
+  const alternatePath = canonicalPath.replace(/^\/(?:zh-Hant|en)(?:\/|$)/, '/').replace(/^\/$/, '');
+  const hreflangMarkup = canonicalUrl && !robots.includes('noindex') ? ['zh-Hant', 'en'].map((candidate) => `<link rel="alternate" hreflang="${candidate}" href="https://no-no.uk${localizedHref(candidate, alternatePath)}">`).join('') + `<link rel="alternate" hreflang="x-default" href="https://no-no.uk${localizedHref('en', alternatePath)}">` : '';
   const externalScriptMarkup = scripts.map((source) => source.startsWith('https://challenges.cloudflare.com/')
     ? `<script src="${escapeHtml(source)}" async defer></script>`
     : `<script type="module" src="${escapeHtml(source)}"></script>`).join('');
   return `<!doctype html>
-<html lang="${escapeHtml(lang)}">
+<html lang="${escapeHtml(locale)}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -988,6 +1092,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
   <meta name="twitter:image" content="https://no-no.uk/og.png?v=1">
   <title>${escapeHtml(title)}</title>
   ${canonicalMarkup}
+  ${hreflangMarkup}
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="/assets/katex/katex.min.css">
   <style>
@@ -1008,6 +1113,10 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .account-entry { position: fixed; z-index: 20; top: max(1rem, env(safe-area-inset-top)); right: max(1rem, env(safe-area-inset-right)); }
     .account-entry a { display: inline-flex; align-items: center; justify-content: center; min-height: 2.7rem; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.9); box-shadow: 0 .65rem 2rem rgba(35,62,50,.1); color: var(--ink); text-decoration: none; font-size: .82rem; font-weight: 750; backdrop-filter: blur(18px); }
     .account-entry a:hover, .account-entry a:focus-visible { border-color: var(--green); background: white; }
+    .language-switcher { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: 1.2rem; }
+    .language-switcher form { margin: 0; }
+    .language-switcher button { width: auto; min-height: 2rem; padding: .35rem .6rem; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: .72rem; }
+    .language-switcher button[aria-current="true"] { border-color: var(--green); color: var(--green); background: #edf7f1; }
     .hero { padding-top: 3rem; }
     .hero-summary { max-width: 42rem; margin: 1rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.65; }
     .quick-open { width: 100%; padding: 1.1rem; border: 1px solid rgba(35,92,72,.2); border-radius: 1.45rem; background: rgba(255,255,255,.72); box-shadow: 0 1rem 3rem rgba(35,62,50,.07); backdrop-filter: blur(18px); }
@@ -1192,13 +1301,13 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     @media (max-width: 38rem) { .account-entry a { min-height: 2.5rem; padding: .6rem .85rem; } .facts p { grid-template-columns: 1fr; gap: .35rem; } .panel { border-radius: 1.35rem; } .creator-heading, .formula-tool-heading { display: grid; } .quick-open-form { grid-template-columns: auto 1fr; } .quick-open-form > button { grid-column: 1 / -1; } .formula-ai-compose, .formula-ai-result, .custom-formula-fields { grid-template-columns: 1fr; } .formula-ai-compose button, .formula-ai-result button { width: 100%; } .type-tabs { gap: .4rem; } .field-meta { display: grid; } .result-actions, .recovery-actions, .content-actions { grid-template-columns: 1fr; } .managed-content-card { grid-template-columns: 1fr; } .account-links li { grid-template-columns: 1fr auto; } }
   </style>
 </head>
-<body>${body}${scriptMarkup}${externalScriptMarkup}</body>
+<body>${body}${clientMessagesMarkup(locale)}${scriptMarkup}${externalScriptMarkup}</body>
 </html>`;
 }
 
-function formatDate(value) {
+function formatDate(value, locale = 'en') {
   if (!value) return 'Unknown';
   const date = new Date(value.endsWith?.('Z') ? value : `${value}Z`);
   if (Number.isNaN(date.getTime())) return String(value);
-  return new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
 }

@@ -8,6 +8,8 @@
 
 [使用 PureLink](https://no-no.uk) · [了解隱私設計](https://no-no.uk/privacy) · [查看透明度說明](https://no-no.uk/transparency)
 
+[English](README.md) · 繁體中文
+
 </div>
 
 ## PureLink 是什麼？
@@ -58,6 +60,12 @@ PureLink 是一個安靜、簡潔，而且能被驗證其隱私承諾的分享�
 
 希望跨裝置保存內容的使用者可以自願使用 Google 登入。登入後建立的 PureLink 會列在帳戶頁面；既有匿名內容也能由持有管理憑證的人主動加入帳戶。匿名使用始終是第一級功能。
 
+## AI 額度與自行部署
+
+登入帳號每天有 5 次免費 AI 公式草稿。額外額度為一次性數位商品，不是訂閱：US$5／300 次、US$10／800 次、US$20／2,000 次；只有確認付款後才會加入發起結帳的帳號。Creem 只處理這些 AI 額度商品；自願開源支持不提供額度或產品權益。詳情請見網站的 [AI credits](https://no-no.uk/ai-credits) 與 [Refund policy](https://no-no.uk/refund-policy)。
+
+本機執行、Cloudflare Workers/D1 設定與部署前檢查，請見 [English technical README](pure-link/README.md) 與[繁體中文技術 README](pure-link/docs/README.zh-Hant.md)。請勿提交真實密鑰。
+
 ## 願景
 
 PureLink 希望成為一項人人都能使用、理解、檢查與自行部署的網路公共工具：
@@ -71,7 +79,7 @@ PureLink 希望成為一項人人都能使用、理解、檢查與自行部署�
 
 PureLink MVP 已部署於 [no-no.uk](https://no-no.uk)，目前涵蓋三種內容建立、網址透明預覽、匿名管理與刪除、自願 Google 登入、寫入防濫用、內容檢舉，以及最低限度的聚合統計。
 
-專案測試涵蓋內容驗證、匿名管理安全、Google OAuth、公式處理、檢舉、防濫用與主要 Worker 流程。產品原則與邊界記錄於 [`PRODUCT.md`](pure-link/docs/PRODUCT.md)，技術說明與本機執行方式請見 [`pure-link/README.md`](pure-link/README.md)。
+專案測試涵蓋內容驗證、匿名管理安全、Google OAuth、公式處理、檢舉、防濫用與主要 Worker 流程。產品原則與邊界記錄於 [`PRODUCT.md`](pure-link/docs/PRODUCT.md)，技術說明與本機執行方式請見 [`pure-link/README.md`](pure-link/README.md)。語言路由與驗收方式見 [`I18N.zh-Hant.md`](pure-link/docs/I18N.zh-Hant.md)。
 
 ## 參與與延續
 

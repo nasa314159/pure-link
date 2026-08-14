@@ -1,5 +1,7 @@
 # PureLink 上線清單
 
+[English](RELEASE_CHECKLIST.en.md)
+
 ## A. 本地 MVP
 
 - [x] 保留舊版本快照並在獨立分支開發。
