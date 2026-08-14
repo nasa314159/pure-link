@@ -1,65 +1,75 @@
-# PureLink Android 工具
+# PureLink Android 鍵盤
 
 [English](README.md)
 
-PureLink Android 工具可把刻意寫下的短代號轉成既有的 PureLink 網址，不需要帳號、API 請求或更換鍵盤。
+PureLink 是用來解析刻意分享的 PureLink 參照的輕量**輔助 Android 輸入法**。它不是 Samsung Keyboard、Gboard 或完整中英文鍵盤的替代品。
 
-```text
-PureLink: A3cd8
-Link: Q9xK2
-🔗: H72Ld
-```
+## 建議使用流程
 
-當訊息或留言含有短代號，但來源 App 不讓人選取需要的文字部分時，這個工具特別有用。
+1. 複製包含標記 PureLink 參照或完整 `https://no-no.uk/<slug>` 網址的文字。
+2. 將輸入法切換為 **PureLink 鍵盤**。
+3. 按唯一的 **剪貼簿** 按鈕。PureLink 只讀取目前的文字剪貼簿，在本機解析，絕不把原始剪貼簿內容插入目前編輯器。
+4. 選擇偵測到的連結，並可選擇是否使用 `+ 預覽`。
+5. 可選填一次性說明（約最多 280 個 Unicode 字元）。
+6. 按 **分享**：
+   - 選擇一個連結：直接透過 Android 分享選單分享一般文字；
+   - 選擇兩個以上：建立一張 PureLink 小卡，只分享該小卡的公開網址。
+7. 可隨時用鍵盤切換按鈕立即切回 Samsung Keyboard 或 Gboard。
 
-## 功能
+設定 Activity 會顯示鍵盤是否已啟用，能開啟 Android 輸入法設定與輸入法挑選器，並保留手動解析及 `ACTION_SEND`／`ACTION_PROCESS_TEXT` 備用入口。
 
-- 來源 App 支援時，透過 Android `ACTION_PROCESS_TEXT`（Android 6.0／API 23+）處理已選取文字。
-- 透過 `ACTION_SEND` 處理分享至本工具的文字。
-- 提供快速手動解析器，可輸入裸短代號、帶標記的代號或一大段貼上的文字。
-- 提供靜態啟動器捷徑「解析 PureLink」，可直接開啟手動解析器。
-- 一筆結果直接顯示；多筆結果依原文順序顯示精簡選擇器。
-- 使用者的正常網址處理程式會開啟 `https://no-no.uk/<slug>`，或預覽 `https://no-no.uk/<slug>+`。
+## 鍵盤包含的功能
 
-本工具不改變 PureLink 網站語意：只有預覽動作才會把 `+` 加在通過驗證的 slug 最後。
+- 緊湊的 A–Z/a–z、0–9、`_`、`-` 按鍵，另有 Shift、退格與 Enter。
+- 唯一一個明確的「剪貼簿／解析」動作，沒有另一個「貼上」按鈕。
+- 保持來源順序的候選列；多個候選時提供全選與 `+ 全部`。
+- 只建立 `https://no-no.uk/<slug>` 和 `https://no-no.uk/<slug>+` 的開啟／預覽動作。
+- Android 系統分享選單與鍵盤切換按鈕。
+
+它刻意不提供語言組字、預測、自動更正、學習詞彙、建議、浮動覆蓋層、AccessibilityService、背景服務、分析、廣告或剪貼簿歷程。
 
 ## 解析規則
 
-解析器使用網站目前的自訂 slug 字元規則：1–30 個 ASCII 英文字母、數字、`_` 或 `-`；也會排除 `en`、`account` 等網站保留路徑。
+解析器與網站自訂 slug 規則相同：1–30 個 ASCII 英文字母、數字、`_`、`-`，並排除 `en`、`zh-Hant`、`account` 等網站保留路徑。
 
-在分享或已選取文字中，必須有刻意的標記，避免把一般英數文字誤當成連結：
+剪貼簿、`ACTION_SEND` 與 `ACTION_PROCESS_TEXT` 必須包含刻意標記或完整 PureLink 網址：
 
-- `PureLink:` 與 `Pure Link:`（不分大小寫）
-- `Link:`（不分大小寫）
-- `🔗:` 或 `🔗`
+```text
+PureLink: A3cd8
+Pure Link: A3cd8
+Link: Q9xK2
+🔗: H72Ld
+https://no-no.uk/A3cd8
+https://no-no.uk/A3cd8+
+```
 
-支援全形 `：`、全形空白和前後空白。手動輸入時，額外支援單獨合法的裸 slug，例如 `A3cd8`；分享或選取後傳入的文字則一律需要刻意標記，因此一般單字或裸 slug 不會被意外開啟。`論文 PureLink: A3cd8` 中的「論文」只在本機介面作為顯示提示，不會改變 slug 或產生的網址。
+標記不分大小寫，支援半形／全形冒號、全形空白、前後空白、多個候選項目及短的本機前文標籤；完整網址可嵌在周圍文字中。`http`、仿冒主機、額外路徑、編碼斜線、無效字元、過長 slug 與保留路徑都會被拒絕。
 
-## 隱私與安全
+只有鍵盤或設定 Activity 的直接手動輸入，可以解析單獨合法裸 slug，例如 `A3cd8`。剪貼簿及外部傳入文字絕不把一般單字或裸 slug 視為候選項目。
 
-- 解析與候選選擇完全在裝置本機完成。
-- App **不宣告任何 Android 權限**，包括 `INTERNET`、剪貼簿歷程、儲存空間、AccessibilityService 或背景服務權限。
-- 不含分析、廣告、第三方 crash telemetry 或網路用戶端函式庫。
-- 選取／分享的文字會解析後立即從輸入框清除；目前畫面只保留候選項目的本機標籤與 slug。`ACTION_PROCESS_TEXT` 會明確回傳 `RESULT_CANCELED`，且不回傳替換用的 `EXTRA_PROCESS_TEXT`，因此絕不修改來源 App 的選取文字，也不會存進偏好設定、資料庫或剪貼簿歷程。
-- 解析器只用驗證過的 slug 建立 `no-no.uk` 的 HTTPS 網址，會拒絕 scheme、主機／路徑注入、編碼或一般斜線、控制字元、過長代號，以及分享文字中的普通字詞。
+## 分享與隱私
 
-開啟候選項目時會交給使用者的瀏覽器或已設定處理程式。App 本身不讀取 PureLink，也不會把周圍訊息文字傳到 PureLink。
+選擇一個候選時，PureLink 只分享選填說明、本機標籤與安全公開網址，區塊之間以空白行分隔；不會建立小卡。
+
+選擇兩個以上時，App 只會把使用者最後確認的小卡本文傳給既有匿名小卡端點 `https://no-no.uk/api/links`。本文依來源順序只包含選填說明、選取項目的本機標籤與公開 PureLink 網址；不包含目的地網址、公式原始碼、小卡內容、原始剪貼簿文字或管理憑證。App 最後只分享回傳的小卡公開網址。建立失敗時，當前工作階段的選擇與說明會保留，可重試。
+
+因此只在明確建立多連結小卡時才宣告並使用網路權限；沒有自動查詢或背景請求。既有伺服器端防濫用與速率限制仍是唯一依據，鍵盤不會繞過它們。
+
+目前公開建立端點要求與網站建立相同的 Turnstile 證明。這個原生用戶端刻意沒有繞過方式或內嵌的替代驗證，因此正式環境需要另行設定同樣具保護力的行動 Turnstile／裝置證明交接，才能讓多連結小卡建立完整成功。本機解析與單一連結分享不受影響；建立遭拒時，工作階段仍會保留供重試。
+
+原始剪貼簿文字在解析後即丟棄。App 只在暫時工作階段保留候選項目、選取／預覽狀態、當前說明，以及（若分享選單要重試）短暫回傳的小卡公開網址；不會持久保存剪貼簿、說明、候選、管理憑證或歷程。說明不會另外儲存；成功多連結分享時，它只會成為使用者建立的小卡本文的一部分。
+
+`ACTION_PROCESS_TEXT` 讀取 `Intent.EXTRA_PROCESS_TEXT`、回傳 `RESULT_CANCELED`，且不提供替換文字，因此不會改動來源 App 的選取文字。是否能使用取決於來源 App 的文字選取介面。
 
 ## 建置與測試
 
-以 Android Studio 開啟 `android/`，使用 Android SDK Platform 35 與 JDK 17；或使用相容的本機 Gradle：
+使用 Android SDK Platform 35 與 JDK 17 在 Android Studio 開啟 `android/`，或執行：
 
 ```sh
 cd android
 ./gradlew :core:test :app:assembleDebug
 ```
 
-`core` 不依賴 Android，包含解析器／網址建構與 JUnit 測試。`app` 只使用 Kotlin 與 Android 平台 View API，不含第三方 UI 或網路函式庫。
+`core` 包含解析器、選擇模型與分享格式化的 JVM 測試。`app` 包含 InputMethodService 與設定 Activity，只使用 Kotlin 與 Android 平台 API，不含第三方 UI、分析或網路函式庫。
 
-## 平台界線
-
-正式 App **不會**在 Samsung Keyboard、Gboard 或其他第三方 IME 裡插入候選列。Android 的 candidate view 只屬於目前啟用的自有 `InputMethodService`；要這樣做會要求使用者換成 PureLink 鍵盤，這不是本 MVP 的取捨。
-
-本 App 也沒有 AccessibilityService。此服務必須由使用者明確啟用，並要求敏感的作用中視窗內容讀取能力；對一個解析器來說不成比例，還可能接觸無關畫面文字。遇到不可選取的內容時，手動解析器是較保護隱私的做法。
-
-API 可行性、未來可選 IME prototype 界線與 Samsung/Gboard 手動 QA，請見[平台說明](docs/PLATFORM.md)。
+請參考[平台說明](docs/PLATFORM.md)了解註冊細節與實機 QA。

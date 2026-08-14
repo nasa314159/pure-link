@@ -1,28 +1,39 @@
-# Android platform notes
+# Android platform notes and device QA
 
-## Production integrations
+## Input method architecture
 
-`ACTION_PROCESS_TEXT` is available from API 23 and provides selected text in `Intent.EXTRA_PROCESS_TEXT`; this app receives it only when the source app exposes Android's processing action. PureLink reads that text as resolver input, clears it after parsing, and sets `RESULT_CANCELED` without a replacement extra so it never edits the source selection. `ACTION_SEND` receives text intentionally shared by a user. Both incoming paths require an explicit marker; only manual entry accepts a bare slug. Neither mechanism can read a message from another app without the user selecting or sharing it.
+`PureLinkInputMethodService` is registered as an Android `InputMethodService` with the required `android.permission.BIND_INPUT_METHOD`, `android.view.InputMethod` intent filter, and `res/xml/method.xml` metadata. Android’s normal settings and input-method picker control enablement and selection; no Samsung- or Gboard-specific API is used.
 
-The production app also declares one static launcher shortcut that starts the resolver. It is a stable, no-permission quick entry point and does not run a background service. A Quick Settings tile is intentionally not included: it needs user installation/management on every device while adding little over the launcher shortcut for this focused MVP.
+The service is an auxiliary resolver keyboard. It never reads surrounding editor text, creates predictions, learns input, or observes the clipboard. It checks password/sensitive editor metadata only to discard its own ephemeral session; it does not read editor content. The only clipboard read occurs after the user presses the one Clipboard button, and only the current primary textual clip is considered.
 
-## IME candidate-view feasibility
+The keyboard’s globe action uses `shouldOfferSwitchingToNextInputMethod()` / `switchToNextInputMethod()` and falls back to Android’s input-method picker. The setup Activity opens `ACTION_INPUT_METHOD_SETTINGS` and the picker for the same purpose.
 
-`InputMethodService.onCreateCandidatesView()` creates the candidate UI for the **currently active input method**. It cannot add a row to Samsung Keyboard, Gboard, or another app's IME. An optional future prototype could implement a separate PureLink IME with a small candidates view, but it must clearly be its own selectable keyboard and must never be required by the resolver. No such IME is shipped here.
+`ACTION_PROCESS_TEXT` remains available from API 23. It reads `Intent.EXTRA_PROCESS_TEXT` only when a source app exposes the action, returns `RESULT_CANCELED`, and returns no replacement extra. `ACTION_SEND` receives deliberately shared text. Both are marker/full-URL-only input paths; bare slugs are restricted to direct manual input.
 
-## AccessibilityService feasibility
+## Network boundary
 
-An enabled accessibility service can request active-window content through `getRootInActiveWindow()` only when it declares content-retrieval capability. Availability varies by app and UI; text can be absent, stale, intentionally hidden, or inaccessible. The capability is sensitive because it could expose unrelated screen content.
+The manifest declares `INTERNET` solely for an explicit two-or-more-selected-link Card creation. The native request uses `HttpsURLConnection` and posts only:
 
-PureLink therefore does not request, implement, or monitor an AccessibilityService. A future investigation would need explicit per-user enablement, clear scope, local-only processing, no gesture automation, no history, and a concrete accessibility benefit before it could be justified.
+```json
+{ "contentType": "card", "content": "final user-approved Card body" }
+```
+
+to the fixed HTTPS `https://no-no.uk/api/links` endpoint. It never sends the original clipboard text, surrounding editor text, a destination URL, formula source, existing Card content, analytics, or a management credential. The endpoint’s existing anti-abuse protection and rate limit are deliberately not bypassed. A failed request leaves the candidate session intact for retry.
+
+No type/existence lookup is currently made. Candidate rows correctly say **Unverified** rather than asserting that a syntactically valid slug exists. This avoids a second network endpoint and keeps local parsing fully functional offline.
+
+The existing public create endpoint requires a Turnstile proof. The IME intentionally does not bypass it; a production end-to-end Card flow therefore still needs a mobile-compatible Turnstile or attestation handoff with equivalent protection. This is a deployment/product integration boundary, not a parser or IME fallback.
 
 ## Manual device QA
 
-1. On a Samsung Keyboard or Gboard device, launch **Resolve a PureLink** from the app-icon shortcut; verify no keyboard replacement is requested.
-2. Enter `A3cd8`; choose **Open** and verify the browser receives `https://no-no.uk/A3cd8`.
-3. Enter `PureLink：A3cd8`; choose **+ Preview** and verify the browser receives `https://no-no.uk/A3cd8+`.
-4. Share or process `論文 PureLink: A3cd8\n數據 Link: Q9xK2`; verify a chooser appears and does not open either result automatically.
-5. Share or process bare `A3cd8` and ordinary `hello`; verify the resolver shows no match. Enter bare `A3cd8` manually; verify it does match.
-6. Use a source app that offers selected-text processing; verify the selected text reaches the resolver, is not replaced in the source app, and a source app that does not expose this action still works through manual paste.
-7. Try `Link: https://example.com`, `Link: invalid/slash`, and ordinary prose; verify no candidate can open.
-8. Check English and Traditional Chinese device languages, TalkBack button labels, narrow screens, rotation, and a browser-less device's safe resolver behavior.
+1. Install the debug APK, open PureLink setup, confirm the disabled status, choose **Enable PureLink keyboard**, enable it in Android settings, return, and confirm the enabled status.
+2. Use **Switch keyboard** or Android’s picker to select PureLink. Confirm it presents only compact slug keys, Shift, Backspace, Enter, Clipboard, share, and the switch button—not a full language keyboard.
+3. In a normal editable field, enter `A3cd8` through PureLink’s manual-slug field and resolve it. Confirm a safe candidate appears. Use **Open** and **+ Preview** and confirm the browser receives only `https://no-no.uk/A3cd8` and `https://no-no.uk/A3cd8+`.
+4. Copy `論文 Link: A3cd8\n數據 🔗: Q9xK2\nhttps://no-no.uk/H72Ld+`, switch to PureLink, press Clipboard, and confirm three source-ordered candidates, labels, and the preview state for the final URL.
+5. Copy bare `A3cd8`, `hello`, and `physics` separately. Confirm Clipboard finds no candidate; confirm direct manual input of `A3cd8` does.
+6. With multiple candidates, exercise Select All twice, deselect one row, exercise `+ All`, and verify preview changes affect selected rows only while an unselected row retains its preview state.
+7. Share one selected link with no label/description, then with label, description, and preview. Confirm the Android share sheet receives exactly the expected text and no Card is created.
+8. Share two selected links with a description. In a configured deployment, confirm the Card body has exactly one blank line between logical items and the share sheet receives only the returned public Card URL. Simulate an unavailable network/blocked create and confirm description/selection remain for retry.
+9. Test `ACTION_SEND` and a source app that offers selected-text processing. Confirm marked and full URLs resolve, bare words do not, and PROCESS_TEXT never changes the original selection. Confirm a source app without processing still works via Clipboard/manual fallback.
+10. Try `http://no-no.uk/A3cd8`, `https://no-no.uk.evil.example/A3cd8`, `https://no-no.uk/A3cd8/a`, and `https://no-no.uk/A3cd8%2Fz`; confirm no candidate can open.
+11. Check English and Traditional Chinese devices, narrow screens, rotation, TalkBack button labels, password fields, a browser-less device, and source apps that do not provide a text-processing action.

@@ -5,4 +5,6 @@ data class PureLinkCandidate(
   val slug: String,
   val label: String? = null,
   val sourceRange: IntRange,
+  /** A complete shared URL ending in + is initially offered as a preview. */
+  val preferredPreview: Boolean = false,
 )

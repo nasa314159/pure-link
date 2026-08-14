@@ -1,65 +1,75 @@
-# PureLink Android tools
+# PureLink Android keyboard
 
 [繁體中文](README.zh-Hant.md)
 
-PureLink Android tools resolve deliberately written, compact identifiers into the existing PureLink URLs without an account, an API request, or a keyboard replacement.
+PureLink is a small **auxiliary Android input method** for resolving deliberately shared PureLink references. It is not a replacement for Samsung Keyboard, Gboard, or a complete Chinese/English keyboard.
 
-```text
-PureLink: A3cd8
-Link: Q9xK2
-🔗: H72Ld
-```
+## Intended workflow
 
-They are useful when a message or comment contains a short identifier but the host app does not make a useful part of its text selectable.
+1. Copy text containing a marked PureLink reference or a complete `https://no-no.uk/<slug>` URL.
+2. Switch the input method to **PureLink keyboard**.
+3. Press its single **Clipboard** button. PureLink reads only the current text clip, parses it locally, and never inserts the raw clipboard into the editor.
+4. Select detected links and optionally set their `+ Preview` state.
+5. Optionally enter a one-time description (up to about 280 Unicode characters).
+6. Press **Share**:
+   - one selected link shares ordinary text directly through Android’s share sheet;
+   - two or more selected links create one PureLink Card and share only that public Card URL.
+7. Switch back to Samsung Keyboard or Gboard immediately with the keyboard switch button.
 
-## What the app does
+The setup Activity shows whether the keyboard is enabled, opens Android’s input-method settings, opens the input-method picker, and remains a manual resolver and `ACTION_SEND` / `ACTION_PROCESS_TEXT` fallback.
 
-- Parses selected text through Android `ACTION_PROCESS_TEXT` when the source app offers it (Android 6.0 / API 23+).
-- Parses text shared to the app with `ACTION_SEND`.
-- Provides a fast manual resolver for a bare slug, a marked identifier, or a larger pasted passage.
-- Provides a static launcher shortcut, **Resolve a PureLink**, that opens the manual resolver directly.
-- Shows one result directly or a compact chooser for multiple results, in source order.
-- Opens `https://no-no.uk/<slug>` or previews `https://no-no.uk/<slug>+` in the user's normal URL handler.
+## What the keyboard includes
 
-The app never changes PureLink's web semantics: `+` is appended to the end of a validated slug only for the preview action.
+- A compact A–Z/a–z, 0–9, `_`, and `-` key layout with Shift, Backspace, and Enter.
+- One explicit Clipboard / Parse action; there is no separate paste action.
+- Compact candidate rows, source order preserved, with Select All and `+ All` for multiple matches.
+- Open and Preview actions that only construct `https://no-no.uk/<slug>` and `https://no-no.uk/<slug>+`.
+- A normal Android share-sheet action and a keyboard-switch button.
+
+It deliberately has no language composition, predictions, autocorrect, learned vocabulary, suggestions, overlay, AccessibilityService, background service, analytics, advertising, or clipboard history.
 
 ## Parser grammar
 
-The parser accepts the current web custom-slug character rule: 1–30 ASCII letters, digits, `_`, and `-`; it also rejects web-reserved application paths such as `en` and `account`.
+The shared grammar is the web custom-slug rule: 1–30 ASCII letters, digits, `_`, and `-`, excluding web-reserved application routes such as `en`, `zh-Hant`, and `account`.
 
-In shared or selected text, a deliberate marker is required so ordinary alphanumeric words are not treated as links:
+Clipboard, `ACTION_SEND`, and `ACTION_PROCESS_TEXT` require either a deliberate marker or a complete PureLink URL:
 
-- `PureLink:` and `Pure Link:` (case-insensitive)
-- `Link:` (case-insensitive)
-- `🔗:` or `🔗`
+```text
+PureLink: A3cd8
+Pure Link: A3cd8
+Link: Q9xK2
+🔗: H72Ld
+https://no-no.uk/A3cd8
+https://no-no.uk/A3cd8+
+```
 
-It accepts full-width `：`, full-width spaces, and surrounding whitespace. Manual entry additionally accepts one bare valid slug such as `A3cd8`. Incoming shared or selected text always requires a deliberate marker, so a single ordinary word or bare slug is never opened by accident. A line prefix such as `論文` in `論文 PureLink: A3cd8` is local display context only; it does not change the slug or the generated URL.
+Marker words are case-insensitive; ASCII/full-width colons, full-width spaces, surrounding whitespace, multiple candidates, and short local labels are supported. Complete URLs can be embedded in surrounding text. `http`, lookalike hosts, extra paths, encoded slashes, invalid characters, overlong slugs, and reserved routes are rejected.
 
-## Privacy and security
+Only direct manual entry (in the keyboard or setup Activity) may resolve one bare valid slug such as `A3cd8`. Clipboard and incoming text never treat ordinary words or bare slugs as candidates.
 
-- Parsing and candidate selection are local to the device.
-- The application declares **no Android permissions**, including no `INTERNET`, clipboard-history, storage, AccessibilityService, or background-service permission.
-- It does not include analytics, advertising, crash telemetry, or network client libraries.
-- Selected/shared text is parsed and immediately cleared from the input; only a candidate's local label and slug remain on the active screen. `ACTION_PROCESS_TEXT` explicitly returns `RESULT_CANCELED` and no replacement `EXTRA_PROCESS_TEXT`, so it never modifies the source selection. Nothing is saved in preferences, a database, or a clipboard history.
-- The resolver constructs only HTTPS URLs on `no-no.uk` from a validated slug. It rejects schemes, host/path injection, encoded or literal slash forms, controls, overlong values, and bare words in shared text.
+## Sharing and privacy
 
-Opening a candidate delegates to the user's browser or configured handler. The app itself does not fetch a PureLink and never sends surrounding text to PureLink.
+For one selected candidate, PureLink shares only the optional description, local label, and safe public URL, separated by blank lines. It does not create a Card.
+
+For two or more selected candidates, it sends only the final user-approved Card body to the existing `https://no-no.uk/api/links` anonymous-card endpoint. The body contains the optional description and selected labels/public PureLink URLs in source order; no destination URL, formula source, card text, original clipboard text, or management credential is shared. The app shares only the returned public Card URL. A failed Card creation leaves selection and description in the active session for retry.
+
+Network access is therefore declared solely for explicit multi-link Card creation. There is no automatic lookup and no background request. The existing server-side anti-abuse and rate-limit rules remain authoritative; the keyboard does not bypass them.
+
+The current public create endpoint requires the same Turnstile proof as web creation. This native client deliberately has no bypass or embedded attestation workaround, so a production deployment needs a separately configured, equally protective mobile Turnstile/attestation handoff before multi-link Card creation can complete end-to-end. Local parsing and single-link sharing are unaffected; a rejected Card request keeps the session available for retry.
+
+Raw clipboard text is discarded after parsing. The app keeps only ephemeral candidates, selection/preview flags, an optional current description, and (briefly, if needed to retry the share sheet) a returned public Card URL. It does not persist clipboard text, descriptions, candidates, management credentials, or history. The description is not stored separately: for a successful multi-link share it becomes part of the user-created Card body.
+
+`ACTION_PROCESS_TEXT` reads `Intent.EXTRA_PROCESS_TEXT`, returns `RESULT_CANCELED`, and supplies no replacement text, so it never modifies the source app’s selection. Availability depends on the source application’s selection UI.
 
 ## Build and test
 
-Open `android/` in Android Studio with Android SDK Platform 35 and JDK 17, or use a compatible local Gradle installation:
+Open `android/` in Android Studio with Android SDK Platform 35 and JDK 17, or run:
 
 ```sh
 cd android
 ./gradlew :core:test :app:assembleDebug
 ```
 
-`core` has no Android dependency and contains the parser/resolver plus JUnit tests. `app` uses the Android platform view APIs and Kotlin only; no third-party UI or network library is included.
+`core` holds the parser, selection model, and share formatter JVM tests. `app` contains the InputMethodService and setup Activity, using only Kotlin and Android platform APIs—no third-party UI, analytics, or network library.
 
-## Platform boundaries
-
-The production app does **not** inject a candidate row into Samsung Keyboard, Gboard, or any other third-party IME. Android exposes a candidate view only to the active app's own `InputMethodService`, so doing that would require users to switch keyboards. The production MVP deliberately avoids that tradeoff.
-
-There is no AccessibilityService in this app. Such a service can request active-window content only after explicit user enablement and sensitive content-retrieval capability; that is disproportionate to a resolver and can expose unrelated screen text. The manual resolver remains the privacy-preserving path for non-selectable text.
-
-See [platform notes](docs/PLATFORM.md) for API feasibility, the optional future IME prototype boundary, and manual Samsung/Gboard QA.
+See [platform notes](docs/PLATFORM.md) for registration details and device QA.

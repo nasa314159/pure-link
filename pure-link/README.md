@@ -49,9 +49,9 @@ https://no-no.uk/#url=[Shortcut Input]
 
 PureLink fills the creation form while still letting the user inspect the destination, choose cleanup rules, and explicitly confirm creation. Because the URL is placed after `#`, it is not sent to the server as a query parameter when the page first opens.
 
-## Android PureLink tools
+## Android PureLink keyboard
 
-[`android/`](android/README.md) contains a small Kotlin Android resolver for deliberate compact identifiers such as `PureLink: A3cd8`, `Link: Q9xK2`, and `🔗: H72Ld`. It supports manual input, selected/shared text, and a launcher shortcut while users keep Samsung Keyboard or Gboard. Parsing is local; the app constructs only validated `https://no-no.uk/<slug>` or `<slug>+` URLs and adds no analytics, advertising, AccessibilityService, or background monitoring.
+[`android/`](android/README.md) contains a lightweight auxiliary Kotlin input method for deliberate markers and complete `no-no.uk` URLs. Users explicitly parse the current clipboard, choose safe PureLink candidates, then switch back to Samsung Keyboard or Gboard. It keeps `ACTION_SEND`, `ACTION_PROCESS_TEXT`, and a manual resolver as fallbacks. Parsing is local; there is no prediction, clipboard history, AccessibilityService, analytics, advertising, or background monitoring. Network access is used only for an explicitly approved multi-link Card body; single links share directly through Android.
 
 ## Production configuration
 
