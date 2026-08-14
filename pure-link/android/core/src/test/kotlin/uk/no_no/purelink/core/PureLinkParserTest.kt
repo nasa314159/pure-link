@@ -53,13 +53,34 @@ class PureLinkParserTest {
   }
 
   @Test fun returns_the_compact_ui_states_for_zero_one_and_many_matches() {
-    assertEquals(PureLinkResolution.Empty, PureLinkCandidateChooser.resolve("ordinary prose"))
-    val one = PureLinkCandidateChooser.resolve("A3cd8") as PureLinkResolution.Single
+    assertEquals(PureLinkResolution.Empty, PureLinkCandidateChooser.resolveIncoming("ordinary prose"))
+    val one = PureLinkCandidateChooser.resolveManual("A3cd8") as PureLinkResolution.Single
     assertEquals("A3cd8", one.candidate.slug)
-    val many = PureLinkCandidateChooser.resolve("論文 PureLink: A3cd8\n數據 Link: Q9xK2") as PureLinkResolution.Multiple
+    val many = PureLinkCandidateChooser.resolveIncoming("論文 PureLink: A3cd8\n數據 Link: Q9xK2") as PureLinkResolution.Multiple
     assertEquals(listOf("A3cd8", "Q9xK2"), many.candidates.map { it.slug })
     assertEquals("https://no-no.uk/A3cd8", PureLinkResolver.urlFor(one.candidate))
     assertEquals("https://no-no.uk/A3cd8+", PureLinkResolver.urlFor(one.candidate, preview = true))
+  }
+
+  @Test fun manual_entry_accepts_a_bare_valid_slug() {
+    assertTrue(PureLinkCandidateChooser.resolveManual("A3cd8") is PureLinkResolution.Single)
+  }
+
+  @Test fun action_send_requires_markers() {
+    assertIncomingMarkerRules()
+  }
+
+  @Test fun action_process_text_requires_markers() {
+    assertIncomingMarkerRules()
+  }
+
+  private fun assertIncomingMarkerRules() {
+    assertEquals(PureLinkResolution.Empty, PureLinkCandidateChooser.resolveIncoming("A3cd8"))
+    assertEquals(PureLinkResolution.Empty, PureLinkCandidateChooser.resolveIncoming("hello"))
+    assertEquals(PureLinkResolution.Empty, PureLinkCandidateChooser.resolveIncoming("ordinary"))
+    assertMarkedIncoming("Link: A3cd8")
+    assertMarkedIncoming("PureLink: A3cd8")
+    assertMarkedIncoming("🔗 A3cd8")
   }
 
   @Test fun keeps_parser_processing_local_and_never_exposes_labels_in_urls() {
@@ -73,5 +94,10 @@ class PureLinkParserTest {
 
   private fun assertSlugs(input: String, allowBareSlug: Boolean = false, expected: Array<out String> = emptyArray()) {
     assertEquals(expected.toList(), PureLinkParser.parse(input, allowBareSlug).map { it.slug })
+  }
+
+  private fun assertMarkedIncoming(input: String) {
+    val resolution = PureLinkCandidateChooser.resolveIncoming(input) as PureLinkResolution.Single
+    assertEquals("A3cd8", resolution.candidate.slug)
   }
 }

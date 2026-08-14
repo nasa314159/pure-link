@@ -25,13 +25,13 @@ class MainActivity : Activity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     setContentView(buildContent())
-    incomingText(intent)?.let(::resolveIncomingText)
+    handleIncomingIntent(intent)
   }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
-    incomingText(intent)?.let(::resolveIncomingText)
+    handleIncomingIntent(intent)
   }
 
   override fun onDestroy() {
@@ -67,16 +67,16 @@ class MainActivity : Activity() {
     content.addView(input, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
     content.addView(Button(this).apply {
       text = getString(R.string.find_purelinks)
-      setOnClickListener { resolve(input.text) }
+      setOnClickListener { resolveManualText(input.text) }
     }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
     results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     content.addView(results, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(14) })
     return root
   }
 
-  private fun resolve(text: CharSequence) {
+  private fun showResolution(resolution: PureLinkResolution) {
     results.removeAllViews()
-    when (val resolution = PureLinkCandidateChooser.resolve(text)) {
+    when (resolution) {
       PureLinkResolution.Empty -> results.addView(message(getString(R.string.no_match)))
       is PureLinkResolution.Single -> {
         results.addView(message(getString(R.string.single_match)))
@@ -89,8 +89,10 @@ class MainActivity : Activity() {
     }
   }
 
+  private fun resolveManualText(text: CharSequence) = showResolution(PureLinkCandidateChooser.resolveManual(text))
+
   private fun resolveIncomingText(text: CharSequence) {
-    resolve(text)
+    showResolution(PureLinkCandidateChooser.resolveIncoming(text))
     input.text.clear()
   }
 
@@ -133,10 +135,15 @@ class MainActivity : Activity() {
     setPadding(0, 0, 0, dp(8))
   }
 
-  private fun incomingText(intent: Intent): CharSequence? = when (intent.action) {
-    Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)
-    Intent.ACTION_PROCESS_TEXT -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)
-    else -> null
+  private fun handleIncomingIntent(intent: Intent) {
+    when (intent.action) {
+      Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.let(::resolveIncomingText)
+      Intent.ACTION_PROCESS_TEXT -> {
+        // This is a read-only resolver: return no replacement text to the source application.
+        setResult(RESULT_CANCELED)
+        intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.let(::resolveIncomingText)
+      }
+    }
   }
 
   private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()

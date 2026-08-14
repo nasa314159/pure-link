@@ -33,14 +33,14 @@ In shared or selected text, a deliberate marker is required so ordinary alphanum
 - `Link:` (case-insensitive)
 - `🔗:` or `🔗`
 
-It accepts full-width `：`, full-width spaces, and surrounding whitespace. Manual entry additionally accepts one bare valid slug such as `A3cd8`. A line prefix such as `論文` in `論文 PureLink: A3cd8` is local display context only; it does not change the slug or the generated URL.
+It accepts full-width `：`, full-width spaces, and surrounding whitespace. Manual entry additionally accepts one bare valid slug such as `A3cd8`. Incoming shared or selected text always requires a deliberate marker, so a single ordinary word or bare slug is never opened by accident. A line prefix such as `論文` in `論文 PureLink: A3cd8` is local display context only; it does not change the slug or the generated URL.
 
 ## Privacy and security
 
 - Parsing and candidate selection are local to the device.
 - The application declares **no Android permissions**, including no `INTERNET`, clipboard-history, storage, AccessibilityService, or background-service permission.
 - It does not include analytics, advertising, crash telemetry, or network client libraries.
-- Selected/shared text is parsed and immediately cleared from the input; only a candidate's local label and slug remain on the active screen. Nothing is saved in preferences, a database, or a clipboard history.
+- Selected/shared text is parsed and immediately cleared from the input; only a candidate's local label and slug remain on the active screen. `ACTION_PROCESS_TEXT` explicitly returns `RESULT_CANCELED` and no replacement `EXTRA_PROCESS_TEXT`, so it never modifies the source selection. Nothing is saved in preferences, a database, or a clipboard history.
 - The resolver constructs only HTTPS URLs on `no-no.uk` from a validated slug. It rejects schemes, host/path injection, encoded or literal slash forms, controls, overlong values, and bare words in shared text.
 
 Opening a candidate delegates to the user's browser or configured handler. The app itself does not fetch a PureLink and never sends surrounding text to PureLink.
@@ -51,7 +51,7 @@ Open `android/` in Android Studio with Android SDK Platform 35 and JDK 17, or us
 
 ```sh
 cd android
-gradle :core:test :app:assembleDebug
+./gradlew :core:test :app:assembleDebug
 ```
 
 `core` has no Android dependency and contains the parser/resolver plus JUnit tests. `app` uses the Android platform view APIs and Kotlin only; no third-party UI or network library is included.

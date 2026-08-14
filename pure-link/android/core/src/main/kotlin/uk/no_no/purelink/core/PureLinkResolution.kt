@@ -8,7 +8,11 @@ sealed interface PureLinkResolution {
 }
 
 object PureLinkCandidateChooser {
-  fun resolve(text: CharSequence, allowBareSlug: Boolean = true): PureLinkResolution {
+  fun resolveManual(text: CharSequence): PureLinkResolution = resolve(text, allowBareSlug = true)
+
+  fun resolveIncoming(text: CharSequence): PureLinkResolution = resolve(text, allowBareSlug = false)
+
+  private fun resolve(text: CharSequence, allowBareSlug: Boolean): PureLinkResolution {
     val candidates = PureLinkParser.parse(text, allowBareSlug)
     return when (candidates.size) {
       0 -> PureLinkResolution.Empty
