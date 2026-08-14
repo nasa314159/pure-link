@@ -522,6 +522,8 @@ export function renderUrlPreview(link, locale = 'zh-Hant') {
   return documentShell({
     title: `${m.content.preview}: ${destination.hostname} — PureLink`,
     description: m.page.previewDescription,
+    socialTitle: 'PureLink',
+    socialDescription: 'Short link',
     robots: 'noindex, nofollow, noarchive',
     locale,
     body: `
@@ -551,6 +553,8 @@ export function renderFormulaPage(link, locale = 'zh-Hant') {
   return documentShell({
     title: `${m.common.formula} — PureLink`,
     description: m.page.formulaDescription,
+    socialTitle: 'PureLink',
+    socialDescription: 'Formula',
     robots: 'noindex, nofollow, noarchive',
     canonicalPath: `/${link.slug}`,
     locale,
@@ -590,6 +594,8 @@ export function renderCardPage(link, locale = 'zh-Hant') {
   return documentShell({
     title: `${m.page.cardTitle} — PureLink`,
     description: m.page.cardDescription,
+    socialTitle: 'PureLink',
+    socialDescription: 'Note card',
     robots: 'noindex, nofollow, noarchive',
     canonicalPath: `/${link.slug}`,
     locale,
@@ -1066,7 +1072,7 @@ export function renderNotFoundPage(locale = 'zh-Hant') {
   });
 }
 
-function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
+function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', socialTitle = title, socialDescription = description, script = '', nonce = '', externalScript = '', externalScripts = [] }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
   const scripts = [externalScript, ...externalScripts].filter(Boolean);
   const canonicalUrl = canonicalPath ? `https://no-no.uk${canonicalPath}` : '';
@@ -1086,15 +1092,15 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
   <meta name="theme-color" content="#e9f3eb">
   <meta property="og:site_name" content="PureLink">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="${escapeHtml(title)}">
-  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:title" content="${escapeHtml(socialTitle)}">
+  <meta property="og:description" content="${escapeHtml(socialDescription)}">
   <meta property="og:image" content="https://no-no.uk/og.png?v=1">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   ${canonicalUrl ? `<meta property="og:url" content="${escapeHtml(canonicalUrl)}">` : ''}
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="${escapeHtml(title)}">
-  <meta name="twitter:description" content="${escapeHtml(description)}">
+  <meta name="twitter:title" content="${escapeHtml(socialTitle)}">
+  <meta name="twitter:description" content="${escapeHtml(socialDescription)}">
   <meta name="twitter:image" content="https://no-no.uk/og.png?v=1">
   <title>${escapeHtml(title)}</title>
   ${canonicalMarkup}

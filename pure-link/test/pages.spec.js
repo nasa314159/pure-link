@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage } from '../src/pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderUrlPreview } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -57,6 +57,20 @@ describe('interactive pages', () => {
     expect(card).toContain('data-share-link');
     expect(formula).toContain('<meta name="robots" content="noindex, nofollow, noarchive">');
     expect(card).toContain('<meta name="robots" content="noindex, nofollow, noarchive">');
+  });
+
+  it('uses short English social metadata for locale-neutral shared content without leaking it', () => {
+    const url = renderUrlPreview({ slug: 'short', content: 'https://private.example/secret-destination?token=private' }, 'zh-Hant');
+    const formula = renderFormulaPage({ slug: 'math', content: 'secret_formula_source' }, 'en');
+    const card = renderCardPage({ slug: 'note', content: 'private note body', signature: 'Private signature', theme: 'paper' }, 'zh-Hant');
+
+    expectSocialMetadata(url, 'Short link');
+    expectSocialMetadata(formula, 'Formula');
+    expectSocialMetadata(card, 'Note card');
+    expect(url).not.toContain('content="https://private.example/secret-destination?token=private"');
+    expect(formula).not.toContain('content="secret_formula_source"');
+    expect(card).not.toContain('content="private note body"');
+    expect(card).not.toContain('content="Private signature"');
   });
 
   it('publishes descriptive homepage SEO and social preview metadata', () => {
@@ -184,6 +198,15 @@ describe('interactive pages', () => {
     expect(() => new Function(script)).not.toThrow();
   });
 });
+
+function expectSocialMetadata(html, description) {
+  expect(html).toContain('<meta property="og:title" content="PureLink">');
+  expect(html).toContain(`<meta property="og:description" content="${description}">`);
+  expect(html).toContain('<meta name="twitter:title" content="PureLink">');
+  expect(html).toContain(`<meta name="twitter:description" content="${description}">`);
+  expect(html).toContain('<meta property="og:image" content="https://no-no.uk/og.png?v=1">');
+  expect(html).toContain('<meta name="twitter:image" content="https://no-no.uk/og.png?v=1">');
+}
 
 function extractScript(html) {
   const match = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/);
