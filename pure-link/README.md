@@ -60,6 +60,10 @@ Public writes fail closed. If required protection is missing, creation and repor
 - `GOOGLE_CLIENT_SECRET`: set with `wrangler secret put`.
 - Google OAuth redirect URI: `https://no-no.uk/auth/google/callback`.
 - Workers AI binding: `AI`, already declared in `wrangler.jsonc`; no API key belongs in the repository.
+- `LEMON_SQUEEZY_CHECKOUT_ENABLED`: leave `false` until the store, variants, webhook, and refund test are verified; set `true` only when ready to accept checkout.
+- `LEMON_SQUEEZY_API_KEY` and `LEMON_SQUEEZY_WEBHOOK_SECRET`: set with `wrangler secret put`; never place them in `wrangler.jsonc`.
+- `LEMON_SQUEEZY_STORE_ID`, `LEMON_SQUEEZY_VARIANT_5_ID`, `LEMON_SQUEEZY_VARIANT_10_ID`, `LEMON_SQUEEZY_VARIANT_20_ID`, and `LEMON_SQUEEZY_SUPPORT_VARIANT_ID`: numeric Lemon Squeezy resource IDs. The credit variants must map to US$5/150 drafts, US$10/400 drafts, and US$20/1,000 drafts. The support variant must be a separate Pay What You Want product.
+- Configure Lemon Squeezy webhooks at `https://no-no.uk/api/webhooks/lemon-squeezy`. PureLink accepts only signed `order_created` and `order_refunded` events; a redirect is never treated as payment confirmation.
 
 Never commit real secrets. Copy `.dev.vars.example` to `.dev.vars` for local development.
 
@@ -77,9 +81,9 @@ PureLink does not serve behavioral advertising, track people across sites, sell 
 
 ## AI credits and payment boundary
 
-Signed-in accounts receive five free AI formula drafts per day. Optional extra credits are one-time digital purchases, not subscriptions: US$5 for 300, US$10 for 800, or US$20 for 2,000 generations. Credits are delivered only after confirmed payment, are tied to the account that started checkout, and do not expire while the AI formula service continues to operate.
+Signed-in accounts receive five free AI formula drafts per day. Optional extra credits are one-time digital purchases, not subscriptions: US$5 for 150, US$10 for 400, or US$20 for 1,000 additional drafts. Credits are delivered only after a verified payment webhook, are tied to the account that started checkout, and do not expire while the AI formula service continues to operate.
 
-Creem acts as merchant of record only for AI formula credit purchases. Voluntary open-source support is separate and grants no credits or product benefits. Public details are available at [`/ai-credits`](https://no-no.uk/ai-credits) and [`/refund-policy`](https://no-no.uk/refund-policy).
+Lemon Squeezy acts as merchant of record only for AI formula credit purchases. Voluntary open-source support uses a separate Pay What You Want checkout and grants no credits or product benefits. Public details are available at [`/ai-credits`](https://no-no.uk/ai-credits), [`/support`](https://no-no.uk/support), and [`/refund-policy`](https://no-no.uk/refund-policy).
 
 ## Project structure
 

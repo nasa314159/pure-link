@@ -14,7 +14,8 @@
 - [ ] Verify mobile, keyboard, error, and Turnstile accessibility paths.
 - [ ] Confirm logging, access controls, and retention match public privacy disclosures.
 - [ ] Establish report handling, review frequency, and emergency takedown procedures.
-- [ ] Complete Creem test-mode payment, webhook, refund, and dispute verification before enabling live checkout.
+- [ ] Configure Lemon Squeezy’s US$5/150, US$10/400, US$20/1,000 credit variants and a separate Pay What You Want support variant; keep API key and webhook secret in Worker secrets.
+- [ ] Point Lemon Squeezy test webhooks at `/api/webhooks/lemon-squeezy`, then verify payment, duplicate delivery, unknown variants, refunds, and support contribution totals before enabling checkout.
 - [ ] Verify the public source, documentation, and quiet voluntary-support path are current.
 
 ## Release order

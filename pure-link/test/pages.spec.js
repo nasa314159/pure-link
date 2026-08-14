@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage } from '../src/pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderSupportPage } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -130,8 +130,8 @@ describe('interactive pages', () => {
     const credits = renderLegalPage('ai-credits', 'en');
     const refunds = renderLegalPage('refund-policy', 'en');
     expect(credits).toContain('<html lang="en">');
-    expect(credits).toContain('US$5 provides 300 AI formula generations');
-    expect(credits).toContain('not processed through Creem');
+    expect(credits).toContain('US$5 provides 150 additional AI formula drafts');
+    expect(credits).toContain('separate Pay What You Want checkout');
     expect(credits).toContain('nasa3.14159@gmail.com');
     expect(refunds).toContain('<html lang="en">');
     expect(refunds).toContain('within 14 calendar days');
@@ -142,11 +142,29 @@ describe('interactive pages', () => {
     const disabled = renderAccountPage({ email: 'person@example.com' }, [], 12, false);
     const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, true, 'success', 'billing-nonce');
     expect(disabled).toContain('可用購買額度：12 次');
-    expect(disabled).not.toContain('id="buy-credits-300"');
-    expect(enabled).toContain('id="buy-credits-300"');
-    expect(enabled).toContain('付款流程已返回 PureLink');
+    expect(disabled).not.toContain('data-credit-tier="5"');
+    expect(enabled).toContain('data-credit-tier="5"');
+    expect(enabled).toContain('data-credit-tier="10"');
+    expect(enabled).toContain('data-credit-tier="20"');
+    expect(enabled).toContain('結帳流程已返回 PureLink');
     expect(enabled).toContain('nonce="billing-nonce"');
     expect(() => new Function(extractScript(enabled))).not.toThrow();
+  });
+
+  it('renders localized, indexable support pages with a separate voluntary-support boundary', () => {
+    const english = renderSupportPage({ netUsdMinor: 1234, contributionCount: 2, publicSupporters: ['nasa'] }, true, false, 'support-nonce', 'en');
+    const chinese = renderSupportPage({ netUsdMinor: 0, contributionCount: 0 }, false, false, '', 'zh-Hant');
+    expect(english).toContain('<html lang="en">');
+    expect(english).toContain('<link rel="canonical" href="https://no-no.uk/en/support">');
+    expect(english).toContain('hreflang="zh-Hant"');
+    expect(english).toContain('$12.34');
+    expect(english).toContain('no AI credits');
+    expect(english).toContain('Public supporters</strong>: nasa');
+    expect(english).toContain('x-purelink-locale');
+    expect(english).toContain('nonce="support-nonce"');
+    expect(chinese).toContain('<html lang="zh-Hant">');
+    expect(chinese).toContain('支持不提供 AI 額度');
+    expect(chinese).toContain('支持結帳目前尚未開放');
   });
 
   it('loads Turnstile as a regular deferred script', () => {

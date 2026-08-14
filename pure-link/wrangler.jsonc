@@ -12,8 +12,7 @@
 	},
 	"vars": {
 		"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL",
-		"PUBLIC_ORIGIN": "https://no-no.uk",
-		"CREEM_PRODUCT_300_ID": "prod_4UdvN9knG2AzhhktS3Nwj9"
+		"PUBLIC_ORIGIN": "https://no-no.uk"
 	},
 	"routes": [
 		{
