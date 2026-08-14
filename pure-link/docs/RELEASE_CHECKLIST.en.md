@@ -15,6 +15,9 @@
 - [ ] Confirm logging, access controls, and retention match public privacy disclosures.
 - [ ] Establish report handling, review frequency, and emergency takedown procedures.
 - [ ] Complete Creem test-mode payment, webhook, refund, and dispute verification before enabling live checkout.
+- [ ] Apply migration `0007_ecpay_billing.sql` before enabling ECPay checkout.
+- [ ] In ECPay Test Mode, configure `/api/webhooks/ecpay` as ReturnURL and verify valid, duplicate, invalid-CheckMacValue, mismatched-amount, and `SimulatePaid=1` callbacks.
+- [ ] Store `ECPAY_HASH_KEY` and `ECPAY_HASH_IV` as Worker secrets; set `ECPAY_ENVIRONMENT=production` and `ECPAY_CHECKOUT_ENABLED=true` only after ECPay merchant-dashboard approval and production verification.
 - [ ] Verify the public source, documentation, and quiet voluntary-support path are current.
 
 ## Release order

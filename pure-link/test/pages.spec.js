@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage } from '../src/pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderUrlPreview } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -57,6 +57,20 @@ describe('interactive pages', () => {
     expect(card).toContain('data-share-link');
     expect(formula).toContain('<meta name="robots" content="noindex, nofollow, noarchive">');
     expect(card).toContain('<meta name="robots" content="noindex, nofollow, noarchive">');
+  });
+
+  it('uses short English social metadata for locale-neutral shared content without leaking it', () => {
+    const url = renderUrlPreview({ slug: 'short', content: 'https://private.example/secret-destination?token=private' }, 'zh-Hant');
+    const formula = renderFormulaPage({ slug: 'math', content: 'secret_formula_source' }, 'en');
+    const card = renderCardPage({ slug: 'note', content: 'private note body', signature: 'Private signature', theme: 'paper' }, 'zh-Hant');
+
+    expectSocialMetadata(url, 'Short link');
+    expectSocialMetadata(formula, 'Formula');
+    expectSocialMetadata(card, 'Note card');
+    expect(url).not.toContain('content="https://private.example/secret-destination?token=private"');
+    expect(formula).not.toContain('content="secret_formula_source"');
+    expect(card).not.toContain('content="private note body"');
+    expect(card).not.toContain('content="Private signature"');
   });
 
   it('publishes descriptive homepage SEO and social preview metadata', () => {
@@ -130,8 +144,8 @@ describe('interactive pages', () => {
     const credits = renderLegalPage('ai-credits', 'en');
     const refunds = renderLegalPage('refund-policy', 'en');
     expect(credits).toContain('<html lang="en">');
-    expect(credits).toContain('US$5 provides 300 AI formula generations');
-    expect(credits).toContain('not processed through Creem');
+    expect(credits).toContain('NT$150 for 150 AI formula drafts');
+    expect(credits).toContain('simulated notifications do not deliver credits');
     expect(credits).toContain('nasa3.14159@gmail.com');
     expect(refunds).toContain('<html lang="en">');
     expect(refunds).toContain('within 14 calendar days');
@@ -147,6 +161,20 @@ describe('interactive pages', () => {
     expect(enabled).toContain('付款流程已返回 PureLink');
     expect(enabled).toContain('nonce="billing-nonce"');
     expect(() => new Function(extractScript(enabled))).not.toThrow();
+  });
+
+  it('renders localized ECPay one-time packs alongside existing billing', () => {
+    const english = renderAccountPage({ email: 'person@example.com' }, [], 0, false, '', '', 'en', true);
+    const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, false, '', '', 'zh-Hant', true);
+    expect(english).toContain('ECPay Taiwan one-time credit packs');
+    expect(english).toContain('NT$300 · 400 AI formula drafts');
+    expect(english).toContain('One-time purchase, not a subscription.');
+    expect(english).toContain('action="/en/api/ecpay/checkout"');
+    expect(chinese).toContain('ECPay 台灣一次性額度組合');
+    expect(chinese).toContain('NT$600 · 1,000 次 AI 公式草稿');
+    expect(chinese).toContain('一次性購買，不是訂閱。');
+    expect(chinese).toContain('action="/zh-Hant/api/ecpay/checkout"');
+    expect(renderAccountPage({ email: 'person@example.com' }, [], 0, false, 'pending', '', 'en', true)).toContain('Payment is being confirmed.');
   });
 
   it('loads Turnstile as a regular deferred script', () => {
@@ -170,6 +198,15 @@ describe('interactive pages', () => {
     expect(() => new Function(script)).not.toThrow();
   });
 });
+
+function expectSocialMetadata(html, description) {
+  expect(html).toContain('<meta property="og:title" content="PureLink">');
+  expect(html).toContain(`<meta property="og:description" content="${description}">`);
+  expect(html).toContain('<meta name="twitter:title" content="PureLink">');
+  expect(html).toContain(`<meta name="twitter:description" content="${description}">`);
+  expect(html).toContain('<meta property="og:image" content="https://no-no.uk/og.png?v=1">');
+  expect(html).toContain('<meta name="twitter:image" content="https://no-no.uk/og.png?v=1">');
+}
 
 function extractScript(html) {
   const match = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/);
