@@ -9,6 +9,7 @@ import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
 import { BillingError, createCheckout, getCreditBalance, handleCreemWebhook, isCheckoutConfigured } from './billing.js';
+import { EcpayError, createEcpayCheckout, handleEcpayCallback, isEcpayConfigured } from './ecpay.js';
 import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
 
 export default {
@@ -22,6 +23,7 @@ export default {
       if (error instanceof BillingError) {
         return json({ error: error.message }, { status: error.status });
       }
+      if (error instanceof EcpayError) return json({ error: error.message }, { status: error.status });
       console.error('PureLink request failed', { name: error?.name, message: error?.message });
       return json({ error: 'PureLink could not complete this request.' }, { status: 500 });
     }
@@ -99,7 +101,8 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'POST' && path === 'api/webhooks/creem') {
     return handleCreemWebhook(request, env);
   }
-  if (request.method === 'GET' && path === 'account') {
+  if (request.method === 'POST' && path === 'api/webhooks/ecpay') return handleEcpayCallback(request, env);
+  if (['GET', 'POST'].includes(request.method) && path === 'account') {
     if (!localeRoute) return redirect(localizedPath(locale, 'account'), 302);
     const user = await getCurrentUser(request, env);
     if (!user) return redirect(`/auth/google?returnTo=${encodeURIComponent(localizedPath(locale, 'account'))}`);
@@ -112,6 +115,7 @@ export async function routeRequest(request, env, context) {
       requestUrl.searchParams.get('purchase'),
       nonce,
       locale,
+      isEcpayConfigured(env),
     ), {}, { scriptNonce: nonce });
   }
 
@@ -122,6 +126,15 @@ export async function routeRequest(request, env, context) {
     const user = await getCurrentUser(request, env);
     if (!user) return json({ error: '請先登入再購買 AI 公式額度。' }, { status: 401 });
     return json(await createCheckout({ requestUrl, user, env }));
+  }
+  if (request.method === 'POST' && path === 'api/ecpay/checkout') {
+    if (!request.headers.get('origin') || !requireSameOrigin(request, env)) return json({ error: 'Invalid request origin.' }, { status: 403 });
+    const user = await getCurrentUser(request, env);
+    if (!user) return json({ error: 'Sign in before purchasing AI formula credits.' }, { status: 401 });
+    const input = await readCreateInput(request);
+    const checkout = await createEcpayCheckout({ requestUrl, user, tier: input.tier, env, resultPath: `${localizedPath(locale, 'account')}?purchase=pending` });
+    const nonce = createSlug() + createSlug();
+    return html(renderEcpayRedirect(checkout, nonce, locale), {}, { scriptNonce: nonce });
   }
 
   if (request.method === 'POST' && (path === 'api/links' || path === 'api/create')) {
@@ -198,6 +211,14 @@ function safeLocaleReturnTo(value, locale) {
   if (path.startsWith('/') && !path.startsWith('//')) return path;
   return localizedPath(locale);
 }
+
+function renderEcpayRedirect(checkout, nonce, locale) {
+  const messages = getMessages(locale);
+  const fields = Object.entries(checkout.fields).map(([name, value]) => `<input type="hidden" name="${escapeAttribute(name)}" value="${escapeAttribute(value)}">`).join('');
+  return `<!doctype html><html lang="${escapeAttribute(locale)}"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>${escapeAttribute(messages.account.ecpayCheckout)} — ECPay</title></head><body><form id="ecpay-checkout" method="post" action="${escapeAttribute(checkout.action)}">${fields}<button type="submit">${escapeAttribute(messages.account.ecpayCheckout)}</button></form><script nonce="${escapeAttribute(nonce)}">document.getElementById('ecpay-checkout').submit();</script></body></html>`;
+}
+
+function escapeAttribute(value) { return String(value ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 async function createLink(request, requestUrl, repository, env, context) {
   const messages = getMessages(resolveResponseLocale(request));

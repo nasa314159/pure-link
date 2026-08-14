@@ -19,7 +19,7 @@
 - [x] 選定並註冊正式網域 `no-no.uk`。
 - [x] 建立 Managed Turnstile widget，允許 `no-no.uk` 與 `staging.no-no.uk`。
 - [x] 產生獨立的 `RATE_LIMIT_SECRET`，不得沿用其他服務密鑰。
-- [ ] 在遠端 D1 先備份，再依序套用所有尚未套用的 migration（目前至 `0006`）。
+- [ ] 在遠端 D1 先備份，再依序套用所有尚未套用的 migration（目前至 `0007`）。
 - [x] 建立與正式環境隔離的 `pure-link-staging` D1。
 - [x] 在 staging 驗證建立、預覽、跳轉、公式、小卡、PNG、檢舉與刪除。
 - [ ] 驗證手機、鍵盤操作、錯誤畫面與 Turnstile 無障礙流程。
@@ -31,6 +31,9 @@
 - [ ] 將 Creem 測試 webhook 指向 `/api/webhooks/creem`，驗證付款、重送、退款與爭議事件。
 - [ ] Creem 商家審核通過後，再設定正式 API key、正式 webhook secret，並啟用正式結帳。
 - [ ] 確認 Creem 顯示 Live payments enabled 後，才將 `CREEM_LIVE_CHECKOUT_ENABLED` 設為 `true`。
+- [ ] 啟用 ECPay 前套用 `0007_ecpay_billing.sql`。
+- [ ] 在 ECPay Test Mode 將 `/api/webhooks/ecpay` 設為 ReturnURL，驗證正常、重送、錯誤 CheckMacValue、金額不符與 `SimulatePaid=1` 回呼。
+- [ ] 將 `ECPAY_HASH_KEY` 與 `ECPAY_HASH_IV` 設為 Worker secret；只有在 ECPay 商家後台核准並完成正式驗證後，才設為 `ECPAY_ENVIRONMENT=production` 與 `ECPAY_CHECKOUT_ENABLED=true`。
 
 ## C. 發布順序
 

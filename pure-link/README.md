@@ -79,7 +79,11 @@ PureLink does not serve behavioral advertising, track people across sites, sell 
 
 Signed-in accounts receive five free AI formula drafts per day. Optional extra credits are one-time digital purchases, not subscriptions: US$5 for 300, US$10 for 800, or US$20 for 2,000 generations. Credits are delivered only after confirmed payment, are tied to the account that started checkout, and do not expire while the AI formula service continues to operate.
 
-Creem acts as merchant of record only for AI formula credit purchases. Voluntary open-source support is separate and grants no credits or product benefits. Public details are available at [`/ai-credits`](https://no-no.uk/ai-credits) and [`/refund-policy`](https://no-no.uk/refund-policy).
+Creem remains available for its existing configured credit packs. For Taiwan-local checkout, ECPay provides fixed one-time packs: NT$150 for 150 drafts, NT$300 for 400 drafts, and NT$600 for 1,000 drafts. ECPay credits are added only after its signed server callback to `/api/webhooks/ecpay`; the browser return page is not authoritative. Simulated ECPay notifications never grant credits. Voluntary open-source support remains separate and grants no credits or product benefits. Public details are available at [`/ai-credits`](https://no-no.uk/ai-credits) and [`/refund-policy`](https://no-no.uk/refund-policy).
+
+### ECPay configuration
+
+ECPay is disabled unless `ECPAY_CHECKOUT_ENABLED=true` and all of the following are configured: `ECPAY_MERCHANT_ID`, `ECPAY_HASH_KEY`, `ECPAY_HASH_IV`, and `ECPAY_ENVIRONMENT` (`stage` or `production`). Keep the HashKey and HashIV in Worker secrets. Configure the ECPay ReturnURL as `https://your-domain/api/webhooks/ecpay`; use ECPay Test Mode first, verify valid, duplicate, invalid-signature, mismatched-amount, and simulated callbacks, then change the environment and enable production only after merchant-dashboard approval.
 
 ## Project structure
 

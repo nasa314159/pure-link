@@ -130,8 +130,8 @@ describe('interactive pages', () => {
     const credits = renderLegalPage('ai-credits', 'en');
     const refunds = renderLegalPage('refund-policy', 'en');
     expect(credits).toContain('<html lang="en">');
-    expect(credits).toContain('US$5 provides 300 AI formula generations');
-    expect(credits).toContain('not processed through Creem');
+    expect(credits).toContain('NT$150 for 150 AI formula drafts');
+    expect(credits).toContain('simulated notifications do not deliver credits');
     expect(credits).toContain('nasa3.14159@gmail.com');
     expect(refunds).toContain('<html lang="en">');
     expect(refunds).toContain('within 14 calendar days');
@@ -147,6 +147,20 @@ describe('interactive pages', () => {
     expect(enabled).toContain('付款流程已返回 PureLink');
     expect(enabled).toContain('nonce="billing-nonce"');
     expect(() => new Function(extractScript(enabled))).not.toThrow();
+  });
+
+  it('renders localized ECPay one-time packs alongside existing billing', () => {
+    const english = renderAccountPage({ email: 'person@example.com' }, [], 0, false, '', '', 'en', true);
+    const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, false, '', '', 'zh-Hant', true);
+    expect(english).toContain('ECPay Taiwan one-time credit packs');
+    expect(english).toContain('NT$300 · 400 AI formula drafts');
+    expect(english).toContain('One-time purchase, not a subscription.');
+    expect(english).toContain('action="/en/api/ecpay/checkout"');
+    expect(chinese).toContain('ECPay 台灣一次性額度組合');
+    expect(chinese).toContain('NT$600 · 1,000 次 AI 公式草稿');
+    expect(chinese).toContain('一次性購買，不是訂閱。');
+    expect(chinese).toContain('action="/zh-Hant/api/ecpay/checkout"');
+    expect(renderAccountPage({ email: 'person@example.com' }, [], 0, false, 'pending', '', 'en', true)).toContain('Payment is being confirmed.');
   });
 
   it('loads Turnstile as a regular deferred script', () => {

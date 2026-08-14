@@ -747,10 +747,10 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
       intro: 'PureLink is free to use. Optional one-time credit packs extend the AI-assisted formula feature without turning the core URL, formula, or card tools into a subscription.',
       sections: [
         ['What the product does', 'A signed-in customer can describe a mathematical expression in natural language and receive an editable LaTeX draft with an immediate visual preview. The result is never published automatically, may contain mistakes, and must be reviewed by the customer before use.'],
-        ['One-time plans', 'US$5 provides 300 AI formula generations. US$10 provides 800 generations. US$20 provides 2,000 generations. These are one-time purchases, not subscriptions. Taxes may be added at checkout when required.'],
+        ['One-time plans', 'Available packs depend on the configured payment provider. ECPay Taiwan packs are NT$150 for 150 AI formula drafts, NT$300 for 400 drafts, and NT$600 for 1,000 drafts. These are one-time purchases, not subscriptions. Taxes may be added at checkout when required.'],
         ['Delivery', 'After a confirmed payment, credits are delivered automatically to the PureLink account that started checkout. Customers must be signed in before purchasing. The five free daily generations are used before purchased credits, and purchased credits are not shared between accounts.'],
         ['Credit lifetime and limits', 'Purchased credits do not expire while PureLink continues to operate the AI formula service. They are non-transferable, have no cash value, and remain subject to a daily safety limit that protects accounts and the public service from automated abuse.'],
-        ['Payment boundary', 'Creem is used only to sell AI formula credit packs and acts as the merchant of record for these purchases. Voluntary support for the open-source project is separate, does not grant credits or product benefits, and is not processed through Creem. Checkout is enabled only after payment-provider approval and integration testing.'],
+        ['Payment boundary', 'Configured payment providers are used only to sell AI formula credit packs. ECPay Taiwan checkout uses a signed server callback before credits are delivered; the browser return page is not authoritative and simulated notifications do not deliver credits. Voluntary support for the open-source project is separate, does not grant credits or product benefits. Checkout is enabled only after payment-provider approval and integration testing.'],
         ['Support', 'For purchase, delivery, or account questions, contact nasa3.14159@gmail.com. Include the email address used for your PureLink account and the order number, but never send a password, full card number, or Google credential.'],
       ],
     },
@@ -824,10 +824,10 @@ function localizedLegalContent(page, locale, defaults) {
     'zh-Hant': {
       'ai-credits': ['AI 公式額度', '需要時才購買更多公式草稿。', 'PureLink 核心功能免費使用；可選的一次性額度只延伸 AI 公式功能，不會把網址、公式或小卡變成訂閱服務。', [
         ['商品內容', '已登入的使用者可用自然語言描述數學式，取得可編輯、可立即預覽的 LaTeX 草稿。結果不會自動發布，可能有錯，使用前必須自行檢查。'],
-        ['一次性方案', 'US$5 可取得 300 次 AI 公式生成，US$10 可取得 800 次，US$20 可取得 2,000 次。這些都是一次性購買，不是訂閱；依法可能在結帳時加計稅金。'],
+        ['一次性方案', '可用組合依已設定的付款供應商而定。ECPay 台灣組合為 NT$150／150 次 AI 公式草稿、NT$300／400 次與 NT$600／1,000 次。這些都是一次性購買，不是訂閱；依法可能在結帳時加計稅金。'],
         ['交付', '付款確認後，額度會自動加入發起結帳的 PureLink 帳號。購買前必須登入。每日五次免費生成優先使用，已購額度不在帳號間共用。'],
         ['效期與限制', '只要 PureLink 持續營運 AI 公式服務，已購額度不會到期。它不可轉讓、沒有現金價值，並仍受每日安全上限保護帳號與公共服務免受自動化濫用。'],
-        ['付款邊界', 'Creem 只用於銷售 AI 公式額度，並作為這些購買的 merchant of record。開源專案的自願支持完全分開，不提供額度或產品權益，也不經由 Creem 處理。僅在付款供應商核准與整合測試後啟用結帳。'],
+        ['付款邊界', '已設定的付款供應商只用於銷售 AI 公式額度。ECPay 台灣結帳會先驗證簽章的伺服器回呼才交付額度；瀏覽器返回頁不是權威依據，模擬付款通知也不交付額度。開源專案的自願支持完全分開，不提供額度或產品權益。僅在付款供應商核准與整合測試後啟用結帳。'],
         ['支援', '若有購買、交付或帳號問題，請聯絡 nasa3.14159@gmail.com。請提供 PureLink 帳號電子郵件與訂單編號，但不要傳送密碼、完整卡號或 Google 憑證。'],
       ]],
       'refund-policy': ['退款政策', '購買出錯時的清楚處理方式。', '本政策適用於 PureLink AI 公式額度的一次性購買，不限制使用者所在地區適用的任何強制消費者權利。', [
@@ -977,17 +977,22 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
   });
 }
 
-export function renderAccountPage(user, links, creditBalance = 0, checkoutConfigured = false, purchaseStatus = '', nonce = '', locale = 'zh-Hant') {
+export function renderAccountPage(user, links, creditBalance = 0, checkoutConfigured = false, purchaseStatus = '', nonce = '', locale = 'zh-Hant', ecpayConfigured = false) {
   const m = getMessages(locale);
   const rows = links.length
     ? links.map((link) => `<li><div><span>${escapeHtml(({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content)}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">${m.common.view}</a><a href="${localizedHref(locale, `manage/${link.slug}`)}">${m.common.manage}</a></li>`).join('')
     : `<li class="empty-account">${m.account.empty}</li>`;
   const purchaseNotice = purchaseStatus === 'success'
     ? `<p class="auth-notice" role="status"><strong>${m.account.returned}</strong><span>${m.account.returnedHelp}</span></p>`
-    : '';
+    : purchaseStatus === 'pending'
+      ? `<p class="auth-notice" role="status"><strong>${m.account.ecpayPending}</strong><span>${m.account.ecpayPendingHelp}</span></p>`
+      : '';
   const checkoutAction = checkoutConfigured
     ? `<button id="buy-credits-300" type="button">${m.account.buy}</button><p class="billing-status" id="billing-status" role="status" hidden></p>`
     : `<p class="billing-status">${m.account.billingDisabled}</p>`;
+  const ecpayAction = ecpayConfigured
+    ? `<div class="ecpay-credit-packs"><p>${m.account.ecpayTitle}</p><p>${m.account.ecpayNote}</p>${['150', '300', '600'].map((tier) => `<form method="post" action="${localizedHref(locale, 'api/ecpay/checkout')}"><input type="hidden" name="tier" value="${tier}"><button type="submit">${m.account[`ecpay${tier}`]} · ${m.account.ecpayCheckout}</button></form>`).join('')}</div>`
+    : '';
   return documentShell({
     title: m.account.title,
     description: m.account.intro,
@@ -1006,6 +1011,7 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
             <h2 id="account-credits-title">${m.account.credits.replace('{count}', Math.max(0, Number(creditBalance || 0)))}</h2>
             <p>${m.account.creditsHelp}</p>
             ${checkoutAction}
+            ${ecpayAction}
             <p><a href="${localizedHref(locale, 'ai-credits')}">${m.account.productInfo}</a> · <a href="${localizedHref(locale, 'refund-policy')}">${m.account.refund}</a></p>
           </section>
           <ul class="account-links">${rows}</ul>

@@ -79,7 +79,11 @@ PureLink 會自動把網址帶入建立頁，使用者仍能檢查目的地、�
 
 一般登入帳號每日仍有 5 次免費 AI 公式生成。額外額度是一次性數位商品，不是訂閱：US$5／300 次、US$10／800 次、US$20／2,000 次。付款確認後才會自動加入發起結帳的 PureLink 帳號；免費額度先使用，購買額度在 AI 公式服務持續營運期間不過期。
 
-Creem 只處理 AI 公式額度商品，並作為這些交易的 merchant of record；它不處理沒有商品對價的自願支持。自願支持與 AI 額度在介面、帳務和公開說明中保持分離。公開商品與退款說明位於 [`/ai-credits`](https://no-no.uk/ai-credits) 與 [`/refund-policy`](https://no-no.uk/refund-policy)。
+Creem 仍可處理既有設定的 AI 公式額度組合。台灣在地結帳則可使用 ECPay 的固定一次性組合：NT$150／150 次、NT$300／400 次、NT$600／1,000 次。ECPay 額度只會在其簽章的伺服器回呼送至 `/api/webhooks/ecpay` 後加入；瀏覽器返回頁不是權威依據，模擬付款通知也絕不加入額度。自願支持與 AI 額度在介面、帳務和公開說明中保持分離，且不提供額度或產品權益。公開商品與退款說明位於 [`/ai-credits`](https://no-no.uk/ai-credits) 與 [`/refund-policy`](https://no-no.uk/refund-policy)。
+
+### ECPay 設定
+
+只有在 `ECPAY_CHECKOUT_ENABLED=true`，並完整設定 `ECPAY_MERCHANT_ID`、`ECPAY_HASH_KEY`、`ECPAY_HASH_IV` 與 `ECPAY_ENVIRONMENT`（`stage` 或 `production`）時才會啟用 ECPay。HashKey 與 HashIV 必須設為 Worker secret。請將 ECPay ReturnURL 設為 `https://你的網域/api/webhooks/ecpay`；先以 ECPay Test Mode 驗證正常、重送、錯誤簽章、金額不符與模擬回呼，完成商家後台核准後才改用正式環境並啟用正式結帳。
 
 ## 專案結構
 
