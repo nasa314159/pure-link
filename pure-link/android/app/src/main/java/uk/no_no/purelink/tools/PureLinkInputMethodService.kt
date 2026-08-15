@@ -55,6 +55,8 @@ class PureLinkInputMethodService : InputMethodService() {
   private var pendingCardUrl: String? = null
   private var creatingCard = false
   private var verificationOperation: Long? = null
+  private var descriptionOperation: Long? = null
+  private var restoringInputMethod = false
 
   private lateinit var status: TextView
   private lateinit var candidates: LinearLayout
@@ -69,7 +71,8 @@ class PureLinkInputMethodService : InputMethodService() {
   private val verificationReceiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
     override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
       val operation = resultData?.getLong(NativeVerificationActivity.EXTRA_OPERATION, -1L) ?: -1L
-      if (!transientActivity.complete(PureLinkOwnedActivity.VERIFICATION, operation) || verificationOperation != operation || !sessionGate.accepts(operation)) return
+      transientActivity.complete(PureLinkOwnedActivity.VERIFICATION, operation)
+      if (verificationOperation != operation || !sessionGate.accepts(operation)) return
       verificationOperation = null
       if (resultCode != Activity.RESULT_OK) {
         creatingCard = false
@@ -82,6 +85,7 @@ class PureLinkInputMethodService : InputMethodService() {
         }
         showStatus(message, error = true)
         renderCandidates()
+        restoreInputMethod()
         return
       }
       val nativeCreateToken = resultData?.getString(NativeVerificationActivity.EXTRA_NATIVE_CREATE_TOKEN)
@@ -89,8 +93,10 @@ class PureLinkInputMethodService : InputMethodService() {
         creatingCard = false
         showStatus(R.string.verification_failed, error = true)
         renderCandidates()
+        restoreInputMethod()
         return
       }
+      restoreInputMethod()
       createBundleCard(nativeCreateToken, operation)
     }
   }
@@ -98,7 +104,9 @@ class PureLinkInputMethodService : InputMethodService() {
   private val descriptionReceiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
     override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
       val operation = resultData?.getLong(DescriptionEditorActivity.EXTRA_OPERATION, -1L) ?: -1L
-      if (!transientActivity.complete(PureLinkOwnedActivity.DESCRIPTION_EDITOR, operation) || !sessionGate.accepts(operation)) return
+      transientActivity.complete(PureLinkOwnedActivity.DESCRIPTION_EDITOR, operation)
+      if (descriptionOperation != operation || !sessionGate.accepts(operation)) return
+      descriptionOperation = null
       if (resultCode == Activity.RESULT_OK) {
         descriptionText = PureLinkDescriptionEditor.done(resultData?.getString(DescriptionEditorActivity.EXTRA_DESCRIPTION))
       } else {
@@ -106,6 +114,7 @@ class PureLinkInputMethodService : InputMethodService() {
       }
       if (selections.rows().isNotEmpty()) showCandidateMode()
       renderCandidates()
+      restoreInputMethod()
     }
   }
 
@@ -120,11 +129,15 @@ class PureLinkInputMethodService : InputMethodService() {
   override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
     super.onStartInput(attribute, restarting)
     // Do not inspect editor contents. A new or password editor discards this ephemeral session.
-    if (::candidates.isInitialized && !transientActivity.ownsInputViewFinish() && (!restarting || isSensitive(attribute))) clearSession(invalidate = true)
+    if (restoringInputMethod) {
+      restoringInputMethod = false
+    } else if (::candidates.isInitialized && !hasPendingActivity() && (!restarting || isSensitive(attribute))) {
+      clearSession(invalidate = true)
+    }
   }
 
   override fun onFinishInputView(finishingInput: Boolean) {
-    if (finishingInput && ::candidates.isInitialized && !transientActivity.ownsInputViewFinish()) {
+    if (finishingInput && ::candidates.isInitialized && !hasPendingActivity()) {
       sessionGate.finish()
       clearSession(invalidate = false)
     }
@@ -260,8 +273,11 @@ class PureLinkInputMethodService : InputMethodService() {
 
   private fun editDescription() {
     val operation = sessionGate.beginOperation() ?: return
+    descriptionOperation = operation
     transientActivity.begin(PureLinkOwnedActivity.DESCRIPTION_EDITOR, operation)
     try {
+      // The editor must use the user's ordinary IME, not this resolver keyboard.
+      if (android.os.Build.VERSION.SDK_INT >= 28) switchToPreviousInputMethod()
       startActivity(Intent(this, DescriptionEditorActivity::class.java).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         putExtra(DescriptionEditorActivity.EXTRA_RESULT_RECEIVER, descriptionReceiver)
@@ -270,6 +286,7 @@ class PureLinkInputMethodService : InputMethodService() {
       })
     } catch (_: ActivityNotFoundException) {
       transientActivity.clear()
+      descriptionOperation = null
       showStatus(R.string.description_editor_unavailable, error = true)
     }
   }
@@ -315,6 +332,7 @@ class PureLinkInputMethodService : InputMethodService() {
     pendingCardUrl = null
     creatingCard = false
     verificationOperation = null
+    descriptionOperation = null
     descriptionText = ""
     renderDescriptionPreview()
     if (found.isEmpty()) {
@@ -508,7 +526,7 @@ class PureLinkInputMethodService : InputMethodService() {
 
   private fun openAccount() {
     try {
-      startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://no-no.uk/${responseLocale()}/account")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+      startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PureLinkWebsiteRoutes.accountUrl(responseLocale()))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: ActivityNotFoundException) {
       showStatus(R.string.no_url_handler, error = true)
     }
@@ -639,6 +657,7 @@ class PureLinkInputMethodService : InputMethodService() {
     pendingCardUrl = null
     creatingCard = false
     verificationOperation = null
+    descriptionOperation = null
     shiftState.reset()
     descriptionText = ""
     renderDescriptionPreview()
@@ -680,6 +699,16 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   private fun responseLocale(): String = if (resources.configuration.locales[0].language.equals("zh", ignoreCase = true)) "zh-Hant" else "en"
+
+  private fun hasPendingActivity(): Boolean =
+    transientActivity.ownsInputViewFinish() || verificationOperation != null || descriptionOperation != null
+
+  private fun restoreInputMethod() {
+    if (android.os.Build.VERSION.SDK_INT >= 28) {
+      restoringInputMethod = true
+      switchToPreviousInputMethod()
+    }
+  }
 
   private fun isSensitive(attribute: EditorInfo?): Boolean {
     val inputType = attribute?.inputType ?: return false

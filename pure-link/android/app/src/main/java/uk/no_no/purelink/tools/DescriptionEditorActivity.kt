@@ -18,6 +18,7 @@ import uk.no_no.purelink.core.PureLinkShareFormatter
 /** A private, one-time description editor that intentionally uses the user's normal system IME. */
 class DescriptionEditorActivity : Activity() {
   private var delivered = false
+  private var restoredDescription: String? = null
   private lateinit var input: EditText
   private lateinit var counter: TextView
 
@@ -26,9 +27,19 @@ class DescriptionEditorActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    setContentView(buildContent())
+    restoredDescription = savedInstanceState?.getString(SAVED_DESCRIPTION)
     window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
-    input.requestFocus()
+    setContentView(buildContent())
+    input.post {
+      input.requestFocus()
+      (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+        .showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+    }
+  }
+
+  override fun onSaveInstanceState(outState: Bundle) {
+    outState.putString(SAVED_DESCRIPTION, input.text.toString())
+    super.onSaveInstanceState(outState)
   }
 
   @Deprecated("Use OnBackInvokedCallback on API 33+")
@@ -36,7 +47,8 @@ class DescriptionEditorActivity : Activity() {
   override fun onBackPressed() = complete(RESULT_CANCELED)
 
   override fun onDestroy() {
-    if (!delivered) complete(RESULT_CANCELED)
+    // Rotation recreates the editor; it is not an explicit user cancellation.
+    if (!delivered && isFinishing) complete(RESULT_CANCELED)
     super.onDestroy()
   }
 
@@ -51,7 +63,7 @@ class DescriptionEditorActivity : Activity() {
       setPadding(0, 0, 0, dp(10))
     })
     input = EditText(this).apply {
-      val initial = PureLinkDescriptionEditor.initialText(intent.getStringExtra(EXTRA_INITIAL_DESCRIPTION))
+       val initial = PureLinkDescriptionEditor.initialText(restoredDescription ?: intent.getStringExtra(EXTRA_INITIAL_DESCRIPTION))
       setText(initial)
       setSelection(initial.length)
       hint = getString(R.string.description_hint)
@@ -113,5 +125,6 @@ class DescriptionEditorActivity : Activity() {
     const val EXTRA_OPERATION = "uk.no_no.purelink.tools.DESCRIPTION_OPERATION"
     const val EXTRA_INITIAL_DESCRIPTION = "uk.no_no.purelink.tools.INITIAL_DESCRIPTION"
     const val EXTRA_DESCRIPTION = "uk.no_no.purelink.tools.DESCRIPTION"
+    private const val SAVED_DESCRIPTION = "uk.no_no.purelink.tools.SAVED_DESCRIPTION"
   }
 }

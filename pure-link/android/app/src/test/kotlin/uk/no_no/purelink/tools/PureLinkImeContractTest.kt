@@ -135,14 +135,35 @@ class PureLinkImeContractTest {
     assertTrue(ime.contains("shareText(publicUrl)"))
     assertTrue(ime.contains("sessionGate.accepts(operation)"))
     assertTrue(ime.contains("showTransientStatus(R.string.share_chooser_opened)"))
-    assertTrue(ime.contains("https://no-no.uk/\${responseLocale()}/account"))
+    assertTrue(ime.contains("PureLinkWebsiteRoutes.accountUrl(responseLocale())"))
     assertTrue(verification.contains("onReceivedHttpError"))
     assertTrue(verification.contains("RESULT_ENDPOINT_UNAVAILABLE"))
     assertTrue(editor.contains("CodePointLengthFilter"))
     assertTrue(editor.contains("SOFT_INPUT_STATE_ALWAYS_VISIBLE"))
+    assertTrue(editor.contains("showSoftInput"))
+    assertTrue(editor.contains("isFinishing"))
+    assertTrue(editor.contains("onSaveInstanceState"))
+    assertTrue(editor.contains("setOnClickListener { complete(RESULT_CANCELED) }"))
+    assertTrue(editor.contains("setOnClickListener { complete(RESULT_OK"))
+    assertTrue(verification.contains("if (!delivered && isFinishing) complete(RESULT_CANCELED)"))
     assertFalse(editor.contains("setShowSoftInputOnFocus(false)"))
     assertTrue(client.contains("/api/native/cards"))
     assertTrue(client.contains("nativeCreateToken"))
     assertTrue(!client.contains("contentType\", \"card"))
+  }
+
+  @Test fun account_button_uses_only_a_real_localized_website_route() {
+    assertEquals("https://no-no.uk/zh-Hant/account", PureLinkWebsiteRoutes.accountUrl("zh-Hant"))
+    assertEquals("https://no-no.uk/en/account", PureLinkWebsiteRoutes.accountUrl("en"))
+    assertFalse(PureLinkWebsiteRoutes.accountUrl("fr").contains("/fr/"))
+  }
+
+  @Test fun multi_select_share_invokes_verification_and_keeps_two_selected_rows_enabled() {
+    val ime = File("src/main/java/uk/no_no/purelink/tools/PureLinkInputMethodService.kt").readText()
+    assertTrue(ime.contains("else -> startNativeVerification(selected)"))
+    assertTrue(ime.contains("val selected = selections.selectedRows()"))
+    assertTrue(ime.contains("transientActivity.complete(PureLinkOwnedActivity.VERIFICATION, operation)"))
+    assertTrue(ime.contains("if (verificationOperation != operation || !sessionGate.accepts(operation)) return"))
+    assertTrue(ime.contains("setShareEnabled(!creatingCard && (pendingCardUrl != null || rows.any { it.selected }))"))
   }
 }

@@ -45,7 +45,8 @@ class NativeVerificationActivity : Activity() {
       webView.loadUrl("about:blank")
       webView.destroy()
     }
-    if (!delivered) complete(RESULT_CANCELED)
+    // Configuration changes must not turn an in-progress verification into Cancel.
+    if (!delivered && isFinishing) complete(RESULT_CANCELED)
     super.onDestroy()
   }
 
