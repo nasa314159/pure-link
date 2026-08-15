@@ -10,7 +10,7 @@ PureLink is a small **auxiliary Android input method** for resolving deliberatel
 2. Switch the input method to **PureLink keyboard**.
 3. Its visible, focused **Manual slug** field is ready immediately. Type a bare valid slug there, or press **Clipboard** to read only the current text clip and parse it locally. PureLink never inserts either value into the editor behind the keyboard.
 4. Select detected links and optionally set their `+ Preview` state.
-5. Optionally enter a one-time description (up to about 280 Unicode characters).
+5. Optionally choose **Edit description**, which opens a small private editor using Android’s normal system keyboard (Samsung Keyboard, Gboard, voice input, emoji, and installed IMEs); the one-time description is limited to 280 Unicode code points.
 6. Press **Share**:
    - one selected link shares ordinary text directly through Android’s share sheet;
    - two or more selected links briefly open a PureLink Turnstile verification window, create one PureLink Card after verification, and share only that public Card URL.
@@ -22,11 +22,12 @@ The setup Activity shows whether the keyboard is enabled, opens Android’s inpu
 
 - A compact dark, Samsung/Gboard-like A–Z/a–z, 0–9, `_`, and `-` layout: digits, QWERTY rows, Shift/Backspace, then Globe/`_`/`-`/Enter. It has no horizontal scrolling at 360dp, 412dp, or 480dp widths.
 - Lowercase, one-shot Shift, and double-tap Caps Lock; a one-shot Shift is consumed only by the next letter.
-- Direct icon actions for Clipboard, Manual, Globe, Share, and Account. Account opens the matching localized PureLink account page in the browser; it does not create native account state.
-- One explicit Clipboard / Parse action plus a separate description-only paste control; it never parses pasted description text as candidates.
+- The light top toolbar contains only Clipboard, Share, and Account. Globe remains only in the bottom keyboard row. Account opens the matching localized PureLink account page in the browser; it does not create native account state.
+- Candidate controls begin with an icon-only **Delete selected candidates** action, followed by Select All and `+ All`. It never clears unselected candidates or the description; deleting every candidate returns to Manual mode.
+- The compact description preview opens **Edit description**; a separate description-only paste action remains available and never parses pasted text as candidates.
 - Compact candidate rows, source order preserved, with Select All and `+ All` for multiple matches.
 - Open and Preview actions that only construct `https://no-no.uk/<slug>` and `https://no-no.uk/<slug>+`.
-- A normal Android share-sheet action, explicit **Clear** control, and a keyboard-switch button.
+- A normal Android share-sheet action and a bottom-row keyboard-switch button.
 
 It deliberately has no language composition, predictions, autocorrect, learned vocabulary, suggestions, overlay, AccessibilityService, background service, analytics, advertising, or clipboard history.
 
@@ -61,7 +62,7 @@ Canceling or failing verification, an unavailable network, or a failed Card crea
 
 The deployed Worker must include the native verification page, `/api/native/challenge/complete`, `/api/native/cards`, the native-token D1 migration, and a Turnstile configuration for the `native-card-create` action. Without those deployed routes/configuration, multi-link sharing correctly fails after the verification attempt while local parsing and single-link sharing remain available.
 
-Opening Android’s chooser does not prove that a recipient accepted or delivered a message. PureLink therefore preserves the session, including a returned Card URL, until the user explicitly chooses **Clear** or the IME session ends.
+Opening Android’s chooser does not prove that a recipient accepted or delivered a message. PureLink therefore preserves the session, including a returned Card URL, until the IME session ends. Mutating selected candidates clears an already-returned Card URL because it represents a different share selection.
 
 Raw clipboard text is discarded after parsing. The app keeps only ephemeral candidates, selection/preview flags, an optional current description, and (briefly, if needed to retry the share sheet) a returned public Card URL. It does not persist clipboard text, descriptions, candidates, management credentials, or history. The description is not stored separately: for a successful multi-link share it becomes part of the user-created Card body.
 

@@ -6,7 +6,9 @@
 
 `PureLinkInputMethodService` 以 Android `InputMethodService` 註冊，包含必要的 `android.permission.BIND_INPUT_METHOD`、`android.view.InputMethod` intent filter 與 `res/xml/method.xml` metadata。啟用與選擇完全由 Android 設定和輸入法挑選器控制；沒有 Samsung 或 Gboard 專用 API。
 
-這是輔助解析鍵盤，不讀取周圍編輯器文字、不產生預測、不學習輸入，也不監看剪貼簿。它開啟時會顯示並聚焦內部的手動短代號欄位；按鍵只會輸入此欄位或選填說明欄，絕不寫入後方宿主編輯器。深色五列版面只提供 `[A-Za-z0-9_-]`：數字、QWERTY、ASDF、Shift／ZXCVBNM／退格、Globe／`_`／`-`／Enter。Shift 有小寫、一次 Shift、雙擊 Caps Lock 三種狀態，且只有英文字母會消耗一次 Shift。五個直接工具列圖示是剪貼簿、手動、Globe、分享與帳號；帳號只會開啟相符語系的網頁帳號／登入入口。它只會在使用者按下「剪貼簿」後讀取目前的文字剪貼簿；敏感欄位只依 `EditorInfo` metadata 清除暫存工作階段，不會讀取欄位內容。`ACTION_SEND` 與 `ACTION_PROCESS_TEXT` 都是標記／完整網址限定的輸入路徑；後者讀取 `Intent.EXTRA_PROCESS_TEXT`、回傳 `RESULT_CANCELED`，不回傳替換文字。
+這是輔助解析鍵盤，不讀取周圍編輯器文字、不產生預測、不學習輸入，也不監看剪貼簿。它開啟時會顯示並聚焦內部的手動短代號欄位；按鍵只會輸入此欄位，絕不寫入後方宿主編輯器。深色五列版面只提供 `[A-Za-z0-9_-]`：數字、QWERTY、ASDF、Shift／ZXCVBNM／退格、Globe／`_`／`-`／Enter。Shift 有小寫、一次 Shift、雙擊 Caps Lock 三種狀態，且只有英文字母會消耗一次 Shift。頂部工具列只保留剪貼簿、分享、帳號；Globe 只留在底部鍵盤列。帳號只會開啟相符語系的網頁帳號／登入入口。它只會在使用者按下「剪貼簿」後讀取目前的文字剪貼簿；敏感欄位只依 `EditorInfo` metadata 清除暫存工作階段，不會讀取欄位內容。`ACTION_SEND` 與 `ACTION_PROCESS_TEXT` 都是標記／完整網址限定的輸入路徑；後者讀取 `Intent.EXTRA_PROCESS_TEXT`、回傳 `RESULT_CANCELED`，不回傳替換文字。
+
+候選管理列先放有無障礙標籤的圖示式**刪除已選候選項目**，再放全選與 `+ 全部`，其餘列寬刻意留白。它只刪除已選列，保留未選列的來源順序與 `+` 狀態；只要還有候選也會保留說明。刪除最後一個候選才回到手動模式。緊湊的說明預覽會開啟私有的 `DescriptionEditorActivity`；其中標準多行 `EditText` 使用 Android 目前選取的一般系統 IME，可輸入繁體中文、日文、emoji 和多行文字，並使用既有 280 code points 限制。編輯器沒有網路存取，文字只會回傳目前的 IME 工作階段。
 
 ## 網路與驗證邊界
 
@@ -22,7 +24,7 @@
 
 端點拒絕多餘欄位、強制建立小卡，以 D1 `UPDATE … WHERE used_at IS NULL AND expires_at > ? RETURNING` 原子消耗憑證，最多建立一張小卡，只回傳公開網址。若後續插入失敗，憑證仍保持已使用，以防重放。它不接收／回傳原始剪貼簿、周圍編輯器文字、目的地網址、公式原始碼、既有小卡、分析資料或管理憑證。
 
-驗證取消或失敗、網路失敗與小卡建立失敗都會保留候選、選擇、`+` 狀態與說明。generation gate 會在新解析或 IME 工作階段結束後丟棄舊非同步結果。Android 無法從「已開啟分享選單」可靠證明訊息已送達，因此工作階段會保留到使用者明確按「清除」或 IME 正常結束。
+驗證取消或失敗、網路失敗與小卡建立失敗都會保留候選、選擇、`+` 狀態與說明。generation gate 會在新解析或 IME 工作階段結束後丟棄舊非同步結果。範圍很小的「PureLink 自有短暫 Activity」狀態可避免把 `DescriptionEditorActivity` 與 `NativeVerificationActivity` 誤判成真正的 `onFinishInputView()` 結束；不相關的一般結束仍會完成 gate。目前 production 的 `/native/verify` 回傳 HTTP 404，Activity 會顯示服務暫時無法使用，而不會誤導為使用者驗證失敗。Android 無法從「已開啟分享選單」可靠證明訊息已送達，因此工作階段會保留到 IME 正常結束。
 
 ## 實機 QA
 

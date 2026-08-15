@@ -20,6 +20,36 @@ class PureLinkSelectionAndShareTest {
     assertTrue(model.rows().none { it.selected })
   }
 
+  @Test fun removes_only_selected_rows_and_preserves_unselected_preview_state() {
+    val model = PureLinkSelectionModel(listOf(first, second, third))
+    model.setSelected(0, false)
+    model.setSelected(2, false)
+    model.togglePreview(2)
+    assertEquals(1, model.removeSelected())
+    assertEquals(listOf("A3cd8", "H72Ld"), model.rows().map { it.candidate.slug })
+    assertEquals(listOf(false, false), model.rows().map { it.selected })
+    assertEquals(listOf(false, false), model.rows().map { it.preview })
+  }
+
+  @Test fun removes_two_selected_rows_or_all_rows_without_touching_unselected_rows() {
+    val twoSelected = PureLinkSelectionModel(listOf(first, second, third))
+    twoSelected.setSelected(2, false)
+    assertEquals(2, twoSelected.removeSelected())
+    assertEquals(listOf("H72Ld"), twoSelected.rows().map { it.candidate.slug })
+
+    val allSelected = PureLinkSelectionModel(listOf(first, second, third))
+    assertEquals(3, allSelected.removeSelected())
+    assertTrue(allSelected.rows().isEmpty())
+  }
+
+  @Test fun remove_selected_is_a_no_op_when_no_rows_are_selected() {
+    val model = PureLinkSelectionModel(listOf(first, second, third))
+    model.toggleSelectAll()
+    assertFalse(model.hasSelectedRows())
+    assertEquals(0, model.removeSelected())
+    assertEquals(listOf("A3cd8", "Q9xK2", "H72Ld"), model.rows().map { it.candidate.slug })
+  }
+
   @Test fun previews_one_and_toggles_selected_rows_without_touching_others() {
     val model = PureLinkSelectionModel(listOf(first, second, third))
     model.setSelected(2, false)

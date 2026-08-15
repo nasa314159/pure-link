@@ -32,6 +32,7 @@ class NativeVerificationActivity : Activity() {
     webView.loadUrl(NativeVerificationPolicy.challengeUrl(intent.getStringExtra(EXTRA_LOCALE).orEmpty()))
   }
 
+  @Deprecated("Use OnBackInvokedCallback on API 33+")
   @Suppress("DEPRECATION")
   override fun onBackPressed() {
     complete(RESULT_CANCELED)
@@ -48,12 +49,13 @@ class NativeVerificationActivity : Activity() {
     super.onDestroy()
   }
 
-  private fun complete(resultCode: Int, nativeCreateToken: String? = null) {
+  private fun complete(resultCode: Int, nativeCreateToken: String? = null, error: String? = null) {
     if (delivered) return
     delivered = true
     val result = Bundle().apply {
       putLong(EXTRA_OPERATION, intent.getLongExtra(EXTRA_OPERATION, -1L))
       nativeCreateToken?.let { putString(EXTRA_NATIVE_CREATE_TOKEN, it) }
+      error?.let { putString(EXTRA_ERROR, it) }
     }
     setResult(resultCode)
     receiver()?.send(resultCode, result)
@@ -75,6 +77,12 @@ class NativeVerificationActivity : Activity() {
       if (request.isForMainFrame) complete(RESULT_CANCELED)
     }
 
+    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
+      if (request.isForMainFrame && errorResponse.statusCode == 404) {
+        complete(RESULT_ENDPOINT_UNAVAILABLE, error = ERROR_ENDPOINT_UNAVAILABLE)
+      }
+    }
+
     private fun handleNavigation(url: String): Boolean {
       NativeVerificationPolicy.callbackToken(url)?.let { token ->
         complete(RESULT_OK, token)
@@ -93,5 +101,8 @@ class NativeVerificationActivity : Activity() {
     const val EXTRA_OPERATION = "uk.no_no.purelink.tools.VERIFICATION_OPERATION"
     const val EXTRA_NATIVE_CREATE_TOKEN = "uk.no_no.purelink.tools.NATIVE_CREATE_TOKEN"
     const val EXTRA_LOCALE = "uk.no_no.purelink.tools.VERIFICATION_LOCALE"
+    const val EXTRA_ERROR = "uk.no_no.purelink.tools.VERIFICATION_ERROR"
+    const val ERROR_ENDPOINT_UNAVAILABLE = "endpoint-unavailable"
+    const val RESULT_ENDPOINT_UNAVAILABLE = Activity.RESULT_FIRST_USER + 1
   }
 }

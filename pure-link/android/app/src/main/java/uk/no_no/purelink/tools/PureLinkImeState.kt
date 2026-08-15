@@ -1,10 +1,11 @@
 package uk.no_no.purelink.tools
 
+import uk.no_no.purelink.core.PureLinkShareFormatter
+
 /**
- * Explicit local state for the resolver keyboard. Keys never target the host editor: the active
- * target is either the manual slug field or the optional share-description field.
+ * Explicit local state for the resolver keyboard. Its slug keys never target the host editor.
  */
-enum class PureLinkImeInputTarget { MANUAL, DESCRIPTION }
+enum class PureLinkImeInputTarget { MANUAL }
 
 class PureLinkImeInputState {
   var target: PureLinkImeInputTarget = PureLinkImeInputTarget.MANUAL
@@ -12,7 +13,48 @@ class PureLinkImeInputState {
 
   fun focusManual() { target = PureLinkImeInputTarget.MANUAL }
 
-  fun focusDescription() { target = PureLinkImeInputTarget.DESCRIPTION }
+}
+
+enum class PureLinkImeMode { MANUAL, CANDIDATES }
+
+enum class PureLinkOwnedActivity { DESCRIPTION_EDITOR, VERIFICATION }
+
+/**
+ * Tracks only a PureLink-owned transient screen and its originating gate operation. This lets the
+ * service distinguish its own editor/verification transition from a genuine IME teardown.
+ */
+class PureLinkTransientActivityState {
+  private var current: Pair<PureLinkOwnedActivity, Long>? = null
+
+  fun begin(kind: PureLinkOwnedActivity, operation: Long) {
+    current = kind to operation
+  }
+
+  fun ownsInputViewFinish(): Boolean = current != null
+
+  fun complete(kind: PureLinkOwnedActivity, operation: Long): Boolean {
+    val matches = current == (kind to operation)
+    if (matches) current = null
+    return matches
+  }
+
+  fun clear() {
+    current = null
+  }
+}
+
+/** Pure formatting helpers for the system-IME Description editor. */
+object PureLinkDescriptionEditor {
+  fun initialText(value: CharSequence?): String = PureLinkShareFormatter.normalizeDescription(value)
+
+  fun done(value: CharSequence?): String = PureLinkShareFormatter.normalizeDescription(value)
+
+  fun cancel(currentValue: CharSequence?): String = PureLinkShareFormatter.normalizeDescription(currentValue)
+
+  fun codePointCount(value: CharSequence?): Int {
+    val text = value?.toString().orEmpty()
+    return text.codePointCount(0, text.length)
+  }
 }
 
 enum class PureLinkShiftMode { LOWERCASE, ONE_SHOT_SHIFT, CAPS_LOCK }
@@ -66,6 +108,6 @@ object PureLinkImeLayout {
     return usable / keyCount >= minimumCharacterKeyWidthDp
   }
 
-  fun toolbarFits(widthDp: Int, iconCount: Int = 5): Boolean =
+  fun toolbarFits(widthDp: Int, iconCount: Int = 3): Boolean =
     iconCount * toolbarIconSizeDp + (iconCount - 1) * keyGapDp <= widthDp - horizontalPaddingDp * 2
 }

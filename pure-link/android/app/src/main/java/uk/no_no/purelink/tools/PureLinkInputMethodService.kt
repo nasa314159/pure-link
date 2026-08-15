@@ -49,6 +49,9 @@ class PureLinkInputMethodService : InputMethodService() {
   private val sessionGate = PureLinkSessionGate()
   private val inputState = PureLinkImeInputState()
   private val shiftState = PureLinkShiftState()
+  private val transientActivity = PureLinkTransientActivityState()
+  private var mode = PureLinkImeMode.MANUAL
+  private var descriptionText = ""
   private var pendingCardUrl: String? = null
   private var creatingCard = false
   private var verificationOperation: Long? = null
@@ -58,7 +61,7 @@ class PureLinkInputMethodService : InputMethodService() {
   private lateinit var candidatesScroll: ScrollView
   private lateinit var keyboardRows: LinearLayout
   private lateinit var descriptionPanel: View
-  private lateinit var description: EditText
+  private lateinit var descriptionPreview: TextView
   private lateinit var manualPanel: View
   private lateinit var manualSlug: EditText
   private lateinit var shareButton: ImageButton
@@ -66,11 +69,18 @@ class PureLinkInputMethodService : InputMethodService() {
   private val verificationReceiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
     override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
       val operation = resultData?.getLong(NativeVerificationActivity.EXTRA_OPERATION, -1L) ?: -1L
-      if (verificationOperation != operation || !sessionGate.accepts(operation)) return
+      if (!transientActivity.complete(PureLinkOwnedActivity.VERIFICATION, operation) || verificationOperation != operation || !sessionGate.accepts(operation)) return
       verificationOperation = null
       if (resultCode != Activity.RESULT_OK) {
         creatingCard = false
-        showStatus(R.string.verification_cancelled, error = true)
+        val message = if (resultData?.getString(NativeVerificationActivity.EXTRA_ERROR) == NativeVerificationActivity.ERROR_ENDPOINT_UNAVAILABLE) {
+          R.string.verification_unavailable
+        } else if (resultCode == Activity.RESULT_CANCELED) {
+          R.string.verification_cancelled
+        } else {
+          R.string.verification_failed
+        }
+        showStatus(message, error = true)
         renderCandidates()
         return
       }
@@ -85,22 +95,36 @@ class PureLinkInputMethodService : InputMethodService() {
     }
   }
 
+  private val descriptionReceiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
+    override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+      val operation = resultData?.getLong(DescriptionEditorActivity.EXTRA_OPERATION, -1L) ?: -1L
+      if (!transientActivity.complete(PureLinkOwnedActivity.DESCRIPTION_EDITOR, operation) || !sessionGate.accepts(operation)) return
+      if (resultCode == Activity.RESULT_OK) {
+        descriptionText = PureLinkDescriptionEditor.done(resultData?.getString(DescriptionEditorActivity.EXTRA_DESCRIPTION))
+      } else {
+        descriptionText = PureLinkDescriptionEditor.cancel(descriptionText)
+      }
+      if (selections.rows().isNotEmpty()) showCandidateMode()
+      renderCandidates()
+    }
+  }
+
   override fun onCreateInputView(): View {
-    sessionGate.activate()
+    if (!sessionGate.isActive()) sessionGate.activate()
     return buildInputView().also { view ->
-      // Manual is the initial, explicit input target. The IME never types into the host field.
-      view.post { activateManualMode() }
+      // An internally launched Activity may recreate the view; restore its existing session mode.
+      view.post { if (mode == PureLinkImeMode.MANUAL) activateManualMode() else showCandidateMode() }
     }
   }
 
   override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
     super.onStartInput(attribute, restarting)
     // Do not inspect editor contents. A new or password editor discards this ephemeral session.
-    if (::candidates.isInitialized && (!restarting || isSensitive(attribute))) clearSession(invalidate = true)
+    if (::candidates.isInitialized && !transientActivity.ownsInputViewFinish() && (!restarting || isSensitive(attribute))) clearSession(invalidate = true)
   }
 
   override fun onFinishInputView(finishingInput: Boolean) {
-    if (finishingInput && ::candidates.isInitialized) {
+    if (finishingInput && ::candidates.isInitialized && !transientActivity.ownsInputViewFinish()) {
       sessionGate.finish()
       clearSession(invalidate = false)
     }
@@ -157,20 +181,6 @@ class PureLinkInputMethodService : InputMethodService() {
     }
     root.addView(candidatesScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(136)))
 
-    description = EditText(this).apply {
-      hint = getString(R.string.description_hint)
-      setHintTextColor(color(R.color.ime_muted))
-      setTextColor(color(R.color.ime_text))
-      textSize = 14f
-      inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-      filters = arrayOf(CodePointLengthFilter(PureLinkShareFormatter.maxDescriptionCodePoints))
-      minLines = 1
-      maxLines = 2
-      setShowSoftInputOnFocus(false)
-      background = roundedBackground(R.color.ime_surface)
-      setPadding(dp(12), dp(3), dp(12), dp(3))
-      setOnFocusChangeListener { _, focused -> if (focused) inputState.focusDescription() }
-    }
     descriptionPanel = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       setPadding(0, dp(2), 0, dp(3))
@@ -180,11 +190,23 @@ class PureLinkInputMethodService : InputMethodService() {
         textSize = 12f
         setTextColor(color(R.color.ime_muted))
       }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+      heading.addView(iconButton(R.drawable.ic_ime_edit, R.string.edit_description, R.color.ime_surface) { editDescription() }, LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(2) })
       heading.addView(iconButton(R.drawable.ic_ime_clipboard, R.string.paste_description, R.color.ime_surface) { pasteDescription() }, LinearLayout.LayoutParams(dp(34), dp(34)))
       addView(heading)
-      addView(description, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(46)))
+      descriptionPreview = TextView(this@PureLinkInputMethodService).apply {
+        textSize = 14f
+        maxLines = 2
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        gravity = Gravity.CENTER_VERTICAL
+        background = roundedBackground(R.color.ime_surface)
+        setPadding(dp(12), dp(3), dp(12), dp(3))
+        contentDescription = getString(R.string.edit_description)
+        setOnClickListener { editDescription() }
+      }
+      addView(descriptionPreview, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)))
     }
     root.addView(descriptionPanel)
+    renderDescriptionPreview()
 
     keyboardRows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
     root.addView(keyboardRows)
@@ -193,12 +215,11 @@ class PureLinkInputMethodService : InputMethodService() {
     return root
   }
 
-  /** Five direct toolbar actions fit from 360dp up; no overflow menu hides primary actions. */
+  /** The lightweight top toolbar keeps only Clipboard, Share, and Account. */
   private fun topBar(): View = LinearLayout(this).apply {
     gravity = Gravity.CENTER_VERTICAL
     addView(iconButton(R.drawable.ic_ime_clipboard, R.string.resolve_clipboard, R.color.ime_surface) { parseClipboard() }, toolbarIconParams())
-    addView(iconButton(R.drawable.ic_ime_manual, R.string.manual_toggle, R.color.ime_surface) { activateManualMode() }, toolbarIconParams())
-    addView(iconButton(R.drawable.ic_ime_globe, R.string.switch_keyboard, R.color.ime_surface) { switchKeyboard() }, toolbarIconParams())
+    addView(Space(this@PureLinkInputMethodService), LinearLayout.LayoutParams(0, dp(PureLinkImeLayout.toolbarIconSizeDp), 1f))
     shareButton = iconButton(R.drawable.ic_ime_share, R.string.share, R.color.ime_accent) { shareSelected() }
     addView(shareButton, toolbarIconParams())
     addView(iconButton(R.drawable.ic_ime_account, R.string.account, R.color.ime_surface) { openAccount() }, toolbarIconParams(last = true))
@@ -209,12 +230,20 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   private fun activateManualMode() {
+    mode = PureLinkImeMode.MANUAL
     inputState.focusManual()
     manualPanel.visibility = View.VISIBLE
     candidatesScroll.visibility = View.GONE
     descriptionPanel.visibility = View.GONE
     manualSlug.requestFocus()
     manualSlug.setSelection(manualSlug.length())
+  }
+
+  private fun showCandidateMode() {
+    mode = PureLinkImeMode.CANDIDATES
+    manualPanel.visibility = View.GONE
+    candidatesScroll.visibility = View.VISIBLE
+    descriptionPanel.visibility = View.VISIBLE
   }
 
   private fun parseClipboard() {
@@ -225,11 +254,24 @@ class PureLinkInputMethodService : InputMethodService() {
 
   private fun pasteDescription() {
     val currentText = currentClipboardText() ?: return
-    val inserted = PureLinkDescriptionPaste.insert(description.text, description.selectionStart, description.selectionEnd, currentText)
-    description.setText(inserted)
-    description.setSelection(inserted.length)
-    inputState.focusDescription()
-    description.requestFocus()
+    descriptionText = PureLinkDescriptionPaste.insert(descriptionText, descriptionText.length, descriptionText.length, currentText)
+    renderDescriptionPreview()
+  }
+
+  private fun editDescription() {
+    val operation = sessionGate.beginOperation() ?: return
+    transientActivity.begin(PureLinkOwnedActivity.DESCRIPTION_EDITOR, operation)
+    try {
+      startActivity(Intent(this, DescriptionEditorActivity::class.java).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        putExtra(DescriptionEditorActivity.EXTRA_RESULT_RECEIVER, descriptionReceiver)
+        putExtra(DescriptionEditorActivity.EXTRA_OPERATION, operation)
+        putExtra(DescriptionEditorActivity.EXTRA_INITIAL_DESCRIPTION, descriptionText)
+      })
+    } catch (_: ActivityNotFoundException) {
+      transientActivity.clear()
+      showStatus(R.string.description_editor_unavailable, error = true)
+    }
   }
 
   private fun currentClipboardText(): String? {
@@ -263,6 +305,7 @@ class PureLinkInputMethodService : InputMethodService() {
 
   private fun applyResolution(resolution: PureLinkResolution) {
     sessionGate.beginNewSessionState()
+    transientActivity.clear()
     val found = when (resolution) {
       PureLinkResolution.Empty -> emptyList()
       is PureLinkResolution.Single -> listOf(resolution.candidate)
@@ -272,23 +315,24 @@ class PureLinkInputMethodService : InputMethodService() {
     pendingCardUrl = null
     creatingCard = false
     verificationOperation = null
-    description.text.clear()
+    descriptionText = ""
+    renderDescriptionPreview()
     if (found.isEmpty()) {
       showStatus(R.string.no_purelink_found, error = true)
       activateManualMode()
     } else {
       hideStatus()
-      manualPanel.visibility = View.GONE
-      inputState.focusManual()
+      showCandidateMode()
     }
     renderCandidates()
   }
 
   private fun renderCandidates() {
     candidates.removeAllViews()
+    renderDescriptionPreview()
     val rows = selections.rows()
     val hasRows = rows.isNotEmpty()
-    if (hasRows && manualPanel.visibility != View.VISIBLE) {
+    if (hasRows && mode == PureLinkImeMode.CANDIDATES) {
       candidatesScroll.visibility = View.VISIBLE
       descriptionPanel.visibility = View.VISIBLE
     } else if (!hasRows) {
@@ -303,16 +347,36 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   private fun candidateControls(rows: List<PureLinkSelection>): View = LinearLayout(this).apply {
-    gravity = Gravity.END or Gravity.CENTER_VERTICAL
+    gravity = Gravity.START or Gravity.CENTER_VERTICAL
     setPadding(0, 0, 0, dp(2))
+    val delete = iconButton(R.drawable.ic_ime_clear, R.string.delete_selected_candidates, R.color.ime_surface) { deleteSelectedCandidates() }.apply {
+      isEnabled = !creatingCard && rows.any { it.selected }
+      alpha = if (isEnabled) 1f else .45f
+    }
+    addView(delete, LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(6) })
     if (rows.size > 1) {
       addView(compactTextButton(getString(R.string.select_all), getString(R.string.select_all)) { selections.toggleSelectAll(); renderCandidates() }, compactActionParams())
       addView(compactTextButton(getString(R.string.preview_all), getString(R.string.preview_all)) { selections.togglePreviewForSelected(); renderCandidates() }, compactActionParams())
     }
-    addView(iconButton(R.drawable.ic_ime_clear, R.string.clear_session, R.color.ime_surface) { clearSession(invalidate = true) }, LinearLayout.LayoutParams(dp(34), dp(34)))
+    addView(Space(this@PureLinkInputMethodService), LinearLayout.LayoutParams(0, dp(34), 1f))
   }
 
   private fun compactActionParams() = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(34)).apply { marginEnd = dp(2) }
+
+  private fun deleteSelectedCandidates() {
+    if (creatingCard || selections.removeSelected() == 0) return
+    // A previously returned Card URL represents a different selection and must not be re-shared.
+    pendingCardUrl = null
+    val remaining = selections.rows()
+    if (remaining.isEmpty()) {
+      activateManualMode()
+    } else {
+      // A single remaining row is presented as the ordinary single-link share state.
+      if (remaining.size == 1) selections.setSelected(0, true)
+      showCandidateMode()
+    }
+    renderCandidates()
+  }
 
   private fun candidateRow(index: Int, row: PureLinkSelection, showSelection: Boolean): View = LinearLayout(this).apply {
     orientation = LinearLayout.HORIZONTAL
@@ -335,12 +399,14 @@ class PureLinkInputMethodService : InputMethodService() {
         textSize = 11f
         setTextColor(color(R.color.ime_muted))
         maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
       })
       addView(TextView(this@PureLinkInputMethodService).apply {
         text = row.candidate.slug
         textSize = 17f
         setTextColor(color(R.color.ime_text))
         maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
       })
     }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
     addView(compactTextButton(if (row.preview) "[+]" else "[ ]", getString(R.string.toggle_share_preview)) {
@@ -364,18 +430,19 @@ class PureLinkInputMethodService : InputMethodService() {
     val selected = selections.selectedRows()
     when (selected.size) {
       0 -> showStatus(R.string.no_selected_links, error = true)
-      1 -> shareText(PureLinkShareFormatter.formatSingle(selected.single(), description.text))
+      1 -> shareText(PureLinkShareFormatter.formatSingle(selected.single(), descriptionText))
       else -> startNativeVerification(selected)
     }
   }
 
   private fun startNativeVerification(selected: List<PureLinkSelection>) {
-    if (PureLinkShareFormatter.formatBundle(selected, description.text).length > 1000) {
+    if (PureLinkShareFormatter.formatBundle(selected, descriptionText).length > 1000) {
       showStatus(R.string.bundle_too_long, error = true)
       return
     }
     val operation = sessionGate.beginOperation() ?: return
     verificationOperation = operation
+    transientActivity.begin(PureLinkOwnedActivity.VERIFICATION, operation)
     creatingCard = true
     showStatus(R.string.verifying_card)
     renderCandidates()
@@ -387,6 +454,7 @@ class PureLinkInputMethodService : InputMethodService() {
         putExtra(NativeVerificationActivity.EXTRA_LOCALE, responseLocale())
       })
     } catch (_: ActivityNotFoundException) {
+      transientActivity.clear()
       verificationOperation = null
       creatingCard = false
       showStatus(R.string.verification_failed, error = true)
@@ -398,7 +466,7 @@ class PureLinkInputMethodService : InputMethodService() {
     if (!sessionGate.accepts(operation)) return
     val selected = selections.selectedRows()
     if (selected.size < 2) return
-    val body = PureLinkShareFormatter.formatBundle(selected, description.text)
+    val body = PureLinkShareFormatter.formatBundle(selected, descriptionText)
     if (body.length > 1000) {
       creatingCard = false
       showStatus(R.string.bundle_too_long, error = true)
@@ -530,25 +598,22 @@ class PureLinkInputMethodService : InputMethodService() {
 
   /** All generated key input stays in one of the service-owned fields; never in host editor text. */
   private fun type(value: String) {
-    when (inputState.target) {
-      PureLinkImeInputTarget.DESCRIPTION -> insert(description, value)
-      PureLinkImeInputTarget.MANUAL -> insert(manualSlug, value)
+    if (mode == PureLinkImeMode.MANUAL && inputState.target == PureLinkImeInputTarget.MANUAL) {
+      insert(manualSlug, value)
+      if (value.length == 1) shiftState.consumeCharacter(value[0])
     }
-    if (value.length == 1) shiftState.consumeCharacter(value[0])
     renderKeyboard()
   }
 
   private fun backspace() {
-    when (inputState.target) {
-      PureLinkImeInputTarget.DESCRIPTION -> deleteFrom(description)
-      PureLinkImeInputTarget.MANUAL -> deleteFrom(manualSlug)
+    if (mode == PureLinkImeMode.MANUAL && inputState.target == PureLinkImeInputTarget.MANUAL) {
+      deleteFrom(manualSlug)
     }
   }
 
   private fun enter() {
-    when (inputState.target) {
-      PureLinkImeInputTarget.MANUAL -> resolveManualSlug()
-      PureLinkImeInputTarget.DESCRIPTION -> insert(description, "\n")
+    if (mode == PureLinkImeMode.MANUAL && inputState.target == PureLinkImeInputTarget.MANUAL) {
+      resolveManualSlug()
     }
   }
 
@@ -569,12 +634,14 @@ class PureLinkInputMethodService : InputMethodService() {
 
   private fun clearSession(invalidate: Boolean) {
     if (invalidate) sessionGate.beginNewSessionState()
+    transientActivity.clear()
     selections.clear()
     pendingCardUrl = null
     creatingCard = false
     verificationOperation = null
     shiftState.reset()
-    if (::description.isInitialized) description.text.clear()
+    descriptionText = ""
+    renderDescriptionPreview()
     if (::manualSlug.isInitialized) manualSlug.text.clear()
     hideStatus()
     if (::candidates.isInitialized) renderCandidates()
@@ -597,6 +664,13 @@ class PureLinkInputMethodService : InputMethodService() {
     status.text = getString(resource)
     status.setTextColor(color(if (error) R.color.ime_error else R.color.ime_muted))
     status.visibility = View.VISIBLE
+  }
+
+  private fun renderDescriptionPreview() {
+    if (!::descriptionPreview.isInitialized) return
+    val empty = descriptionText.isBlank()
+    descriptionPreview.text = if (empty) getString(R.string.description_hint) else descriptionText
+    descriptionPreview.setTextColor(color(if (empty) R.color.ime_muted else R.color.ime_text))
   }
 
   private fun showTransientStatus(resource: Int) {

@@ -22,6 +22,15 @@ class PureLinkSelectionModel(candidates: List<PureLinkCandidate> = emptyList()) 
     state = emptyList()
   }
 
+  /** Drops only currently selected rows, preserving the order and preview state of every other row. */
+  fun removeSelected(): Int {
+    val before = state.size
+    state = state.filterNot { it.selected }
+    return before - state.size
+  }
+
+  fun hasSelectedRows(): Boolean = state.any { it.selected }
+
   fun setSelected(index: Int, selected: Boolean) {
     state = state.mapIndexed { current, row -> if (current == index) row.copy(selected = selected) else row }
   }

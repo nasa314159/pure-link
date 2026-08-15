@@ -9,9 +9,13 @@ class PureLinkSessionGate {
   private var active = false
 
   fun activate() {
-    active = true
-    generation += 1
+    if (!active) {
+      active = true
+      generation += 1
+    }
   }
+
+  fun isActive(): Boolean = active
 
   fun beginNewSessionState() {
     if (active) generation += 1
