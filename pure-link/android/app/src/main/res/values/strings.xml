@@ -32,6 +32,7 @@
   <string name="manual_slug">Manual slug</string>
   <string name="manual_slug_hint">Type a PureLink slug</string>
   <string name="manual_toggle">Manual</string>
+  <string name="account">Account</string>
   <string name="resolve">Resolve</string>
   <string name="select_all">Select all</string>
   <string name="preview_all">+ All</string>

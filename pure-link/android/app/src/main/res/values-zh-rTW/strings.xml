@@ -32,6 +32,7 @@
   <string name="manual_slug">手動短代號</string>
   <string name="manual_slug_hint">輸入 PureLink 短代號</string>
   <string name="manual_toggle">手動</string>
+  <string name="account">帳號</string>
   <string name="resolve">解析</string>
   <string name="select_all">全選</string>
   <string name="preview_all">+ 全部</string>

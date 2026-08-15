@@ -8,7 +8,7 @@ PureLink is a small **auxiliary Android input method** for resolving deliberatel
 
 1. Copy text containing a marked PureLink reference or a complete `https://no-no.uk/<slug>` URL.
 2. Switch the input method to **PureLink keyboard**.
-3. Press its single **Clipboard** button. PureLink reads only the current text clip, parses it locally, and never inserts the raw clipboard into the editor.
+3. Its visible, focused **Manual slug** field is ready immediately. Type a bare valid slug there, or press **Clipboard** to read only the current text clip and parse it locally. PureLink never inserts either value into the editor behind the keyboard.
 4. Select detected links and optionally set their `+ Preview` state.
 5. Optionally enter a one-time description (up to about 280 Unicode characters).
 6. Press **Share**:
@@ -20,7 +20,9 @@ The setup Activity shows whether the keyboard is enabled, opens Android’s inpu
 
 ## What the keyboard includes
 
-- A compact A–Z/a–z, 0–9, `_`, and `-` key layout with Shift, Backspace, and Enter.
+- A compact dark, Samsung/Gboard-like A–Z/a–z, 0–9, `_`, and `-` layout: digits, QWERTY rows, Shift/Backspace, then Globe/`_`/`-`/Enter. It has no horizontal scrolling at 360dp, 412dp, or 480dp widths.
+- Lowercase, one-shot Shift, and double-tap Caps Lock; a one-shot Shift is consumed only by the next letter.
+- Direct icon actions for Clipboard, Manual, Globe, Share, and Account. Account opens the matching localized PureLink account page in the browser; it does not create native account state.
 - One explicit Clipboard / Parse action plus a separate description-only paste control; it never parses pasted description text as candidates.
 - Compact candidate rows, source order preserved, with Select All and `+ All` for multiple matches.
 - Open and Preview actions that only construct `https://no-no.uk/<slug>` and `https://no-no.uk/<slug>+`.
@@ -55,7 +57,9 @@ For two or more selected candidates, **Share** opens a transient WebView at exac
 
 The native endpoint accepts only Card content and the one-time token; it cannot create URLs or formulas, set custom slugs/options, or return a management credential. The server stores only an irreversible token hash, expiry, and used state, cleans up expired rows opportunistically, atomically consumes a token before Card creation, and returns only the public Card URL. A verified token is intentionally burned if a later Card insertion fails, which prevents replay. The Card body contains the optional description and selected labels/public PureLink URLs in source order; no destination URL, formula source, existing Card content, original clipboard text, or management credential is shared.
 
-Canceling or failing verification, an unavailable network, or a failed Card creation leaves selection, `+` states, and description in the active session for retry. Async verification/Card results are discarded after a new parse or finished IME session, so they cannot later open a share sheet. Network access is declared solely for this explicit multi-link Card creation; there is no automatic lookup or background request. The existing server-side anti-abuse and rate-limit rules remain authoritative.
+Canceling or failing verification, an unavailable network, or a failed Card creation leaves selection, `+` states, and description in the active session for retry. Async verification/Card results are discarded after a new parse or finished IME session, so they cannot later open a share sheet. Network access is declared solely for this explicit multi-link Card creation; there is no automatic lookup or background request. `INTERNET` is a normal manifest permission and never produces a runtime prompt. The existing server-side anti-abuse and rate-limit rules remain authoritative.
+
+The deployed Worker must include the native verification page, `/api/native/challenge/complete`, `/api/native/cards`, the native-token D1 migration, and a Turnstile configuration for the `native-card-create` action. Without those deployed routes/configuration, multi-link sharing correctly fails after the verification attempt while local parsing and single-link sharing remain available.
 
 Opening Android’s chooser does not prove that a recipient accepted or delivered a message. PureLink therefore preserves the session, including a returned Card URL, until the user explicitly chooses **Clear** or the IME session ends.
 

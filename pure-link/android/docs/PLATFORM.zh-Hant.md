@@ -6,13 +6,13 @@
 
 `PureLinkInputMethodService` 以 Android `InputMethodService` 註冊，包含必要的 `android.permission.BIND_INPUT_METHOD`、`android.view.InputMethod` intent filter 與 `res/xml/method.xml` metadata。啟用與選擇完全由 Android 設定和輸入法挑選器控制；沒有 Samsung 或 Gboard 專用 API。
 
-這是輔助解析鍵盤，不讀取周圍編輯器文字、不產生預測、不學習輸入，也不監看剪貼簿。它只會在使用者按下「剪貼簿」後讀取目前的文字剪貼簿；敏感欄位只依 `EditorInfo` metadata 清除暫存工作階段，不會讀取欄位內容。`ACTION_SEND` 與 `ACTION_PROCESS_TEXT` 都是標記／完整網址限定的輸入路徑；後者讀取 `Intent.EXTRA_PROCESS_TEXT`、回傳 `RESULT_CANCELED`，不回傳替換文字。
+這是輔助解析鍵盤，不讀取周圍編輯器文字、不產生預測、不學習輸入，也不監看剪貼簿。它開啟時會顯示並聚焦內部的手動短代號欄位；按鍵只會輸入此欄位或選填說明欄，絕不寫入後方宿主編輯器。深色五列版面只提供 `[A-Za-z0-9_-]`：數字、QWERTY、ASDF、Shift／ZXCVBNM／退格、Globe／`_`／`-`／Enter。Shift 有小寫、一次 Shift、雙擊 Caps Lock 三種狀態，且只有英文字母會消耗一次 Shift。五個直接工具列圖示是剪貼簿、手動、Globe、分享與帳號；帳號只會開啟相符語系的網頁帳號／登入入口。它只會在使用者按下「剪貼簿」後讀取目前的文字剪貼簿；敏感欄位只依 `EditorInfo` metadata 清除暫存工作階段，不會讀取欄位內容。`ACTION_SEND` 與 `ACTION_PROCESS_TEXT` 都是標記／完整網址限定的輸入路徑；後者讀取 `Intent.EXTRA_PROCESS_TEXT`、回傳 `RESULT_CANCELED`，不回傳替換文字。
 
 ## 網路與驗證邊界
 
-單一連結只在本機格式化並分享，不會連線。兩個以上連結建立小卡時，IME 會開啟短暫 `NativeVerificationActivity`，其 WebView 只能載入 `https://no-no.uk/native/verify?locale=en|zh-Hant`、固定的 PureLink 驗證 API 路徑與 HTTPS `challenges.cloudflare.com` Turnstile 資源。JavaScript 和 DOM storage 僅因 Turnstile 所需而啟用；使用預設 WebView user agent，不提供 JavaScript bridge，且不把剪貼簿或小卡本文交給 WebView。
+單一連結只在本機格式化並分享，不會連線。`INTERNET` 是一般 Android manifest 權限，不需要 runtime 提示。兩個以上連結建立小卡時，IME 會開啟短暫 `NativeVerificationActivity`，其 WebView 只能載入 `https://no-no.uk/native/verify?locale=en|zh-Hant`、固定的 PureLink 驗證 API 路徑與 HTTPS `challenges.cloudflare.com` Turnstile 資源。JavaScript 和 DOM storage 僅因 Turnstile 所需而啟用；使用預設 WebView user agent，不提供 JavaScript bridge，且不把剪貼簿或小卡本文交給 WebView。
 
-驗證頁只把原始 Turnstile response 送往 `/api/native/challenge/complete`。Worker 會在伺服器端確認 success、主機 `no-no.uk` 與動作 `native-card-create`，接著建立兩分鐘有效的一次性不透明憑證。D1 只保存該憑證的 SHA-256 雜湊、到期時間與使用時間。驗證頁只以 `purelink-native://verified?token=…` 回傳 43 字元 base64url 憑證；Activity 驗證後用同一個行程的 `ResultReceiver` 傳回 IME，並銷毀 WebView；原始 Turnstile token 不會到達 IME。
+驗證頁只把原始 Turnstile response 送往 `/api/native/challenge/complete`。Worker 會在伺服器端確認 success、主機 `no-no.uk` 與動作 `native-card-create`，接著建立兩分鐘有效的一次性不透明憑證。D1 只保存該憑證的 SHA-256 雜湊、到期時間與使用時間。驗證頁只以 `purelink-native://verified?token=…` 回傳 43 字元 base64url 憑證；Activity 驗證後用同一個行程的 `ResultReceiver` 傳回 IME，並銷毀 WebView；原始 Turnstile token 不會到達 IME。部署必須包含此頁、兩個原生 API route、原生憑證 D1 migration 與設定好的 Turnstile 動作；否則多連結小卡無法完成，並必須保留本機工作階段供重試。
 
 之後才會以 `HttpsURLConnection` 將下列資料送往固定 `https://no-no.uk/api/native/cards`：
 
@@ -27,10 +27,10 @@
 ## 實機 QA
 
 1. 安裝 debug APK，從設定 Activity 啟用 PureLink 鍵盤，並用 Android 輸入法挑選器切換。
-2. 在一般編輯欄位確認緊湊 slug 鍵、Shift、退格、Enter、剪貼簿、分享、清除與切換按鈕；窄螢幕時不用橫向捲動尋找字元。
-3. 手動解析 `A3cd8`，確認 Open 不改變分享的 `+` 狀態，Preview 只開啟 `https://no-no.uk/A3cd8+`；獨立 `[+]` 控制才改變最後分享網址。
+2. 在一般編輯欄位確認手動短代號欄可見、已聚焦，輸入 `A3cd8` 不會改變宿主編輯器。確認深色鍵盤只有數字、QWERTY、ASDF、Shift／ZXCVBNM／退格、Globe／`_`／`-`／Enter；在 360dp、412dp、480dp 與旋轉時都不需橫向捲動。
+3. 按一次 Shift 後輸入 `_`、`7`、英文字母，確認只有字母消耗一次 Shift；雙擊 Shift 進入 Caps Lock，再按一次回到小寫。手動解析 `A3cd8`，確認 Open 不改變分享的 `+` 狀態，Preview 只開啟 `https://no-no.uk/A3cd8+`；獨立 `[+]` 控制才改變最後分享網址。
 4. 以三個帶標記候選測試全選、取消一列、`+ 全部`；只改變選取列。
 5. 使用說明欄旁的貼上按鈕貼入中文、日文與 emoji，確認最多 280 Unicode code points，且不改變候選。
 6. 單一連結分享時確認沒有網路／Turnstile；說明、標籤與網址的間距正確，分享選單後工作階段仍存在。
 7. 多連結分享時確認短暫驗證窗只顯示 PureLink／Turnstile，成功後自動關閉，只分享回傳的小卡公開網址；取消或失敗後可重試且狀態保留。
-8. 測試 `ACTION_SEND`、`ACTION_PROCESS_TEXT`、密碼欄位、無瀏覽器裝置、英文與繁體中文、旋轉、TalkBack 與無網路情境。
+8. 確認帳號圖示只在瀏覽器開啟 `/en/account` 或 `/zh-Hant/account`，不建立原生登入狀態。測試 `ACTION_SEND`、`ACTION_PROCESS_TEXT`、密碼欄位、無瀏覽器裝置、英文與繁體中文、旋轉、TalkBack 與無網路情境。
