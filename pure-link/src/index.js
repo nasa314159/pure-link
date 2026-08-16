@@ -3,13 +3,16 @@ import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requi
 import { enforceWriteProtection } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text, xml } from './http.js';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNotFoundPage, renderReportPage, renderUrlPreview } from './pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderUrlPreview } from './pages.js';
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
 import { BillingError, createCheckout, getCreditBalance, handleCreemWebhook, isCheckoutConfigured } from './billing.js';
 import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
+import { cleanupExpiredNativeCreateTokens, consumeNativeCreateToken, issueNativeCreateToken, readNativeCardInput } from './native-cards.js';
+
+const NATIVE_CHALLENGE_HOSTNAME = 'no-no.uk';
 
 export default {
   async fetch(request, env, context) {
@@ -54,6 +57,15 @@ export async function routeRequest(request, env, context) {
     const googleAuthConfigured = isGoogleAuthConfigured(env);
     const user = googleAuthConfigured ? await getCurrentUser(request, env) : null;
     return publicReadResponse(request, html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user, locale), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) }));
+  }
+  if (request.method === 'GET' && originalPath === 'native/verify') {
+    const nonce = createSlug() + createSlug();
+    const challengeLocale = normalizeLocale(requestUrl.searchParams.get('locale')) || resolveLocale(request);
+    return html(
+      renderNativeVerificationPage(nonce, env.TURNSTILE_SITE_KEY || '', challengeLocale),
+      {},
+      { scriptNonce: nonce, turnstile: Boolean(env.TURNSTILE_SITE_KEY) },
+    );
   }
   if (isPublicRead && path === 'robots.txt') {
     const origin = publicOrigin(requestUrl, env);
@@ -126,6 +138,14 @@ export async function routeRequest(request, env, context) {
 
   if (request.method === 'POST' && (path === 'api/links' || path === 'api/create')) {
     return createLink(request, requestUrl, repository, env, context);
+  }
+
+  if (request.method === 'POST' && path === 'api/native/challenge/complete') {
+    return completeNativeChallenge(request, requestUrl, env, context);
+  }
+
+  if (request.method === 'POST' && path === 'api/native/cards') {
+    return createNativeCard(request, requestUrl, repository, env, context);
   }
 
   if (request.method === 'POST' && path === 'api/formulas/generate') {
@@ -248,6 +268,65 @@ async function createLink(request, requestUrl, repository, env, context) {
     }
   }
 
+  return json({ error: messages.api.uniqueLinkFailed }, { status: 503 });
+}
+
+async function completeNativeChallenge(request, requestUrl, env, context) {
+  const messages = getMessages(resolveResponseLocale(request));
+  if (!request.headers.get('origin') || !requireSameOrigin(request, env)) {
+    return json({ error: messages.api.invalidRequest }, { status: 403 });
+  }
+  const input = await readCreateInput(request);
+  if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some((key) => key !== 'turnstileToken')) {
+    throw new ValidationError(messages.api.nativeRequestInvalid);
+  }
+  const protectionResponse = await enforceWriteProtection({
+    request,
+    requestUrl,
+    env,
+    db: env.pure_link_db,
+    action: 'native-card-create',
+    token: input.turnstileToken,
+    context,
+    expectedHostname: NATIVE_CHALLENGE_HOSTNAME,
+  });
+  if (protectionResponse) return protectionResponse;
+  const issued = await issueNativeCreateToken(env.pure_link_db);
+  context?.waitUntil?.(cleanupExpiredNativeCreateTokens(env.pure_link_db).catch((error) => {
+    console.error('Native Card token cleanup failed', { message: error?.message });
+  }));
+  return json(issued, { status: 201 });
+}
+
+async function createNativeCard(request, requestUrl, repository, env, context) {
+  const messages = getMessages(resolveResponseLocale(request));
+  const input = await readCreateInput(request);
+  let nativeInput;
+  try {
+    nativeInput = readNativeCardInput(input);
+  } catch (error) {
+    if (error instanceof ValidationError) return json({ error: error.field === 'nativeCreateToken' ? messages.api.nativeTokenInvalid : messages.api.nativeRequestInvalid, field: error.field || null }, { status: 400 });
+    throw error;
+  }
+
+  // Normalize before consuming the capability, so a local validation mistake never burns it.
+  const normalized = normalizeCreateInput({ contentType: 'card', content: nativeInput.content });
+  const consumed = await consumeNativeCreateToken(env.pure_link_db, nativeInput.nativeCreateToken);
+  if (!consumed) return json({ error: messages.api.nativeTokenInvalid, field: 'nativeCreateToken' }, { status: 403 });
+
+  const managementTokenHash = await hashManagementToken(createManagementToken());
+  let slug = '';
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    slug = createSlug();
+    if (await repository.exists(slug)) continue;
+    try {
+      await repository.create({ ...normalized, slug, managementTokenHash, ownerUserId: null });
+      recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'create', contentType: 'card' });
+      return json({ url: `${publicOrigin(requestUrl, env)}/${slug}` }, { status: 201 });
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+    }
+  }
   return json({ error: messages.api.uniqueLinkFailed }, { status: 503 });
 }
 
