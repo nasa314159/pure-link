@@ -48,6 +48,18 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     expires_at INTEGER NOT NULL
 );
 
+-- Short-lived, opaque authorization for verified Android multi-link Card creation.
+-- The raw client token, clipboard data, and Card body are never stored here.
+CREATE TABLE IF NOT EXISTS native_card_tokens (
+    token_hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_native_card_tokens_expiry
+ON native_card_tokens(expires_at);
+
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     google_subject TEXT NOT NULL UNIQUE,

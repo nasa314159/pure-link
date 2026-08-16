@@ -1060,6 +1060,48 @@ export function renderNotFoundPage(locale = 'zh-Hant') {
   });
 }
 
+/** A deliberately tiny, noindex Turnstile surface used only by the Android verification WebView. */
+export function renderNativeVerificationPage(nonce, turnstileSiteKey, locale = 'en') {
+  const m = getMessages(locale).nativeVerify;
+  const clientCopy = JSON.stringify(m).replaceAll('<', '\\u003c');
+  const siteKey = JSON.stringify(String(turnstileSiteKey || '')).replaceAll('<', '\\u003c');
+  return documentShell({
+    title: `PureLink — ${m.title}`,
+    description: m.description,
+    robots: 'noindex, nofollow, noarchive',
+    locale,
+    body: `<main class="home"><p class="eyebrow">PURELINK</p><h1>${escapeHtml(m.title)}</h1><p class="lede">${escapeHtml(m.description)}</p><div id="native-turnstile" class="turnstile-wrap"></div><p class="status" id="native-status" role="status"><span class="status-dot"></span><span>${escapeHtml(m.loading)}</span></p><button class="secondary-button" type="button" id="native-cancel">${escapeHtml(m.cancel)}</button></main>`,
+    nonce,
+    externalScript: 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit',
+    script: `(() => {
+      const copy = ${clientCopy};
+      const siteKey = ${siteKey};
+      const status = document.getElementById('native-status');
+      const setStatus = (value) => { status.lastElementChild.textContent = value; };
+      const fail = () => setStatus(copy.failed);
+      document.getElementById('native-cancel').addEventListener('click', () => location.replace('purelink-native://cancel'));
+      const complete = async (turnstileToken) => {
+        try {
+          const response = await fetch('/api/native/challenge/complete', {
+            method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ turnstileToken }),
+          });
+          const payload = await response.json();
+          if (!response.ok || !/^[A-Za-z0-9_-]{43}$/.test(payload.nativeCreateToken || '')) throw new Error('verification failed');
+          location.replace('purelink-native://verified?token=' + encodeURIComponent(payload.nativeCreateToken));
+        } catch { fail(); }
+      };
+      window.addEventListener('load', () => {
+        if (!siteKey || !window.turnstile) { fail(); return; }
+        window.turnstile.render('#native-turnstile', {
+          sitekey: siteKey, action: 'native-card-create', callback: complete,
+          'error-callback': fail, 'expired-callback': fail,
+        });
+      });
+    })();`,
+  });
+}
+
 function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
   const scripts = [externalScript, ...externalScripts].filter(Boolean);
