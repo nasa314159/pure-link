@@ -51,7 +51,7 @@ class PureLinkInputMethodService : InputMethodService() {
 
   private val selections = PureLinkSelectionModel()
   private val cardClient = PureLinkCardClient()
-  private val sessionGate = PureLinkSessionGate()
+  private val sessionGate = PureLinkSessionGate { message -> Log.d(QA_TAG, "sessionGate: $message") }
   private val inputState = PureLinkImeInputState()
   private val shiftState = PureLinkShiftState()
   private val transientActivity = PureLinkTransientActivityState()
@@ -154,6 +154,8 @@ class PureLinkInputMethodService : InputMethodService() {
     val pendingActivity = hasPendingActivity()
     Log.d(QA_TAG, "onFinishInputView finishingInput=$finishingInput hasPendingActivity=$pendingActivity")
     if (finishingInput && ::candidates.isInitialized && !pendingActivity) {
+      // Temporary QA instrumentation.
+      Log.d(QA_TAG, "about to call sessionGate.finish from onFinishInputView finishingInput=$finishingInput hasPendingActivity=$pendingActivity")
       sessionGate.finish()
       clearSession(invalidate = false)
     }
@@ -298,6 +300,7 @@ class PureLinkInputMethodService : InputMethodService() {
   private fun editDescription() {
     // Temporary QA instrumentation.
     Log.d(QA_TAG, "editDescription entered")
+    Log.d(QA_TAG, "about to call sessionGate.beginOperation from editDescription")
     val operation = sessionGate.beginOperation()
     if (operation == null) {
       Log.d(QA_TAG, "description operation rejected")
@@ -357,6 +360,8 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   private fun applyResolution(resolution: PureLinkResolution) {
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "about to call sessionGate.beginNewSessionState from applyResolution")
     sessionGate.beginNewSessionState()
     transientActivity.clear()
     val found = when (resolution) {
@@ -509,6 +514,7 @@ class PureLinkInputMethodService : InputMethodService() {
       showStatus(R.string.bundle_too_long, error = true)
       return
     }
+    Log.d(QA_TAG, "about to call sessionGate.beginOperation from startNativeVerification")
     val operation = sessionGate.beginOperation()
     if (operation == null) {
       Log.d(QA_TAG, "native verification operation rejected")
@@ -710,7 +716,11 @@ class PureLinkInputMethodService : InputMethodService() {
   private fun clearSession(invalidate: Boolean) {
     // Temporary QA instrumentation.
     Log.d(QA_TAG, "clearSession entered invalidate=$invalidate")
-    if (invalidate) sessionGate.beginNewSessionState()
+    if (invalidate) {
+      // Temporary QA instrumentation.
+      Log.d(QA_TAG, "about to call sessionGate.beginNewSessionState from clearSession invalidate=$invalidate")
+      sessionGate.beginNewSessionState()
+    }
     transientActivity.clear()
     selections.clear()
     pendingCardUrl = null
