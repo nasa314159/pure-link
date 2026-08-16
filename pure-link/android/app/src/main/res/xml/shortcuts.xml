@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+  <shortcut
+      android:shortcutId="resolve_purelink"
+      android:enabled="true"
+      android:icon="@drawable/ic_purelink"
+      android:shortcutShortLabel="@string/shortcut_resolve"
+      android:shortcutLongLabel="@string/shortcut_resolve_long">
+    <intent
+        android:action="uk.no_no.purelink.tools.action.RESOLVE"
+        android:targetPackage="uk.no_no.purelink.tools"
+        android:targetClass="uk.no_no.purelink.tools.MainActivity" />
+  </shortcut>
+</shortcuts>

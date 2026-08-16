@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../src/index.js';
 
 describe('PureLink worker', () => {
@@ -143,6 +143,93 @@ describe('PureLink worker', () => {
     }), { pure_link_db: db });
     expect(response.status).toBe(503);
     expect(db.links.size).toBe(0);
+  });
+
+  it('serves a noindex, localized native Turnstile verification page only at its dedicated route', async () => {
+    env.TURNSTILE_SITE_KEY = 'site-key';
+    const response = await worker.fetch(new Request('https://pure.test/native/verify?locale=zh-Hant'), env);
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('<html lang="zh-Hant">');
+    expect(body).toContain('noindex, nofollow, noarchive');
+    expect(body).toContain('native-card-create');
+    expect(body).toContain('/api/native/challenge/complete');
+  });
+
+  it('requires a verified, expected-host/action Turnstile response before issuing an opaque native Card token', async () => {
+    const protectedEnv = {
+      pure_link_db: db,
+      PUBLIC_ORIGIN: 'https://no-no.uk',
+      RATE_LIMIT_SECRET: 'rate-limit-test-secret',
+      TURNSTILE_SECRET_KEY: 'turnstile-test-secret',
+    };
+    for (const verification of [
+      { success: false, action: 'native-card-create', hostname: 'no-no.uk' },
+      { success: true, action: 'create', hostname: 'no-no.uk' },
+      { success: true, action: 'native-card-create', hostname: 'evil.example' },
+    ]) {
+      const rejected = await completeNativeChallenge(protectedEnv, verification);
+      expect(rejected.response.status).toBe(403);
+      expect(db.nativeTokens.size).toBe(0);
+    }
+
+    const missing = await worker.fetch(new Request('https://no-no.uk/api/native/challenge/complete', {
+      method: 'POST',
+      headers: { origin: 'https://no-no.uk', 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    }), protectedEnv);
+    expect(missing.status).toBe(403);
+
+    const valid = await completeNativeChallenge(protectedEnv, { success: true, action: 'native-card-create', hostname: 'no-no.uk' });
+    expect(valid.response.status).toBe(201);
+    expect(valid.body.nativeCreateToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(valid.body.expiresIn).toBe(120);
+    expect(db.nativeTokens.size).toBe(1);
+    expect([...db.nativeTokens.keys()][0]).not.toBe(valid.body.nativeCreateToken);
+    expect(JSON.stringify([...db.nativeTokens.values()])).not.toContain(valid.body.nativeCreateToken);
+  });
+
+  it('creates exactly one Card from a native token and exposes only its public URL', async () => {
+    const token = (await issueTestNativeToken(env)).nativeCreateToken;
+    const created = await postNativeCard(env, { content: 'Approved local bundle', nativeCreateToken: token });
+    expect(created.response.status).toBe(201);
+    expect(created.body).toEqual({ url: expect.stringMatching(/^https:\/\/pure\.test\/[A-Za-z0-9]+$/) });
+    const stored = db.links.get(created.body.url.split('/').pop());
+    expect(stored.content_type).toBe('card');
+    expect(stored.content).toBe('Approved local bundle');
+
+    const replay = await postNativeCard(env, { content: 'Replay', nativeCreateToken: token });
+    expect(replay.response.status).toBe(403);
+    expect(db.links.size).toBe(1);
+  });
+
+  it('rejects malformed or expanded native requests before consuming their authorization', async () => {
+    const token = (await issueTestNativeToken(env)).nativeCreateToken;
+    const expanded = await postNativeCard(env, { content: 'Approved', nativeCreateToken: token, contentType: 'url', slug: 'not-allowed' });
+    expect(expanded.response.status).toBe(400);
+    const tooLong = await postNativeCard(env, { content: 'x'.repeat(1001), nativeCreateToken: token });
+    expect(tooLong.response.status).toBe(400);
+    const valid = await postNativeCard(env, { content: 'Still usable after validation errors', nativeCreateToken: token });
+    expect(valid.response.status).toBe(201);
+
+    const malformed = await postNativeCard(env, { content: 'Nope', nativeCreateToken: 'short' });
+    expect(malformed.response.status).toBe(400);
+  });
+
+  it('atomically prevents repeated, concurrent, and expired native token use from creating two Cards', async () => {
+    const concurrentToken = (await issueTestNativeToken(env)).nativeCreateToken;
+    const [first, second] = await Promise.all([
+      postNativeCard(env, { content: 'First concurrent Card', nativeCreateToken: concurrentToken }),
+      postNativeCard(env, { content: 'Second concurrent Card', nativeCreateToken: concurrentToken }),
+    ]);
+    expect([first.response.status, second.response.status].sort()).toEqual([201, 403]);
+    expect(db.links.size).toBe(1);
+
+    const expiring = await issueTestNativeToken(env);
+    db.nativeTokens.get(expiring.tokenHash).expires_at = 0;
+    const expired = await postNativeCard(env, { content: 'Expired', nativeCreateToken: expiring.nativeCreateToken });
+    expect(expired.response.status).toBe(403);
+    expect(db.links.size).toBe(1);
   });
 
   it('requires an authenticated same-origin account for formula AI', async () => {
@@ -327,10 +414,46 @@ async function createLink(env, body) {
   return { response, body: await response.json() };
 }
 
+async function completeNativeChallenge(env, verification) {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(verification))));
+  try {
+    const response = await worker.fetch(new Request('https://no-no.uk/api/native/challenge/complete', {
+      method: 'POST',
+      headers: { origin: 'https://no-no.uk', 'content-type': 'application/json' },
+      body: JSON.stringify({ turnstileToken: 'turnstile-token' }),
+    }), env);
+    return { response, body: await response.json() };
+  } finally {
+    vi.unstubAllGlobals();
+  }
+}
+
+async function issueTestNativeToken(env) {
+  const response = await worker.fetch(new Request('https://pure.test/api/native/challenge/complete', {
+    method: 'POST',
+    headers: { origin: 'https://pure.test', 'content-type': 'application/json' },
+    body: JSON.stringify({ turnstileToken: 'development-bypass' }),
+  }), env);
+  const body = await response.json();
+  const tokenHash = [...env.pure_link_db.nativeTokens.keys()].at(-1);
+  return { ...body, tokenHash };
+}
+
+async function postNativeCard(env, body) {
+  const response = await worker.fetch(new Request('https://pure.test/api/native/cards', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  }), env);
+  return { response, body: await response.json() };
+}
+
 class MemoryD1 {
   constructor() {
     this.links = new Map();
     this.reports = [];
+    this.nativeTokens = new Map();
+    this.rateLimits = new Map();
   }
 
   prepare(sql) {
@@ -351,6 +474,20 @@ class MemoryStatement {
   }
 
   async first() {
+    if (this.sql.startsWith('INSERT INTO rate_limits')) {
+      const [bucketKey, expiresAt] = this.values;
+      const current = this.db.rateLimits.get(bucketKey) || { request_count: 0, expires_at: expiresAt };
+      current.request_count += 1;
+      this.db.rateLimits.set(bucketKey, current);
+      return { request_count: current.request_count };
+    }
+    if (this.sql.startsWith('UPDATE native_card_tokens')) {
+      const [tokenHash, now] = this.values;
+      const token = this.db.nativeTokens.get(tokenHash);
+      if (!token || token.used_at != null || Number(token.expires_at) <= Number(now)) return null;
+      token.used_at = '2026-08-06 00:00:00';
+      return { token_hash: tokenHash };
+    }
     if (this.sql.startsWith('SELECT 1 AS found')) {
       return this.db.links.has(this.values[0]) ? { found: 1 } : null;
     }
@@ -361,6 +498,14 @@ class MemoryStatement {
   }
 
   async run() {
+    if (this.sql.startsWith('INSERT INTO native_card_tokens')) {
+      const [tokenHash, expiresAt] = this.values;
+      this.db.nativeTokens.set(tokenHash, { token_hash: tokenHash, expires_at: expiresAt, used_at: null });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith('DELETE FROM rate_limits')) {
+      return { success: true, meta: { changes: 0 } };
+    }
     if (this.sql.startsWith('INSERT INTO links')) {
       const [slug, contentType, content, signature, theme, isAffiliate, managementTokenHash, ownerUserId] = this.values;
       if (this.db.links.has(slug)) throw new Error('UNIQUE constraint failed: links.slug');

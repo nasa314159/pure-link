@@ -49,6 +49,10 @@ https://no-no.uk/#url=[Shortcut Input]
 
 PureLink fills the creation form while still letting the user inspect the destination, choose cleanup rules, and explicitly confirm creation. Because the URL is placed after `#`, it is not sent to the server as a query parameter when the page first opens.
 
+## Android PureLink keyboard
+
+[`android/`](android/README.md) contains a lightweight auxiliary Kotlin input method for deliberate markers and complete `no-no.uk` URLs. Users explicitly parse the current clipboard, choose safe PureLink candidates, then switch back to Samsung Keyboard or Gboard. It keeps `ACTION_SEND`, `ACTION_PROCESS_TEXT`, and a manual resolver as fallbacks. Parsing is local; there is no prediction, clipboard history, AccessibilityService, analytics, advertising, or background monitoring. Single links share directly without network access. A two-or-more-link Card share uses a constrained `no-no.uk/native/verify` Turnstile WebView, a short-lived single-use opaque token, and a Card-only endpoint; the WebView never receives clipboard/Card text and the endpoint returns only a public Card URL.
+
 ## Production configuration
 
 Public writes fail closed. If required protection is missing, creation and reporting return `503` instead of silently disabling safeguards.
@@ -70,6 +74,7 @@ Never commit real secrets. Copy `.dev.vars.example` to `.dev.vars` for local dev
 | Shared content | Content, type, settings, status, timestamps, and management-credential hash | Delivery and anonymous deletion |
 | Daily analytics | Date, action, content type, country code, and aggregate count | Cost and service health; no raw IP or personal browsing history |
 | Rate limiting | Short-lived HMAC identifier, count, and expiry | Prevent automated abuse; removed after expiry |
+| Android native Card token | Short-lived irreversible token hash, expiry, and used state | Authorize one verified multi-link Card creation; no clipboard or Card body is stored with it |
 | Reports | Category, minimal optional details, status, and timestamps | Content-safety review; no name or email required |
 | Daily AI allowance | Account, date, and count | Five daily generations for regular accounts and 100 for the operator; prompts and results are not stored |
 
