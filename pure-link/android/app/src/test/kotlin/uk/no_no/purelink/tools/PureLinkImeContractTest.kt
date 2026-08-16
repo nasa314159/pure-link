@@ -5,7 +5,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uk.no_no.purelink.core.PureLinkCandidate
 import uk.no_no.purelink.core.PureLinkParser
+import uk.no_no.purelink.core.PureLinkSelectionModel
 import uk.no_no.purelink.core.PureLinkSessionGate
 
 class PureLinkImeContractTest {
@@ -38,6 +40,56 @@ class PureLinkImeContractTest {
     assertEquals(PureLinkShiftMode.LOWERCASE, state.tapShift(1_700))
   }
 
+  @Test fun description_target_routes_local_keys_away_from_manual_slug() {
+    val state = PureLinkImeInputState()
+    assertEquals(PureLinkImeInputTarget.MANUAL, state.target)
+    val manual = StringBuilder()
+    val description = PureLinkDescriptionInput()
+    state.focusDescription()
+    if (state.target == PureLinkImeInputTarget.DESCRIPTION) description.insert("a") else manual.append("a")
+    assertEquals("", manual.toString())
+    assertEquals("a", description.text)
+    description.backspace()
+    assertEquals("", description.text)
+    state.focusManual()
+    if (state.target == PureLinkImeInputTarget.MANUAL) manual.append("b") else description.insert("b")
+    assertEquals("b", manual.toString())
+    assertEquals(PureLinkImeInputTarget.MANUAL, state.target)
+  }
+
+  @Test fun description_input_preserves_shift_caps_and_unicode_length() {
+    val description = PureLinkDescriptionInput()
+    val shift = PureLinkShiftState(doubleTapWindowMillis = 350)
+    shift.tapShift(100)
+    description.insert(shift.displayed("a"))
+    shift.consumeCharacter('a')
+    assertEquals("A", description.text)
+    shift.tapShift(1_000)
+    shift.tapShift(1_100)
+    description.insert(shift.displayed("b"))
+    shift.consumeCharacter('b')
+    assertEquals("AB", description.text)
+    description.clear()
+    description.insert("😀".repeat(281))
+    assertEquals(280, description.text.codePointCount(0, description.text.length))
+  }
+
+  @Test fun description_survives_candidate_changes_and_clears_with_session_state() {
+    val model = PureLinkSelectionModel(
+      listOf(
+        PureLinkCandidate("A3cd8", sourceRange = 0..4),
+        PureLinkCandidate("Q9xK2", sourceRange = 6..10),
+      ),
+    )
+    val description = PureLinkDescriptionInput()
+    description.insert("保留😀")
+    model.toggleSelection(1)
+    model.togglePreview(0)
+    assertEquals("保留😀", description.text)
+    description.clear()
+    assertEquals("", description.text)
+  }
+
   @Test fun manual_is_the_default_internal_target_and_narrow_layout_never_overflows() {
     val state = PureLinkImeInputState()
     assertEquals(PureLinkImeInputTarget.MANUAL, state.target)
@@ -47,25 +99,10 @@ class PureLinkImeContractTest {
     }
   }
 
-  @Test fun description_editor_preserves_unicode_and_enforces_code_points() {
-    val existing = "今天的資料\n😀 日本語 English"
-    assertEquals(existing, PureLinkDescriptionEditor.initialText(existing))
-    assertEquals(existing, PureLinkDescriptionEditor.done(existing))
-    assertEquals(280, PureLinkDescriptionEditor.codePointCount(PureLinkDescriptionEditor.done("😀".repeat(281))))
-    assertEquals(existing, PureLinkDescriptionEditor.cancel(existing))
-  }
-
   @Test fun owned_activities_preserve_active_operations_but_genuine_finish_invalidates_them() {
     val gate = PureLinkSessionGate()
     val transient = PureLinkTransientActivityState()
     gate.activate()
-    val descriptionOperation = gate.beginOperation()!!
-    transient.begin(PureLinkOwnedActivity.DESCRIPTION_EDITOR, descriptionOperation)
-    assertTrue(transient.ownsInputViewFinish())
-    assertTrue(gate.accepts(descriptionOperation))
-    assertTrue(transient.complete(PureLinkOwnedActivity.DESCRIPTION_EDITOR, descriptionOperation))
-    assertTrue(gate.accepts(descriptionOperation))
-
     val verificationOperation = gate.beginOperation()!!
     transient.begin(PureLinkOwnedActivity.VERIFICATION, verificationOperation)
     assertTrue(transient.ownsInputViewFinish())
@@ -85,7 +122,7 @@ class PureLinkImeContractTest {
     assertTrue(manifest.contains("android.view.InputMethod"))
     assertTrue(manifest.contains("@xml/method"))
     assertTrue(manifest.contains("NativeVerificationActivity"))
-    assertTrue(manifest.contains("DescriptionEditorActivity"))
+    assertFalse(manifest.contains("DescriptionEditorActivity"))
     assertTrue(manifest.contains("android:exported=\"false\""))
     assertTrue(manifest.contains("android.permission.INTERNET"))
   }
@@ -109,23 +146,22 @@ class PureLinkImeContractTest {
     val ime = File("src/main/java/uk/no_no/purelink/tools/PureLinkInputMethodService.kt").readText()
     val client = File("src/main/java/uk/no_no/purelink/tools/PureLinkCardClient.kt").readText()
     val verification = File("src/main/java/uk/no_no/purelink/tools/NativeVerificationActivity.kt").readText()
-    val editor = File("src/main/java/uk/no_no/purelink/tools/DescriptionEditorActivity.kt").readText()
-    val descriptionResult = ime.substringAfter("private val descriptionReceiver").substringBefore("override fun onCreateInputView")
     assertTrue(!ime.contains("HorizontalScrollView"))
     assertTrue(ime.contains("view.post { if (mode == PureLinkImeMode.MANUAL) activateManualMode() else showCandidateMode() }"))
     assertTrue(ime.contains("mode == PureLinkImeMode.MANUAL && inputState.target == PureLinkImeInputTarget.MANUAL"))
+    assertTrue(ime.contains("mode == PureLinkImeMode.CANDIDATES && inputState.target == PureLinkImeInputTarget.DESCRIPTION"))
     assertFalse(ime.contains("currentInputConnection"))
     assertFalse(ime.contains("ic_ime_manual, R.string.manual_toggle"))
     assertFalse(ime.contains("ic_ime_globe, R.string.switch_keyboard, R.color.ime_surface"))
     assertTrue(ime.contains("R.string.delete_selected_candidates"))
     assertTrue(ime.contains("selections.removeSelected()"))
     assertTrue(ime.contains("if (remaining.size == 1) selections.setSelected(0, true)"))
-    assertTrue(ime.contains("descriptionText = PureLinkDescriptionPaste.insert"))
-    assertTrue(ime.contains("DescriptionEditorActivity"))
+    assertTrue(ime.contains("inputState.focusDescription()"))
+    assertTrue(ime.contains("descriptionInput.insert(value)"))
+    assertTrue(ime.contains("descriptionInput.backspace()"))
+    assertTrue(ime.contains("descriptionInput.clear()"))
+    assertFalse(ime.contains("DescriptionEditorActivity"))
     assertTrue(ime.contains("transientActivity.ownsInputViewFinish()"))
-    assertFalse(descriptionResult.contains("selections.clear"))
-    assertFalse(descriptionResult.contains("pendingCardUrl = null"))
-    assertFalse(descriptionResult.contains("togglePreview"))
     assertTrue(ime.contains("addCharacterRow(PureLinkImeKeys.digits)"))
     assertTrue(ime.contains("addShiftRow()"))
     assertTrue(ime.contains("addBottomRow()"))
@@ -138,15 +174,7 @@ class PureLinkImeContractTest {
     assertTrue(ime.contains("PureLinkWebsiteRoutes.accountUrl(responseLocale())"))
     assertTrue(verification.contains("onReceivedHttpError"))
     assertTrue(verification.contains("RESULT_ENDPOINT_UNAVAILABLE"))
-    assertTrue(editor.contains("CodePointLengthFilter"))
-    assertTrue(editor.contains("SOFT_INPUT_STATE_ALWAYS_VISIBLE"))
-    assertTrue(editor.contains("showSoftInput"))
-    assertTrue(editor.contains("isFinishing"))
-    assertTrue(editor.contains("onSaveInstanceState"))
-    assertTrue(editor.contains("setOnClickListener { complete(RESULT_CANCELED) }"))
-    assertTrue(editor.contains("setOnClickListener { complete(RESULT_OK"))
     assertTrue(verification.contains("if (!delivered && isFinishing) complete(RESULT_CANCELED)"))
-    assertFalse(editor.contains("setShowSoftInputOnFocus(false)"))
     assertTrue(client.contains("/api/native/cards"))
     assertTrue(client.contains("nativeCreateToken"))
     assertTrue(!client.contains("contentType\", \"card"))
@@ -165,5 +193,16 @@ class PureLinkImeContractTest {
     assertTrue(ime.contains("transientActivity.complete(PureLinkOwnedActivity.VERIFICATION, operation)"))
     assertTrue(ime.contains("if (verificationOperation != operation || !sessionGate.accepts(operation)) return"))
     assertTrue(ime.contains("setShareEnabled(!creatingCard && (pendingCardUrl != null || rows.any { it.selected }))"))
+  }
+
+  @Test fun description_field_is_local_and_no_activity_launch_path_remains() {
+    val ime = File("src/main/java/uk/no_no/purelink/tools/PureLinkInputMethodService.kt").readText()
+    val manifest = File("src/main/AndroidManifest.xml").readText()
+    assertTrue(ime.contains("descriptionPreview = EditText"))
+    assertTrue(ime.contains("setShowSoftInputOnFocus(false)"))
+    assertTrue(ime.contains("activateDescriptionInput()"))
+    assertFalse(ime.contains("switchToPreviousInputMethod for description"))
+    assertFalse(ime.contains("DescriptionEditorActivity"))
+    assertFalse(manifest.contains("DescriptionEditorActivity"))
   }
 }

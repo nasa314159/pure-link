@@ -31,7 +31,6 @@ import android.widget.ScrollView
 import android.widget.Space
 import android.widget.TextView
 import uk.no_no.purelink.core.PureLinkClipboardParser
-import uk.no_no.purelink.core.PureLinkDescriptionPaste
 import uk.no_no.purelink.core.PureLinkResolution
 import uk.no_no.purelink.core.PureLinkResolver
 import uk.no_no.purelink.core.PureLinkSelection
@@ -55,12 +54,11 @@ class PureLinkInputMethodService : InputMethodService() {
   private val inputState = PureLinkImeInputState()
   private val shiftState = PureLinkShiftState()
   private val transientActivity = PureLinkTransientActivityState()
+  private val descriptionInput = PureLinkDescriptionInput()
   private var mode = PureLinkImeMode.MANUAL
-  private var descriptionText = ""
   private var pendingCardUrl: String? = null
   private var creatingCard = false
   private var verificationOperation: Long? = null
-  private var descriptionOperation: Long? = null
   private var restoringInputMethod = false
 
   private lateinit var status: TextView
@@ -68,7 +66,7 @@ class PureLinkInputMethodService : InputMethodService() {
   private lateinit var candidatesScroll: ScrollView
   private lateinit var keyboardRows: LinearLayout
   private lateinit var descriptionPanel: View
-  private lateinit var descriptionPreview: TextView
+  private lateinit var descriptionPreview: EditText
   private lateinit var manualPanel: View
   private lateinit var manualSlug: EditText
   private lateinit var shareButton: ImageButton
@@ -105,25 +103,6 @@ class PureLinkInputMethodService : InputMethodService() {
       }
       restoreInputMethod()
       createBundleCard(nativeCreateToken, operation)
-    }
-  }
-
-  private val descriptionReceiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
-    override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
-      val operation = resultData?.getLong(DescriptionEditorActivity.EXTRA_OPERATION, -1L) ?: -1L
-      // Temporary QA instrumentation.
-      Log.d(QA_TAG, "description ResultReceiver invoked resultCode=$resultCode operation=$operation")
-      transientActivity.complete(PureLinkOwnedActivity.DESCRIPTION_EDITOR, operation)
-      if (descriptionOperation != operation || !sessionGate.accepts(operation)) return
-      descriptionOperation = null
-      if (resultCode == Activity.RESULT_OK) {
-        descriptionText = PureLinkDescriptionEditor.done(resultData?.getString(DescriptionEditorActivity.EXTRA_DESCRIPTION))
-      } else {
-        descriptionText = PureLinkDescriptionEditor.cancel(descriptionText)
-      }
-      if (selections.rows().isNotEmpty()) showCandidateMode()
-      renderCandidates()
-      restoreInputMethod()
     }
   }
 
@@ -226,25 +205,23 @@ class PureLinkInputMethodService : InputMethodService() {
         setTextColor(color(R.color.ime_muted))
       }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
       heading.addView(iconButton(R.drawable.ic_ime_edit, R.string.edit_description, R.color.ime_surface) {
-        // Temporary QA instrumentation.
-        Log.d(QA_TAG, "description pencil button tapped")
-        editDescription()
+        activateDescriptionInput()
       }, LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(2) })
       heading.addView(iconButton(R.drawable.ic_ime_clipboard, R.string.paste_description, R.color.ime_surface) { pasteDescription() }, LinearLayout.LayoutParams(dp(34), dp(34)))
       addView(heading)
-      descriptionPreview = TextView(this@PureLinkInputMethodService).apply {
+      descriptionPreview = EditText(this@PureLinkInputMethodService).apply {
         textSize = 14f
         maxLines = 2
         ellipsize = android.text.TextUtils.TruncateAt.END
         gravity = Gravity.CENTER_VERTICAL
-        background = roundedBackground(R.color.ime_surface)
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        setSingleLine(false)
+        setShowSoftInputOnFocus(false)
+        filters = arrayOf(CodePointLengthFilter(PureLinkShareFormatter.maxDescriptionCodePoints))
         setPadding(dp(12), dp(3), dp(12), dp(3))
         contentDescription = getString(R.string.edit_description)
-        setOnClickListener {
-          // Temporary QA instrumentation.
-          Log.d(QA_TAG, "description pencil button tapped")
-          editDescription()
-        }
+        setOnClickListener { activateDescriptionInput() }
+        setOnFocusChangeListener { _, focused -> if (focused) activateDescriptionInput() }
       }
       addView(descriptionPreview, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)))
     }
@@ -284,6 +261,7 @@ class PureLinkInputMethodService : InputMethodService() {
 
   private fun showCandidateMode() {
     mode = PureLinkImeMode.CANDIDATES
+    inputState.focusCandidates()
     manualPanel.visibility = View.GONE
     candidatesScroll.visibility = View.VISIBLE
     descriptionPanel.visibility = View.VISIBLE
@@ -296,42 +274,18 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   private fun pasteDescription() {
+    activateDescriptionInput()
     val currentText = currentClipboardText() ?: return
-    descriptionText = PureLinkDescriptionPaste.insert(descriptionText, descriptionText.length, descriptionText.length, currentText)
+    descriptionInput.insert(currentText)
     renderDescriptionPreview()
   }
 
-  private fun editDescription() {
-    // Temporary QA instrumentation.
-    Log.d(QA_TAG, "editDescription entered")
-    Log.d(QA_TAG, "about to call sessionGate.beginOperation from editDescription")
-    val operation = sessionGate.beginOperation()
-    if (operation == null) {
-      Log.d(QA_TAG, "description operation rejected")
-      return
-    }
-    Log.d(QA_TAG, "description operation created")
-    descriptionOperation = operation
-    transientActivity.begin(PureLinkOwnedActivity.DESCRIPTION_EDITOR, operation)
-    try {
-      // The editor must use the user's ordinary IME, not this resolver keyboard.
-      if (android.os.Build.VERSION.SDK_INT >= 28) {
-        Log.d(QA_TAG, "before switchToPreviousInputMethod for description")
-        val switched = switchToPreviousInputMethod()
-        Log.d(QA_TAG, "after switchToPreviousInputMethod for description result=$switched")
-      }
-      Log.d(QA_TAG, "before launching DescriptionEditorActivity")
-      startActivity(Intent(this, DescriptionEditorActivity::class.java).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        putExtra(DescriptionEditorActivity.EXTRA_RESULT_RECEIVER, descriptionReceiver)
-        putExtra(DescriptionEditorActivity.EXTRA_OPERATION, operation)
-        putExtra(DescriptionEditorActivity.EXTRA_INITIAL_DESCRIPTION, descriptionText)
-      })
-    } catch (_: ActivityNotFoundException) {
-      transientActivity.clear()
-      descriptionOperation = null
-      showStatus(R.string.description_editor_unavailable, error = true)
-    }
+  private fun activateDescriptionInput() {
+    if (mode != PureLinkImeMode.CANDIDATES || !::descriptionPreview.isInitialized) return
+    inputState.focusDescription()
+    descriptionPreview.requestFocus()
+    descriptionPreview.setSelection(descriptionPreview.length())
+    renderDescriptionPreview()
   }
 
   private fun currentClipboardText(): String? {
@@ -377,8 +331,7 @@ class PureLinkInputMethodService : InputMethodService() {
     pendingCardUrl = null
     creatingCard = false
     verificationOperation = null
-    descriptionOperation = null
-    descriptionText = ""
+    descriptionInput.clear()
     renderDescriptionPreview()
     if (found.isEmpty()) {
       showStatus(R.string.no_purelink_found, error = true)
@@ -391,6 +344,7 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   private fun renderCandidates() {
+    if (mode == PureLinkImeMode.CANDIDATES) inputState.focusCandidates()
     candidates.removeAllViews()
     renderDescriptionPreview()
     val rows = selections.rows()
@@ -501,7 +455,7 @@ class PureLinkInputMethodService : InputMethodService() {
       0 -> showStatus(R.string.no_selected_links, error = true)
       1 -> {
         Log.d(QA_TAG, "share branch=single-link share")
-        shareText(PureLinkShareFormatter.formatSingle(selected.single(), descriptionText))
+        shareText(PureLinkShareFormatter.formatSingle(selected.single(), descriptionInput.text))
       }
       else -> {
         Log.d(QA_TAG, "share branch=native multi-link verification")
@@ -514,7 +468,7 @@ class PureLinkInputMethodService : InputMethodService() {
   private fun startNativeVerification(selected: List<PureLinkSelection>) {
     // Temporary QA instrumentation.
     Log.d(QA_TAG, "startNativeVerification entered")
-    if (PureLinkShareFormatter.formatBundle(selected, descriptionText).length > 1000) {
+    if (PureLinkShareFormatter.formatBundle(selected, descriptionInput.text).length > 1000) {
       showStatus(R.string.bundle_too_long, error = true)
       return
     }
@@ -551,7 +505,7 @@ class PureLinkInputMethodService : InputMethodService() {
     if (!sessionGate.accepts(operation)) return
     val selected = selections.selectedRows()
     if (selected.size < 2) return
-    val body = PureLinkShareFormatter.formatBundle(selected, descriptionText)
+    val body = PureLinkShareFormatter.formatBundle(selected, descriptionInput.text)
     if (body.length > 1000) {
       creatingCard = false
       showStatus(R.string.bundle_too_long, error = true)
@@ -683,16 +637,31 @@ class PureLinkInputMethodService : InputMethodService() {
 
   /** All generated key input stays in one of the service-owned fields; never in host editor text. */
   private fun type(value: String) {
-    if (mode == PureLinkImeMode.MANUAL && inputState.target == PureLinkImeInputTarget.MANUAL) {
-      insert(manualSlug, value)
+    val inserted = when {
+      mode == PureLinkImeMode.MANUAL && inputState.target == PureLinkImeInputTarget.MANUAL -> {
+        insert(manualSlug, value)
+        true
+      }
+      mode == PureLinkImeMode.CANDIDATES && inputState.target == PureLinkImeInputTarget.DESCRIPTION -> {
+        descriptionInput.insert(value)
+        renderDescriptionPreview()
+        true
+      }
+      else -> false
+    }
+    if (inserted) {
       if (value.length == 1) shiftState.consumeCharacter(value[0])
     }
     renderKeyboard()
   }
 
   private fun backspace() {
-    if (mode == PureLinkImeMode.MANUAL && inputState.target == PureLinkImeInputTarget.MANUAL) {
-      deleteFrom(manualSlug)
+    when {
+      mode == PureLinkImeMode.MANUAL && inputState.target == PureLinkImeInputTarget.MANUAL -> deleteFrom(manualSlug)
+      mode == PureLinkImeMode.CANDIDATES && inputState.target == PureLinkImeInputTarget.DESCRIPTION -> {
+        descriptionInput.backspace()
+        renderDescriptionPreview()
+      }
     }
   }
 
@@ -730,9 +699,8 @@ class PureLinkInputMethodService : InputMethodService() {
     pendingCardUrl = null
     creatingCard = false
     verificationOperation = null
-    descriptionOperation = null
     shiftState.reset()
-    descriptionText = ""
+    descriptionInput.clear()
     renderDescriptionPreview()
     if (::manualSlug.isInitialized) manualSlug.text.clear()
     hideStatus()
@@ -760,9 +728,13 @@ class PureLinkInputMethodService : InputMethodService() {
 
   private fun renderDescriptionPreview() {
     if (!::descriptionPreview.isInitialized) return
-    val empty = descriptionText.isBlank()
-    descriptionPreview.text = if (empty) getString(R.string.description_hint) else descriptionText
+    val empty = descriptionInput.text.isBlank()
+    descriptionPreview.setText(if (empty) "" else descriptionInput.text)
+    descriptionPreview.hint = if (empty) getString(R.string.description_hint) else ""
     descriptionPreview.setTextColor(color(if (empty) R.color.ime_muted else R.color.ime_text))
+    descriptionPreview.background = roundedBackground(if (inputState.target == PureLinkImeInputTarget.DESCRIPTION) R.color.ime_surface_pressed else R.color.ime_surface)
+    descriptionPreview.isCursorVisible = inputState.target == PureLinkImeInputTarget.DESCRIPTION
+    if (inputState.target == PureLinkImeInputTarget.DESCRIPTION) descriptionPreview.setSelection(descriptionPreview.length())
   }
 
   private fun showTransientStatus(resource: Int) {
@@ -774,7 +746,7 @@ class PureLinkInputMethodService : InputMethodService() {
   private fun responseLocale(): String = if (resources.configuration.locales[0].language.equals("zh", ignoreCase = true)) "zh-Hant" else "en"
 
   private fun hasPendingActivity(): Boolean =
-    transientActivity.ownsInputViewFinish() || verificationOperation != null || descriptionOperation != null
+    transientActivity.ownsInputViewFinish() || verificationOperation != null
 
   private fun restoreInputMethod() {
     if (android.os.Build.VERSION.SDK_INT >= 28) {

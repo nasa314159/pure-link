@@ -29,10 +29,6 @@
       android:name=".NativeVerificationActivity"
       android:exported="false"
       android:theme="@style/Theme.PureLink" />
-    <activity
-      android:name=".DescriptionEditorActivity"
-      android:exported="false"
-      android:theme="@style/Theme.PureLink" />
     <service
         android:name=".PureLinkInputMethodService"
         android:exported="true"

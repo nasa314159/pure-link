@@ -28,11 +28,7 @@
   <string name="share">分享</string>
   <string name="description">說明</string>
   <string name="description_hint">僅用於這次分享的選填說明</string>
-  <string name="description_editor_title">說明</string>
   <string name="edit_description">編輯說明</string>
-  <string name="description_count">%1$d / %2$d</string>
-  <string name="cancel">取消</string>
-  <string name="done">完成</string>
   <string name="paste_description">貼上說明</string>
   <string name="manual_slug">手動短代號</string>
   <string name="manual_slug_hint">輸入 PureLink 短代號</string>
@@ -50,7 +46,6 @@
   <string name="verification_cancelled">已取消驗證。你的選擇與說明仍保留在這裡。</string>
   <string name="verification_failed">驗證沒有完成。你的選擇與說明仍保留在這裡。</string>
   <string name="verification_unavailable">PureLink 驗證服務暫時無法使用。你的選擇與說明仍保留在這裡。</string>
-  <string name="description_editor_unavailable">無法開啟說明編輯器。你的工作階段仍保留在這裡。</string>
   <string name="card_creation_failed">建立小卡失敗。你的選擇與說明仍保留在這裡。</string>
   <string name="retry">重試</string>
   <string name="share_title">分享 PureLink</string>

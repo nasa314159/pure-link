@@ -1,23 +1,23 @@
 package uk.no_no.purelink.tools
 
-import uk.no_no.purelink.core.PureLinkShareFormatter
+import uk.no_no.purelink.core.PureLinkDescriptionPaste
 
-/**
- * Explicit local state for the resolver keyboard. Its slug keys never target the host editor.
- */
-enum class PureLinkImeInputTarget { MANUAL }
+/** Explicit local targets for the resolver keyboard; none target the host editor. */
+enum class PureLinkImeInputTarget { MANUAL, DESCRIPTION, CANDIDATES }
 
 class PureLinkImeInputState {
   var target: PureLinkImeInputTarget = PureLinkImeInputTarget.MANUAL
     private set
 
   fun focusManual() { target = PureLinkImeInputTarget.MANUAL }
+  fun focusDescription() { target = PureLinkImeInputTarget.DESCRIPTION }
+  fun focusCandidates() { target = PureLinkImeInputTarget.CANDIDATES }
 
 }
 
 enum class PureLinkImeMode { MANUAL, CANDIDATES }
 
-enum class PureLinkOwnedActivity { DESCRIPTION_EDITOR, VERIFICATION }
+enum class PureLinkOwnedActivity { VERIFICATION }
 
 /**
  * Tracks only a PureLink-owned transient screen and its originating gate operation. This lets the
@@ -43,17 +43,21 @@ class PureLinkTransientActivityState {
   }
 }
 
-/** Pure formatting helpers for the system-IME Description editor. */
-object PureLinkDescriptionEditor {
-  fun initialText(value: CharSequence?): String = PureLinkShareFormatter.normalizeDescription(value)
+/** Local Description state for the PureLink-owned keyboard. */
+class PureLinkDescriptionInput {
+  var text: String = ""
+    private set
 
-  fun done(value: CharSequence?): String = PureLinkShareFormatter.normalizeDescription(value)
+  fun insert(value: CharSequence?) {
+    text = PureLinkDescriptionPaste.insert(text, text.length, text.length, value)
+  }
 
-  fun cancel(currentValue: CharSequence?): String = PureLinkShareFormatter.normalizeDescription(currentValue)
+  fun backspace() {
+    if (text.isNotEmpty()) text = text.substring(0, text.offsetByCodePoints(text.length, -1))
+  }
 
-  fun codePointCount(value: CharSequence?): Int {
-    val text = value?.toString().orEmpty()
-    return text.codePointCount(0, text.length)
+  fun clear() {
+    text = ""
   }
 }
 
