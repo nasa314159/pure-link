@@ -3,6 +3,7 @@ package uk.no_no.purelink.tools
 import android.app.Activity
 import android.os.Bundle
 import android.os.ResultReceiver
+import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -19,6 +20,8 @@ class NativeVerificationActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "NativeVerificationActivity onCreate")
     webView = WebView(this).apply {
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
@@ -32,6 +35,18 @@ class NativeVerificationActivity : Activity() {
     webView.loadUrl(NativeVerificationPolicy.challengeUrl(intent.getStringExtra(EXTRA_LOCALE).orEmpty()))
   }
 
+  override fun onResume() {
+    super.onResume()
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "NativeVerificationActivity onResume")
+  }
+
+  override fun onPause() {
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "NativeVerificationActivity onPause")
+    super.onPause()
+  }
+
   @Deprecated("Use OnBackInvokedCallback on API 33+")
   @Suppress("DEPRECATION")
   override fun onBackPressed() {
@@ -39,6 +54,8 @@ class NativeVerificationActivity : Activity() {
   }
 
   override fun onDestroy() {
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "NativeVerificationActivity onDestroy")
     if (::webView.isInitialized) {
       webView.stopLoading()
       webView.clearHistory()
@@ -52,6 +69,8 @@ class NativeVerificationActivity : Activity() {
 
   private fun complete(resultCode: Int, nativeCreateToken: String? = null, error: String? = null) {
     if (delivered) return
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "native verification resultCode=$resultCode")
     delivered = true
     val result = Bundle().apply {
       putLong(EXTRA_OPERATION, intent.getLongExtra(EXTRA_OPERATION, -1L))
@@ -64,6 +83,12 @@ class NativeVerificationActivity : Activity() {
   }
 
   private inner class NativeWebViewClient : WebViewClient() {
+    override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+      // Temporary QA instrumentation. Do not log the page URL.
+      Log.d(QA_TAG, "WebView page started")
+      super.onPageStarted(view, url, favicon)
+    }
+
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = handleNavigation(request.url.toString())
 
     @Deprecated("Use the WebResourceRequest overload")
@@ -79,6 +104,10 @@ class NativeVerificationActivity : Activity() {
     }
 
     override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
+      if (request.isForMainFrame) {
+        // Temporary QA instrumentation.
+        Log.d(QA_TAG, "WebView HTTP error statusCode=${errorResponse.statusCode}")
+      }
       if (request.isForMainFrame && errorResponse.statusCode == 404) {
         complete(RESULT_ENDPOINT_UNAVAILABLE, error = ERROR_ENDPOINT_UNAVAILABLE)
       }
@@ -98,6 +127,7 @@ class NativeVerificationActivity : Activity() {
   }
 
   companion object {
+    private const val QA_TAG = "PureLinkQA"
     const val EXTRA_RESULT_RECEIVER = "uk.no_no.purelink.tools.VERIFICATION_RECEIVER"
     const val EXTRA_OPERATION = "uk.no_no.purelink.tools.VERIFICATION_OPERATION"
     const val EXTRA_NATIVE_CREATE_TOKEN = "uk.no_no.purelink.tools.NATIVE_CREATE_TOKEN"

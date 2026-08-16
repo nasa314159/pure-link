@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.ResultReceiver
+import android.util.Log
 import android.text.InputFilter
 import android.text.InputType
 import android.view.Gravity
@@ -44,6 +45,10 @@ import uk.no_no.purelink.core.PureLinkShareFormatter
  * editor. Its keys are deliberately limited to the PureLink custom-slug character grammar.
  */
 class PureLinkInputMethodService : InputMethodService() {
+  private companion object {
+    const val QA_TAG = "PureLinkQA"
+  }
+
   private val selections = PureLinkSelectionModel()
   private val cardClient = PureLinkCardClient()
   private val sessionGate = PureLinkSessionGate()
@@ -71,6 +76,8 @@ class PureLinkInputMethodService : InputMethodService() {
   private val verificationReceiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
     override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
       val operation = resultData?.getLong(NativeVerificationActivity.EXTRA_OPERATION, -1L) ?: -1L
+      // Temporary QA instrumentation.
+      Log.d(QA_TAG, "verification ResultReceiver invoked resultCode=$resultCode operation=$operation")
       transientActivity.complete(PureLinkOwnedActivity.VERIFICATION, operation)
       if (verificationOperation != operation || !sessionGate.accepts(operation)) return
       verificationOperation = null
@@ -104,6 +111,8 @@ class PureLinkInputMethodService : InputMethodService() {
   private val descriptionReceiver = object : ResultReceiver(Handler(Looper.getMainLooper())) {
     override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
       val operation = resultData?.getLong(DescriptionEditorActivity.EXTRA_OPERATION, -1L) ?: -1L
+      // Temporary QA instrumentation.
+      Log.d(QA_TAG, "description ResultReceiver invoked resultCode=$resultCode operation=$operation")
       transientActivity.complete(PureLinkOwnedActivity.DESCRIPTION_EDITOR, operation)
       if (descriptionOperation != operation || !sessionGate.accepts(operation)) return
       descriptionOperation = null
@@ -129,15 +138,22 @@ class PureLinkInputMethodService : InputMethodService() {
   override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
     super.onStartInput(attribute, restarting)
     // Do not inspect editor contents. A new or password editor discards this ephemeral session.
+    // Temporary QA instrumentation.
+    val sensitive = isSensitive(attribute)
+    val pendingActivity = hasPendingActivity()
+    Log.d(QA_TAG, "onStartInput restarting=$restarting sensitive=$sensitive hasPendingActivity=$pendingActivity")
     if (restoringInputMethod) {
       restoringInputMethod = false
-    } else if (::candidates.isInitialized && !hasPendingActivity() && (!restarting || isSensitive(attribute))) {
+    } else if (::candidates.isInitialized && !pendingActivity && (!restarting || sensitive)) {
       clearSession(invalidate = true)
     }
   }
 
   override fun onFinishInputView(finishingInput: Boolean) {
-    if (finishingInput && ::candidates.isInitialized && !hasPendingActivity()) {
+    // Temporary QA instrumentation.
+    val pendingActivity = hasPendingActivity()
+    Log.d(QA_TAG, "onFinishInputView finishingInput=$finishingInput hasPendingActivity=$pendingActivity")
+    if (finishingInput && ::candidates.isInitialized && !pendingActivity) {
       sessionGate.finish()
       clearSession(invalidate = false)
     }
@@ -203,7 +219,11 @@ class PureLinkInputMethodService : InputMethodService() {
         textSize = 12f
         setTextColor(color(R.color.ime_muted))
       }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-      heading.addView(iconButton(R.drawable.ic_ime_edit, R.string.edit_description, R.color.ime_surface) { editDescription() }, LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(2) })
+      heading.addView(iconButton(R.drawable.ic_ime_edit, R.string.edit_description, R.color.ime_surface) {
+        // Temporary QA instrumentation.
+        Log.d(QA_TAG, "description pencil button tapped")
+        editDescription()
+      }, LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(2) })
       heading.addView(iconButton(R.drawable.ic_ime_clipboard, R.string.paste_description, R.color.ime_surface) { pasteDescription() }, LinearLayout.LayoutParams(dp(34), dp(34)))
       addView(heading)
       descriptionPreview = TextView(this@PureLinkInputMethodService).apply {
@@ -214,7 +234,11 @@ class PureLinkInputMethodService : InputMethodService() {
         background = roundedBackground(R.color.ime_surface)
         setPadding(dp(12), dp(3), dp(12), dp(3))
         contentDescription = getString(R.string.edit_description)
-        setOnClickListener { editDescription() }
+        setOnClickListener {
+          // Temporary QA instrumentation.
+          Log.d(QA_TAG, "description pencil button tapped")
+          editDescription()
+        }
       }
       addView(descriptionPreview, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(42)))
     }
@@ -272,12 +296,24 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   private fun editDescription() {
-    val operation = sessionGate.beginOperation() ?: return
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "editDescription entered")
+    val operation = sessionGate.beginOperation()
+    if (operation == null) {
+      Log.d(QA_TAG, "description operation rejected")
+      return
+    }
+    Log.d(QA_TAG, "description operation created")
     descriptionOperation = operation
     transientActivity.begin(PureLinkOwnedActivity.DESCRIPTION_EDITOR, operation)
     try {
       // The editor must use the user's ordinary IME, not this resolver keyboard.
-      if (android.os.Build.VERSION.SDK_INT >= 28) switchToPreviousInputMethod()
+      if (android.os.Build.VERSION.SDK_INT >= 28) {
+        Log.d(QA_TAG, "before switchToPreviousInputMethod for description")
+        val switched = switchToPreviousInputMethod()
+        Log.d(QA_TAG, "after switchToPreviousInputMethod for description result=$switched")
+      }
+      Log.d(QA_TAG, "before launching DescriptionEditorActivity")
       startActivity(Intent(this, DescriptionEditorActivity::class.java).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         putExtra(DescriptionEditorActivity.EXTRA_RESULT_RECEIVER, descriptionReceiver)
@@ -444,27 +480,48 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   private fun shareSelected() {
-    pendingCardUrl?.let { shareText(it); return }
     val selected = selections.selectedRows()
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "Share button tapped selectedRows=${selected.size} creatingCard=$creatingCard pendingCardUrl=${pendingCardUrl != null}")
+    pendingCardUrl?.let {
+      Log.d(QA_TAG, "share branch=existing pending Card")
+      shareText(it)
+      return
+    }
     when (selected.size) {
       0 -> showStatus(R.string.no_selected_links, error = true)
-      1 -> shareText(PureLinkShareFormatter.formatSingle(selected.single(), descriptionText))
-      else -> startNativeVerification(selected)
+      1 -> {
+        Log.d(QA_TAG, "share branch=single-link share")
+        shareText(PureLinkShareFormatter.formatSingle(selected.single(), descriptionText))
+      }
+      else -> {
+        Log.d(QA_TAG, "share branch=native multi-link verification")
+        // Temporary QA instrumentation keeps the existing branch contract: else -> startNativeVerification(selected)
+        startNativeVerification(selected)
+      }
     }
   }
 
   private fun startNativeVerification(selected: List<PureLinkSelection>) {
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "startNativeVerification entered")
     if (PureLinkShareFormatter.formatBundle(selected, descriptionText).length > 1000) {
       showStatus(R.string.bundle_too_long, error = true)
       return
     }
-    val operation = sessionGate.beginOperation() ?: return
+    val operation = sessionGate.beginOperation()
+    if (operation == null) {
+      Log.d(QA_TAG, "native verification operation rejected")
+      return
+    }
+    Log.d(QA_TAG, "native verification operation created")
     verificationOperation = operation
     transientActivity.begin(PureLinkOwnedActivity.VERIFICATION, operation)
     creatingCard = true
     showStatus(R.string.verifying_card)
     renderCandidates()
     try {
+      Log.d(QA_TAG, "before launching NativeVerificationActivity")
       startActivity(Intent(this, NativeVerificationActivity::class.java).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         putExtra(NativeVerificationActivity.EXTRA_RESULT_RECEIVER, verificationReceiver)
@@ -651,6 +708,8 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   private fun clearSession(invalidate: Boolean) {
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "clearSession entered invalidate=$invalidate")
     if (invalidate) sessionGate.beginNewSessionState()
     transientActivity.clear()
     selections.clear()
@@ -705,8 +764,11 @@ class PureLinkInputMethodService : InputMethodService() {
 
   private fun restoreInputMethod() {
     if (android.os.Build.VERSION.SDK_INT >= 28) {
+      // Temporary QA instrumentation.
+      Log.d(QA_TAG, "restore-input-method entered")
       restoringInputMethod = true
-      switchToPreviousInputMethod()
+      val switched = switchToPreviousInputMethod()
+      Log.d(QA_TAG, "restore-input-method switch result=$switched")
     }
   }
 

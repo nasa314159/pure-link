@@ -3,6 +3,7 @@ package uk.no_no.purelink.tools
 import android.app.Activity
 import android.os.Bundle
 import android.os.ResultReceiver
+import android.util.Log
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -27,6 +28,8 @@ class DescriptionEditorActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "DescriptionEditorActivity onCreate")
     restoredDescription = savedInstanceState?.getString(SAVED_DESCRIPTION)
     window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
     setContentView(buildContent())
@@ -35,6 +38,18 @@ class DescriptionEditorActivity : Activity() {
       (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
         .showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
     }
+  }
+
+  override fun onResume() {
+    super.onResume()
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "DescriptionEditorActivity onResume")
+  }
+
+  override fun onPause() {
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "DescriptionEditorActivity onPause")
+    super.onPause()
   }
 
   override fun onSaveInstanceState(outState: Bundle) {
@@ -47,6 +62,8 @@ class DescriptionEditorActivity : Activity() {
   override fun onBackPressed() = complete(RESULT_CANCELED)
 
   override fun onDestroy() {
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, "DescriptionEditorActivity onDestroy")
     // Rotation recreates the editor; it is not an explicit user cancellation.
     if (!delivered && isFinishing) complete(RESULT_CANCELED)
     super.onDestroy()
@@ -108,6 +125,8 @@ class DescriptionEditorActivity : Activity() {
 
   private fun complete(resultCode: Int, description: String? = null) {
     if (delivered) return
+    // Temporary QA instrumentation.
+    Log.d(QA_TAG, if (resultCode == RESULT_OK) "DescriptionEditorActivity Done action" else "DescriptionEditorActivity Cancel action")
     delivered = true
     val result = Bundle().apply {
       putLong(EXTRA_OPERATION, intent.getLongExtra(EXTRA_OPERATION, -1L))
@@ -121,6 +140,7 @@ class DescriptionEditorActivity : Activity() {
   private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
   companion object {
+    private const val QA_TAG = "PureLinkQA"
     const val EXTRA_RESULT_RECEIVER = "uk.no_no.purelink.tools.DESCRIPTION_RECEIVER"
     const val EXTRA_OPERATION = "uk.no_no.purelink.tools.DESCRIPTION_OPERATION"
     const val EXTRA_INITIAL_DESCRIPTION = "uk.no_no.purelink.tools.INITIAL_DESCRIPTION"
