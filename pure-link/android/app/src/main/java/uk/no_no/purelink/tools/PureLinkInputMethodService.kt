@@ -128,7 +128,11 @@ class PureLinkInputMethodService : InputMethodService() {
   }
 
   override fun onCreateInputView(): View {
-    if (!sessionGate.isActive()) sessionGate.activate()
+    if (!sessionGate.isActive()) {
+      // Temporary QA instrumentation.
+      Log.d(QA_TAG, "about to call sessionGate.activate from onCreateInputView")
+      sessionGate.activate()
+    }
     return buildInputView().also { view ->
       // An internally launched Activity may recreate the view; restore its existing session mode.
       view.post { if (mode == PureLinkImeMode.MANUAL) activateManualMode() else showCandidateMode() }

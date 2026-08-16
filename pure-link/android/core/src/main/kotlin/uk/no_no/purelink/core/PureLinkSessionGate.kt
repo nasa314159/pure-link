@@ -9,10 +9,14 @@ class PureLinkSessionGate(private val qaLog: (String) -> Unit = {}) {
   private var active = false
 
   fun activate() {
+    // Temporary QA instrumentation.
+    qaLog("activate entry active=$active generation=$generation")
+    qaLog(if (active) "activate skipped because already active" else "activate occurs")
     if (!active) {
       active = true
       generation += 1
     }
+    qaLog("activate exit active=$active generation=$generation")
   }
 
   fun isActive(): Boolean = active
