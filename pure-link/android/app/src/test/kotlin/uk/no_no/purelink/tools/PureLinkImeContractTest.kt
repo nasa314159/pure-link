@@ -115,6 +115,46 @@ class PureLinkImeContractTest {
     assertFalse(gate.accepts(genuineEnd))
   }
 
+  @Test fun reused_input_view_reactivates_gate_without_reusing_stale_operations() {
+    val gate = PureLinkSessionGate()
+    assertFalse(gate.isActive())
+    assertEquals(null, gate.beginOperation())
+
+    gate.activate()
+    val first = gate.beginOperation()!!
+    gate.finish()
+    assertFalse(gate.isActive())
+    assertFalse(gate.accepts(first))
+
+    assertTrue(PureLinkImeSessionLifecycle.shouldActivateGate(sensitive = false, pendingActivity = false, returningFromOwnedActivity = false))
+    gate.activate()
+    val reactivated = gate.beginOperation()!!
+    assertTrue(reactivated != first)
+    assertTrue(gate.accepts(reactivated))
+    assertFalse(gate.accepts(first))
+  }
+
+  @Test fun active_restart_is_idempotent_and_sensitive_or_owned_activity_starts_do_not_activate() {
+    val gate = PureLinkSessionGate()
+    val transient = PureLinkTransientActivityState()
+    gate.activate()
+    val operation = gate.beginOperation()!!
+    assertTrue(PureLinkImeSessionLifecycle.shouldActivateGate(sensitive = false, pendingActivity = false, returningFromOwnedActivity = false))
+    gate.activate()
+    assertEquals(operation, gate.beginOperation())
+    assertTrue(gate.accepts(operation))
+    transient.begin(PureLinkOwnedActivity.VERIFICATION, operation)
+    assertFalse(PureLinkImeSessionLifecycle.shouldActivateGate(sensitive = false, pendingActivity = transient.ownsInputViewFinish(), returningFromOwnedActivity = false))
+    assertTrue(gate.accepts(operation))
+
+    gate.finish()
+    assertFalse(PureLinkImeSessionLifecycle.shouldActivateGate(sensitive = true, pendingActivity = false, returningFromOwnedActivity = false))
+    assertFalse(PureLinkImeSessionLifecycle.shouldActivateGate(sensitive = false, pendingActivity = true, returningFromOwnedActivity = false))
+    assertFalse(PureLinkImeSessionLifecycle.shouldActivateGate(sensitive = false, pendingActivity = false, returningFromOwnedActivity = true))
+    assertFalse(gate.isActive())
+    assertEquals(null, gate.beginOperation())
+  }
+
   @Test fun manifest_registers_the_bound_input_method_service() {
     val manifest = File("src/main/AndroidManifest.xml").readText()
     assertTrue(manifest.contains("PureLinkInputMethodService"))
@@ -170,6 +210,8 @@ class PureLinkImeContractTest {
     assertTrue(!ime.contains("selections.setPreview(index, false)"))
     assertTrue(ime.contains("shareText(publicUrl)"))
     assertTrue(ime.contains("sessionGate.accepts(operation)"))
+    assertTrue(ime.contains("PureLinkImeSessionLifecycle.shouldActivateGate"))
+    assertTrue(ime.contains("about to call sessionGate.activate from onStartInput"))
     assertTrue(ime.contains("showTransientStatus(R.string.share_chooser_opened)"))
     assertTrue(ime.contains("PureLinkWebsiteRoutes.accountUrl(responseLocale())"))
     assertTrue(verification.contains("onReceivedHttpError"))

@@ -19,6 +19,11 @@ enum class PureLinkImeMode { MANUAL, CANDIDATES }
 
 enum class PureLinkOwnedActivity { VERIFICATION }
 
+object PureLinkImeSessionLifecycle {
+  fun shouldActivateGate(sensitive: Boolean, pendingActivity: Boolean, returningFromOwnedActivity: Boolean): Boolean =
+    !sensitive && !pendingActivity && !returningFromOwnedActivity
+}
+
 /**
  * Tracks only a PureLink-owned transient screen and its originating gate operation. This lets the
  * service distinguish its own editor/verification transition from a genuine IME teardown.

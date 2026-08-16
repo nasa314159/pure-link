@@ -124,11 +124,17 @@ class PureLinkInputMethodService : InputMethodService() {
     // Temporary QA instrumentation.
     val sensitive = isSensitive(attribute)
     val pendingActivity = hasPendingActivity()
+    val returningFromOwnedActivity = restoringInputMethod
     Log.d(QA_TAG, "onStartInput restarting=$restarting sensitive=$sensitive hasPendingActivity=$pendingActivity")
-    if (restoringInputMethod) {
+    if (returningFromOwnedActivity) {
       restoringInputMethod = false
     } else if (::candidates.isInitialized && !pendingActivity && (!restarting || sensitive)) {
       clearSession(invalidate = true)
+    }
+    if (PureLinkImeSessionLifecycle.shouldActivateGate(sensitive, pendingActivity, returningFromOwnedActivity)) {
+      // Temporary QA instrumentation.
+      Log.d(QA_TAG, "about to call sessionGate.activate from onStartInput")
+      sessionGate.activate()
     }
   }
 
