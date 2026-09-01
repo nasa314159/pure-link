@@ -62,7 +62,7 @@ PureLink 是一個安靜、簡潔，而且能被驗證其隱私承諾的分享�
 
 ## AI 額度與自行部署
 
-登入帳號每天有 5 次免費 AI 公式草稿。額外額度為一次性數位商品，不是訂閱：US$5／300 次、US$10／800 次、US$20／2,000 次；只有確認付款後才會加入發起結帳的帳號。Creem 只處理這些 AI 額度商品；自願開源支持不提供額度或產品權益。詳情請見網站的 [AI credits](https://no-no.uk/ai-credits) 與 [Refund policy](https://no-no.uk/refund-policy)。
+登入帳號每天有 5 次免費 AI 公式草稿。可選的 AI 公式額度是一次性數位商品，不是訂閱，只用於 AI 公式草稿；目前 NT$ 價格、交付、付款狀態、退款政策與支援聯絡方式，請以[繁體中文 AI 公式額度頁面](https://no-no.uk/zh-Hant/ai-credits)為準。
 
 本機執行、Cloudflare Workers/D1 設定與部署前檢查，請見 [English technical README](pure-link/README.md) 與[繁體中文技術 README](pure-link/docs/README.zh-Hant.md)。請勿提交真實密鑰。
 

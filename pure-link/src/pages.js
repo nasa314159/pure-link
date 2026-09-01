@@ -743,14 +743,13 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
     'ai-credits': {
       lang: 'en',
       eyebrow: 'AI FORMULA CREDITS',
-      title: 'More formula drafts, only when you need them.',
-      intro: 'PureLink is free to use. Optional one-time credit packs extend the AI-assisted formula feature without turning the core URL, formula, or card tools into a subscription.',
+      title: 'PureLink AI Formula Credits',
+      intro: 'PureLink is free to use. These one-time purchases add AI formula drafts only; they are not subscriptions and do not make the core URL, manual formula, or card tools paid services.',
       sections: [
         ['What the product does', 'A signed-in customer can describe a mathematical expression in natural language and receive an editable LaTeX draft with an immediate visual preview. The result is never published automatically, may contain mistakes, and must be reviewed by the customer before use.'],
-        ['One-time plans', 'US$5 provides 300 AI formula generations. US$10 provides 800 generations. US$20 provides 2,000 generations. These are one-time purchases, not subscriptions. Taxes may be added at checkout when required.'],
-        ['Delivery', 'After a confirmed payment, credits are delivered automatically to the PureLink account that started checkout. Customers must be signed in before purchasing. The five free daily generations are used before purchased credits, and purchased credits are not shared between accounts.'],
-        ['Credit lifetime and limits', 'Purchased credits do not expire while PureLink continues to operate the AI formula service. They are non-transferable, have no cash value, and remain subject to a daily safety limit that protects accounts and the public service from automated abuse.'],
-        ['Payment boundary', 'Creem is used only to sell AI formula credit packs and acts as the merchant of record for these purchases. Voluntary support for the open-source project is separate, does not grant credits or product benefits, and is not processed through Creem. Checkout is enabled only after payment-provider approval and integration testing.'],
+        ['One-time plans', 'Small: 150 AI formula drafts — NT$150. Standard: 400 AI formula drafts — NT$300. Large: 1,000 AI formula drafts — NT$600. These are one-time purchases, not subscriptions.'],
+        ['Delivery and use', 'After payment is confirmed, credits are added to the PureLink account that started the purchase. Customers must be signed in before purchasing. The regular five free daily credits are used first. Purchased credits are only for the AI formula draft feature and are not shared between accounts.'],
+        ['Payment status', 'Checkout is completing provider approval and production integration. No payment is accepted until it is enabled.'],
         ['Support', 'For purchase, delivery, or account questions, contact nasa3.14159@gmail.com. Include the email address used for your PureLink account and the order number, but never send a password, full card number, or Google credential.'],
       ],
     },
@@ -784,6 +783,7 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
+          ${page === 'ai-credits' ? `<p class="legal-contact"><a href="${localizedHref(locale, 'refund-policy')}">${locale === 'en' ? 'Refund policy' : '退款政策'}</a> · <a href="mailto:nasa3.14159@gmail.com">${locale === 'en' ? 'Support: nasa3.14159@gmail.com' : '支援：nasa3.14159@gmail.com'}</a></p>` : ''}
           <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
           ${languageSwitcher(locale, page)}
           <p class="legal-updated">${locale === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14'}</p>
@@ -822,12 +822,12 @@ function localizedLegalContent(page, locale, defaults) {
       ]],
     },
     'zh-Hant': {
-      'ai-credits': ['AI 公式額度', '需要時才購買更多公式草稿。', 'PureLink 核心功能免費使用；可選的一次性額度只延伸 AI 公式功能，不會把網址、公式或小卡變成訂閱服務。', [
+      'ai-credits': ['PureLink AI 公式額度', '需要時才購買更多公式草稿。', 'PureLink 核心功能免費使用；可選的一次性額度只延伸 AI 公式功能，不會把網址、公式或小卡變成付費服務。', [
         ['商品內容', '已登入的使用者可用自然語言描述數學式，取得可編輯、可立即預覽的 LaTeX 草稿。結果不會自動發布，可能有錯，使用前必須自行檢查。'],
-        ['一次性方案', 'US$5 可取得 300 次 AI 公式生成，US$10 可取得 800 次，US$20 可取得 2,000 次。這些都是一次性購買，不是訂閱；依法可能在結帳時加計稅金。'],
-        ['交付', '付款確認後，額度會自動加入發起結帳的 PureLink 帳號。購買前必須登入。每日五次免費生成優先使用，已購額度不在帳號間共用。'],
-        ['效期與限制', '只要 PureLink 持續營運 AI 公式服務，已購額度不會到期。它不可轉讓、沒有現金價值，並仍受每日安全上限保護帳號與公共服務免受自動化濫用。'],
-        ['付款邊界', 'Creem 只用於銷售 AI 公式額度，並作為這些購買的 merchant of record。開源專案的自願支持完全分開，不提供額度或產品權益，也不經由 Creem 處理。僅在付款供應商核准與整合測試後啟用結帳。'],
+        ['一次性方案', '小型方案：150 次 AI 公式草稿，NT$150。標準方案：400 次 AI 公式草稿，NT$300。大型方案：1,000 次 AI 公式草稿，NT$600。這些都是一次性購買，不是訂閱。'],
+        ['交付與使用', '付款確認後，額度會加入發起購買的 PureLink 帳號。購買前必須登入。一般登入帳號每日免費額度仍優先使用。購買額度只用於 AI 公式草稿功能，且不在帳號間共用。'],
+        ['付款狀態', '付款功能目前正在完成供應商審核與正式整合；未啟用前不會收款。'],
+        ['核心功能', '網址縮短、手動公式建立、小卡等核心功能不因購買額度而成為付費服務。AI 產生的公式可能有錯，使用前必須自行檢查。'],
         ['支援', '若有購買、交付或帳號問題，請聯絡 nasa3.14159@gmail.com。請提供 PureLink 帳號電子郵件與訂單編號，但不要傳送密碼、完整卡號或 Google 憑證。'],
       ]],
       'refund-policy': ['退款政策', '購買出錯時的清楚處理方式。', '本政策適用於 PureLink AI 公式額度的一次性購買，不限制使用者所在地區適用的任何強制消費者權利。', [

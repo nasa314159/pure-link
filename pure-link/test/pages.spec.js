@@ -126,12 +126,28 @@ describe('interactive pages', () => {
     expect(englishReport).toContain("'x-purelink-locale': \"en\"");
   });
 
-  it('publishes review-ready AI credit and refund information in English', () => {
+  it('publishes review-ready AI credit information in both locales', () => {
     const credits = renderLegalPage('ai-credits', 'en');
+    const chineseCredits = renderLegalPage('ai-credits', 'zh-Hant');
     const refunds = renderLegalPage('refund-policy', 'en');
     expect(credits).toContain('<html lang="en">');
-    expect(credits).toContain('US$5 provides 300 AI formula generations');
-    expect(credits).toContain('not processed through Creem');
+    expect(credits).toContain('PureLink AI Formula Credits');
+    expect(credits).toContain('Small: 150 AI formula drafts — NT$150');
+    expect(credits).toContain('Standard: 400 AI formula drafts — NT$300');
+    expect(credits).toContain('Large: 1,000 AI formula drafts — NT$600');
+    expect(credits).toContain('one-time purchases, not subscriptions');
+    expect(credits).toContain('Checkout is completing provider approval and production integration');
+    expect(credits).not.toMatch(/US\$5|US\$10|US\$20|300 AI formula generations|800 generations|2,000 generations|Creem/);
+    expect(chineseCredits).toContain('<html lang="zh-Hant">');
+    expect(chineseCredits).toContain('PureLink AI 公式額度');
+    expect(chineseCredits).toContain('小型方案：150 次 AI 公式草稿，NT$150');
+    expect(chineseCredits).toContain('標準方案：400 次 AI 公式草稿，NT$300');
+    expect(chineseCredits).toContain('大型方案：1,000 次 AI 公式草稿，NT$600');
+    expect(chineseCredits).toContain('一次性購買，不是訂閱');
+    expect(chineseCredits).toContain('付款功能目前正在完成供應商審核與正式整合；未啟用前不會收款');
+    expect(chineseCredits).toContain('href="/zh-Hant/refund-policy"');
+    expect(chineseCredits).toContain('mailto:nasa3.14159@gmail.com');
+    expect(chineseCredits).not.toMatch(/US\$5|US\$10|US\$20|300 次 AI 公式生成|800 次|2,000 次|Creem/);
     expect(credits).toContain('nasa3.14159@gmail.com');
     expect(refunds).toContain('<html lang="en">');
     expect(refunds).toContain('within 14 calendar days');
