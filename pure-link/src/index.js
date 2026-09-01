@@ -109,7 +109,7 @@ export async function routeRequest(request, env, context) {
     const checkoutConfigured = isLemonSupportConfigured(env) && isPublicWriteProtectionConfigured(env);
     return publicReadResponse(request, html(renderSupportPage(
       await getSupportTotals(env.pure_link_db), checkoutConfigured, requestUrl.searchParams.get('thanks') === '1', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '',
-    ), {}, { scriptNonce: nonce }));
+    ), {}, { scriptNonce: nonce, turnstile: checkoutConfigured }));
   }
 
   if (isPublicRead && (path.startsWith('assets/') || ['favicon.svg', 'og.png'].includes(path))) {

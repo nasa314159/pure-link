@@ -110,6 +110,32 @@ describe('PureLink worker', () => {
     expect(body).toContain('Support provides no AI credits');
     expect(body).toContain('Support checkout is not available yet.');
     expect(body).not.toContain('data-billing-checkout');
+    expect(body).not.toContain('data-action="support-checkout"');
+    expect(body).not.toContain('https://challenges.cloudflare.com/turnstile/v0/api.js');
+    expect(response.headers.get('content-security-policy')).not.toContain('https://challenges.cloudflare.com');
+  });
+
+  it('enables Turnstile markup and only the required CSP sources for configured support checkout', async () => {
+    Object.assign(env, {
+      APP_ENV: 'production',
+      RATE_LIMIT_SECRET: 'rate-limit-test-secret',
+      TURNSTILE_SECRET_KEY: 'turnstile-test-secret',
+      TURNSTILE_SITE_KEY: 'site-key',
+      LEMON_SQUEEZY_CHECKOUT_ENABLED: 'true',
+      LEMON_SQUEEZY_API_KEY: 'lemon-api-key',
+      LEMON_SQUEEZY_WEBHOOK_SECRET: 'webhook-secret',
+      LEMON_SQUEEZY_STORE_ID: '1',
+      LEMON_SQUEEZY_SUPPORT_VARIANT_ID: '199',
+    });
+    const response = await worker.fetch(new Request('https://pure.test/en/support'), env);
+    const body = await response.text();
+    const csp = response.headers.get('content-security-policy');
+    expect(response.status).toBe(200);
+    expect(body).toContain('data-action="support-checkout"');
+    expect(body).toContain('https://challenges.cloudflare.com/turnstile/v0/api.js');
+    expect(csp).toMatch(/script-src 'self' 'nonce-[^']+' https:\/\/challenges\.cloudflare\.com/);
+    expect(csp).toContain("connect-src 'self' https://challenges.cloudflare.com");
+    expect(csp).toContain('frame-src https://challenges.cloudflare.com');
   });
 
   it('blocks anonymous support checkout before creating a row or calling Lemon when Turnstile fails', async () => {
