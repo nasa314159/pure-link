@@ -16,7 +16,7 @@ function languageSwitcher(locale, page = '') {
   const messages = getMessages(locale);
   const choices = ['zh-Hant', 'en'].map((choice) => {
     const destination = String(page).startsWith('/') ? page : localizedHref(choice, page);
-    return `<form method="post" action="/locale"><input type="hidden" name="locale" value="${choice}"><input type="hidden" name="returnTo" value="${escapeHtml(destination)}"><button type="submit"${choice === locale ? ' aria-current="true"' : ''}>${escapeHtml(getMessages(choice).localeName)}</button></form>`;
+    return `<a href="${escapeHtml(destination)}"${choice === locale ? ' aria-current="true"' : ''}>${escapeHtml(getMessages(choice).localeName)}</a>`;
   }).join('');
   return `<nav class="language-switcher" aria-label="${escapeHtml(messages.nav.language)}">${choices}</nav>`;
 }
@@ -99,6 +99,9 @@ function renderFormulaShortcutPalette(m) {
 
 export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '', user = null, locale = 'zh-Hant') {
   const m = getMessages(locale);
+  const recoveryCopy = user
+    ? { title: m.home.accountSaved, help: m.home.accountSavedHelp }
+    : { title: m.home.saveCredential, help: m.home.saveCredentialHelp };
   const turnstileWidget = turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="create"></div></div>`
     : '';
@@ -208,8 +211,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
                 <summary>＋ ${m.home.customShortcuts}</summary>
                 <p>${m.home.localOnly}</p>
                 <div class="custom-formula-fields">
-                  <label><span>${m.home.buttonLabel}</span><input id="custom-formula-label" maxlength="12" placeholder="例如：Ĥ"></label>
-                  <label><span>${m.home.insertLatex}</span><input id="custom-formula-latex" maxlength="200" placeholder="例如：\\hat{H}"></label>
+                  <label><span>${m.home.buttonLabel}</span><input id="custom-formula-label" maxlength="12" placeholder="${escapeHtml(m.home.customFormulaLabelPlaceholder)}"></label>
+                  <label><span>${m.home.insertLatex}</span><input id="custom-formula-latex" maxlength="200" placeholder="${escapeHtml(m.home.customFormulaLatexPlaceholder)}"></label>
                   <button type="button" id="add-custom-formula">${m.home.add}</button>
                 </div>
                 <p class="custom-formula-status" id="custom-formula-status" role="status" hidden></p>
@@ -223,16 +226,16 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
                 <summary>${m.home.customRules}</summary>
                 <p>${m.home.customRulesHelp}</p>
                 <label class="field-label" for="tracking-remove">${m.home.removeAlso}</label>
-                <input id="tracking-remove" name="trackingRemove" maxlength="512" placeholder="例如：campaign_id, ref_*">
+                <input id="tracking-remove" name="trackingRemove" maxlength="512" placeholder="${escapeHtml(m.home.trackingRemovePlaceholder)}">
                 <label class="field-label" for="tracking-keep">${m.home.alwaysKeep}</label>
-                <input id="tracking-keep" name="trackingKeep" maxlength="512" placeholder="例如：utm_source, ref_code">
+                <input id="tracking-keep" name="trackingKeep" maxlength="512" placeholder="${escapeHtml(m.home.trackingKeepPlaceholder)}">
               </details>
               <label class="check-row"><input type="checkbox" name="isAffiliate" value="true"><span><strong>${m.home.affiliate}</strong><small>${m.home.affiliateHelp}</small></span></label>
             </div>
 
             <div class="conditional-options" id="card-options" hidden>
               <label class="field-label" for="signature">${m.home.signature}</label>
-              <input id="signature" name="signature" maxlength="60" placeholder="例如：一直惦記你的我">
+              <input id="signature" name="signature" maxlength="60" placeholder="${escapeHtml(m.home.signaturePlaceholder)}">
               <fieldset class="theme-picker">
                 <legend>${m.home.quietThemes}</legend>
                 <label><input type="radio" name="theme" value="paper" checked><span class="theme-swatch paper-swatch">${m.home.paper}</span></label>
@@ -265,8 +268,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
             </div>
             <p class="copy-status" id="result-status" role="status"></p>
             <div class="recovery-box">
-              <strong>${m.home.saveCredential}</strong>
-              <p>${m.home.saveCredentialHelp}</p>
+              <strong id="recovery-title">${recoveryCopy.title}</strong>
+              <p id="recovery-help">${recoveryCopy.help}</p>
               <div class="recovery-actions">
                 <button class="secondary-button" id="copy-management" type="button">${m.home.copyManagement}</button>
                 <button class="secondary-button" id="download-recovery" type="button">${m.home.downloadRecovery}</button>
@@ -306,6 +309,10 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       const resultStatus = document.getElementById('result-status');
       const shareResult = document.getElementById('share-result');
       let latestResult = null;
+      const recoveryMessages = {
+        anonymous: { title: ${JSON.stringify(m.home.saveCredential)}, help: ${JSON.stringify(m.home.saveCredentialHelp)} },
+        account: { title: ${JSON.stringify(m.home.accountSaved)}, help: ${JSON.stringify(m.home.accountSavedHelp)} },
+      };
 
       quickOpenForm.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -408,6 +415,9 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
             throw new Error(result.error || messages.createFailed);
           }
           latestResult = result;
+          const recovery = result.ownerLinked === true ? recoveryMessages.account : recoveryMessages.anonymous;
+          document.getElementById('recovery-title').textContent = recovery.title;
+          document.getElementById('recovery-help').textContent = recovery.help;
           localStorage.setItem('purelink:management:' + result.slug, result.managementToken);
           document.getElementById('result-url').textContent = result.url;
           document.getElementById('result-url').href = result.url;

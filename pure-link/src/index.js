@@ -261,6 +261,7 @@ async function createLink(request, requestUrl, repository, env, context) {
         previewLabel: normalized.contentType === 'url' ? messages.home.client.previewUrl : normalized.contentType === 'formula' ? messages.home.client.previewFormula : messages.home.client.previewCard,
         managementUrl: `${origin}/manage/${slug}#${managementToken}`,
         managementToken,
+        ownerLinked: Boolean(user?.id),
       }, { status: 201 });
     } catch (error) {
       if (!isUniqueConstraintError(error) || normalized.slug) throw error;
