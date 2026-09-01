@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createRateLimitKey, verifyTurnstile } from '../src/abuse.js';
+import { consumeAuthenticatedCheckoutRateLimit, createRateLimitKey, verifyTurnstile } from '../src/abuse.js';
 
 describe('privacy-preserving abuse protection', () => {
   it('creates unlinkable rate-limit buckets without retaining the IP address', async () => {
@@ -30,5 +30,27 @@ describe('privacy-preserving abuse protection', () => {
       hostname: 'pure.example',
       fetchImplementation,
     })).resolves.toEqual({ success: false });
+  });
+
+  it('uses a short-lived opaque per-account bucket for checkout creation', async () => {
+    const buckets = new Map();
+    const db = { prepare(sql) {
+      const statement = { values: [] };
+      return {
+        bind(...values) { statement.values = values; return this; },
+        async first() {
+          const [bucketKey, expiresAt] = statement.values;
+          const bucket = buckets.get(bucketKey) || { request_count: 0, expires_at: expiresAt };
+          bucket.request_count += 1;
+          buckets.set(bucketKey, bucket);
+          return { request_count: bucket.request_count };
+        },
+        async run() { return { success: true, meta: { changes: 0 } }; },
+      };
+    } };
+    const input = { request: new Request('https://pure.example/api/billing/checkout'), env: { RATE_LIMIT_SECRET: 'test-secret' }, db, userId: 'user-123' };
+    for (let attempt = 0; attempt < 5; attempt += 1) await expect(consumeAuthenticatedCheckoutRateLimit(input)).resolves.toMatchObject({ allowed: true, configured: true });
+    await expect(consumeAuthenticatedCheckoutRateLimit(input)).resolves.toMatchObject({ allowed: false, configured: true });
+    expect([...buckets.keys()][0]).not.toContain('user-123');
   });
 });

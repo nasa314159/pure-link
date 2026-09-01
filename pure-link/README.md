@@ -79,6 +79,8 @@ PureLink does not serve behavioral advertising, track people across sites, sell 
 
 Signed-in accounts receive five free AI formula drafts per day. Optional AI formula credits are one-time digital purchases, not subscriptions, and are used only for AI formula drafts. Delivery, current NT$ pricing, payment status, refund policy, and support contact are maintained on the canonical [AI credits page](https://no-no.uk/en/ai-credits).
 
+For self-hosted provider configuration, signed fulfillment, refunds, historical Creem compatibility, and Test Mode QA, see [Billing and AI formula credits](docs/BILLING.en.md) ([繁體中文](docs/BILLING.zh-Hant.md)).
+
 ## Project structure
 
 - `src/index.js`: routing and use-case coordination.

@@ -1,14 +1,17 @@
 import { normalizeCreateInput, ValidationError } from './content.js';
 import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requireSameOrigin, startGoogleAuth } from './auth.js';
-import { enforceWriteProtection } from './abuse.js';
+import { consumeAuthenticatedCheckoutRateLimit, enforceWriteProtection, isPublicWriteProtectionConfigured } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text, xml } from './http.js';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderUrlPreview } from './pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderSupportPage, renderUrlPreview } from './pages.js';
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
-import { BillingError, createCheckout, getCreditBalance, handleCreemWebhook, isCheckoutConfigured } from './billing.js';
+import { BillingError, getCreditBalance, handleCreemWebhook } from './billing.js';
+import { handleEcpayCallback } from './ecpay.js';
+import { createLemonSupportCheckout, getSupportTotals, handleLemonSqueezyWebhook, isLemonSupportConfigured } from './lemon-squeezy.js';
+import { createCreditCheckout, enabledPaymentProviders, PaymentError } from './payments.js';
 import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
 import { cleanupExpiredNativeCreateTokens, consumeNativeCreateToken, issueNativeCreateToken, readNativeCardInput } from './native-cards.js';
 
@@ -24,6 +27,10 @@ export default {
       }
       if (error instanceof BillingError) {
         return json({ error: error.message }, { status: error.status });
+      }
+      if (error instanceof PaymentError) {
+        const messages = getMessages(resolveResponseLocale(request));
+        return json({ error: messages.billing[error.code] || messages.billing.billingUnavailable }, { status: error.status });
       }
       console.error('PureLink request failed', { name: error?.name, message: error?.message });
       return json({ error: 'PureLink could not complete this request.' }, { status: 500 });
@@ -94,7 +101,15 @@ export async function routeRequest(request, env, context) {
   }
   if (isPublicRead && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
     if (!localeRoute) return redirect(localizedPath(locale, path), 302);
-    return publicReadResponse(request, html(renderLegalPage(path, locale)));
+    return publicReadResponse(request, html(renderLegalPage(path, locale, enabledPaymentProviders(env))));
+  }
+  if (isPublicRead && path === 'support') {
+    if (!localeRoute) return redirect(localizedPath(locale, path), 302);
+    const nonce = createSlug() + createSlug();
+    const checkoutConfigured = isLemonSupportConfigured(env) && isPublicWriteProtectionConfigured(env);
+    return publicReadResponse(request, html(renderSupportPage(
+      await getSupportTotals(env.pure_link_db), checkoutConfigured, requestUrl.searchParams.get('thanks') === '1', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '',
+    ), {}, { scriptNonce: nonce, turnstile: checkoutConfigured }));
   }
 
   if (isPublicRead && (path.startsWith('assets/') || ['favicon.svg', 'og.png'].includes(path))) {
@@ -111,6 +126,8 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'POST' && path === 'api/webhooks/creem') {
     return handleCreemWebhook(request, env);
   }
+  if (request.method === 'POST' && path === 'api/webhooks/lemon-squeezy') return handleLemonSqueezyWebhook(request, env);
+  if (request.method === 'POST' && path === 'api/webhooks/ecpay') return handleEcpayCallback(request, env);
   if (request.method === 'GET' && path === 'account') {
     if (!localeRoute) return redirect(localizedPath(locale, 'account'), 302);
     const user = await getCurrentUser(request, env);
@@ -120,20 +137,49 @@ export async function routeRequest(request, env, context) {
       user,
       await repository.listByOwner(user.id),
       await getCreditBalance(env.pure_link_db, user.id),
-      isCheckoutConfigured(env),
+      enabledPaymentProviders(env),
       requestUrl.searchParams.get('purchase'),
       nonce,
       locale,
-    ), {}, { scriptNonce: nonce });
+    ), {}, { scriptNonce: nonce, ecpayCheckout: enabledPaymentProviders(env).ecpay });
   }
 
   if (request.method === 'POST' && path === 'api/billing/checkout') {
     if (!request.headers.get('origin') || !requireSameOrigin(request, env)) {
       return json({ error: 'Invalid request origin.' }, { status: 403 });
     }
+    const messages = getMessages(resolveResponseLocale(request));
     const user = await getCurrentUser(request, env);
-    if (!user) return json({ error: '請先登入再購買 AI 公式額度。' }, { status: 401 });
-    return json(await createCheckout({ requestUrl, user, env }));
+    if (!user) return json({ error: messages.billing.signInRequired }, { status: 401 });
+    const throttle = await consumeAuthenticatedCheckoutRateLimit({ request, env, db: env.pure_link_db, userId: user.id, context });
+    if (!throttle.configured) return json({ error: messages.billing.billingUnavailable }, { status: 503 });
+    if (!throttle.allowed) return json({ error: messages.billing.checkoutRateLimited }, { status: 429, headers: { 'retry-after': String(throttle.retryAfterSeconds) } });
+    const input = await readCreateInput(request);
+    return json(await createCreditCheckout({
+      provider: String(input.provider || ''), packId: String(input.packId || ''), requestUrl, user,
+      locale: resolveResponseLocale(request), env,
+    }));
+  }
+
+  if (request.method === 'POST' && path === 'api/support/checkout') {
+    if (!request.headers.get('origin') || !requireSameOrigin(request, env)) {
+      return json({ error: getMessages(resolveResponseLocale(request)).api.invalidRequest }, { status: 403 });
+    }
+    const input = await readCreateInput(request);
+    const protectionResponse = await enforceWriteProtection({
+      request,
+      requestUrl,
+      env,
+      db: env.pure_link_db,
+      action: 'support-checkout',
+      token: input.turnstileToken || input['cf-turnstile-response'],
+      context,
+    });
+    if (protectionResponse) return protectionResponse;
+    return json(await createLemonSupportCheckout({
+      requestUrl, locale: resolveResponseLocale(request), env,
+      displayName: input.displayName, publicAttribution: input.publicAttribution,
+    }));
   }
 
   if (request.method === 'POST' && (path === 'api/links' || path === 'api/create')) {
@@ -442,7 +488,7 @@ function publicOrigin(requestUrl, env) {
 }
 
 function renderSitemap(origin) {
-  const paths = ['', 'privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'];
+  const paths = ['', 'privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy', 'support'];
   const urls = ['zh-Hant', 'en'].flatMap((locale) => paths.map((path) => `  <url><loc>${origin}${localizedPath(locale, path)}</loc></url>`)).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }

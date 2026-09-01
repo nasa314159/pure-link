@@ -4,8 +4,20 @@ APP_ENV=development
 TURNSTILE_SITE_KEY=replace-with-public-site-key
 TURNSTILE_SECRET_KEY=replace-with-secret-key
 RATE_LIMIT_SECRET=replace-with-at-least-32-random-bytes
-CREEM_API_KEY=replace-with-creem-test-api-key
-CREEM_WEBHOOK_SECRET=replace-with-creem-test-webhook-secret
-CREEM_API_BASE=https://test-api.creem.io
-CREEM_PRODUCT_300_ID=replace-with-creem-test-product-id
+# AI credit product identity is fixed in src/credit-products.js. Do not put
+# prices or credit quantities in provider configuration.
+LEMON_SQUEEZY_CHECKOUT_ENABLED=false
+LEMON_SQUEEZY_API_KEY=replace-with-lemon-api-key
+LEMON_SQUEEZY_WEBHOOK_SECRET=replace-with-lemon-webhook-secret
+LEMON_SQUEEZY_STORE_ID=replace-with-lemon-store-id
+LEMON_SQUEEZY_VARIANT_SMALL_ID=replace-with-small-variant-id
+LEMON_SQUEEZY_VARIANT_STANDARD_ID=replace-with-standard-variant-id
+LEMON_SQUEEZY_VARIANT_LARGE_ID=replace-with-large-variant-id
+LEMON_SQUEEZY_SUPPORT_VARIANT_ID=replace-with-pay-what-you-want-variant-id
+ECPAY_CHECKOUT_ENABLED=false
+ECPAY_ENVIRONMENT=stage
+ECPAY_MERCHANT_ID=replace-with-ecpay-merchant-id
+ECPAY_HASH_KEY=replace-with-ecpay-hash-key
+ECPAY_HASH_IV=replace-with-ecpay-hash-iv
+# Historical Creem compatibility only. Do not enable for new checkouts.
 CREEM_LIVE_CHECKOUT_ENABLED=false

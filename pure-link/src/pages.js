@@ -1,4 +1,5 @@
 import { escapeHtml } from './http.js';
+import { listAiCreditPacks } from './credit-products.js';
 import { renderFormulaContent } from './formula.js';
 import { getMessages, localizedPath } from './i18n.js';
 
@@ -10,6 +11,14 @@ function clientMessagesMarkup(locale) {
 
 function localizedHref(locale, path = '') {
   return localizedPath(locale, path);
+}
+
+function creditPackSummary(locale) {
+  const billing = getMessages(locale).billing;
+  return listAiCreditPacks().map((pack) => billing.pack
+    .replace('{name}', billing.packNames[pack.id])
+    .replace('{credits}', Number(pack.credits).toLocaleString('en-US'))
+    .replace('{price}', Number(pack.priceTwd).toLocaleString('en-US'))).join(locale === 'en' ? '. ' : '。');
 }
 
 function languageSwitcher(locale, page = '') {
@@ -285,7 +294,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
 
         <footer class="home-footer">
           <p>${m.home.footer}</p>
-          <nav aria-label="${escapeHtml(m.nav.language)}">${googleAuthConfigured ? `<a href="${localizedHref(locale, 'account')}">${m.nav.account}</a>` : ''}<a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">${m.nav.github}</a></nav>
+          <nav aria-label="${escapeHtml(m.nav.language)}">${googleAuthConfigured ? `<a href="${localizedHref(locale, 'account')}">${m.nav.account}</a>` : ''}<a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'support')}">${m.support.button}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a><a href="https://github.com/nasa314159/pure-link" rel="noreferrer">${m.nav.github}</a></nav>
           ${languageSwitcher(locale)}
         </footer>
       </main>
@@ -720,7 +729,7 @@ export function renderReportPage(slug, nonce, turnstileSiteKey = '', locale = 'z
   });
 }
 
-export function renderLegalPage(page, locale = 'zh-Hant') {
+export function renderLegalPage(page, locale = 'zh-Hant', providers = {}) {
   const pages = {
     privacy: {
       eyebrow: 'PRIVACY',
@@ -767,7 +776,7 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
       intro: 'PureLink is free to use. These one-time purchases add AI formula drafts only; they are not subscriptions and do not make the core URL, manual formula, or card tools paid services.',
       sections: [
         ['What the product does', 'A signed-in customer can describe a mathematical expression in natural language and receive an editable LaTeX draft with an immediate visual preview. The result is never published automatically, may contain mistakes, and must be reviewed by the customer before use.'],
-        ['One-time plans', 'Small: 150 AI formula drafts — NT$150. Standard: 400 AI formula drafts — NT$300. Large: 1,000 AI formula drafts — NT$600. These are one-time purchases, not subscriptions.'],
+        ['One-time plans', ''],
         ['Delivery and use', 'After payment is confirmed, credits are added to the PureLink account that started the purchase. Customers must be signed in before purchasing. The regular five free daily credits are used first. Purchased credits are only for the AI formula draft feature and are not shared between accounts.'],
         ['Payment status', 'Checkout is completing provider approval and production integration. No payment is accepted until it is enabled.'],
         ['Support', 'For purchase, delivery, or account questions, contact nasa3.14159@gmail.com. Include the email address used for your PureLink account and the order number, but never send a password, full card number, or Google credential.'],
@@ -787,8 +796,22 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
       ],
     },
   };
-  const content = localizedLegalContent(page, locale, pages) || pages.transparency;
+  const baseContent = localizedLegalContent(page, locale, pages) || pages.transparency;
   const m = getMessages(locale);
+  const paymentProviders = [providers.ecpay ? m.billing.providerEcpay : '', providers.lemon ? m.billing.providerLemon : ''].filter(Boolean);
+  const paymentStatus = paymentProviders.length
+    ? m.billing.paymentEnabled.replace('{providers}', paymentProviders.join(locale === 'en' ? ' · ' : '、'))
+    : m.billing.paymentUnavailable;
+  const content = page === 'ai-credits'
+    ? {
+      ...baseContent,
+      sections: baseContent.sections.map(([heading, copy]) => {
+        if (heading === 'One-time plans' || heading === '一次性方案') return [heading, `${creditPackSummary(locale)}${locale === 'en' ? '. These are one-time purchases, not subscriptions.' : '。這些都是一次性購買，不是訂閱。'}`];
+        if (heading === 'Payment status' || heading === '付款狀態') return [heading, paymentStatus];
+        return [heading, copy];
+      }),
+    }
+    : baseContent;
   const updated = page === 'ai-credits'
     ? (locale === 'en' ? 'Last updated: September 1, 2026' : 'MVP 說明版本：2026-09-01')
     : (locale === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14');
@@ -807,7 +830,7 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
           ${page === 'ai-credits' ? `<p class="legal-contact"><a href="${localizedHref(locale, 'refund-policy')}">${locale === 'en' ? 'Refund policy' : '退款政策'}</a> · <a href="mailto:nasa3.14159@gmail.com">${locale === 'en' ? 'Support: nasa3.14159@gmail.com' : '支援：nasa3.14159@gmail.com'}</a></p>` : ''}
-          <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
+          <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'support')}">${m.support.button}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
           ${languageSwitcher(locale, page)}
           <p class="legal-updated">${updated}</p>
         </article>
@@ -847,7 +870,7 @@ function localizedLegalContent(page, locale, defaults) {
     'zh-Hant': {
       'ai-credits': ['PureLink AI 公式額度', '需要時才購買更多公式草稿。', 'PureLink 核心功能免費使用；可選的一次性額度只延伸 AI 公式功能，不會把網址、公式或小卡變成付費服務。', [
         ['商品內容', '已登入的使用者可用自然語言描述數學式，取得可編輯、可立即預覽的 LaTeX 草稿。結果不會自動發布，可能有錯，使用前必須自行檢查。'],
-        ['一次性方案', '小型方案：150 次 AI 公式草稿，NT$150。標準方案：400 次 AI 公式草稿，NT$300。大型方案：1,000 次 AI 公式草稿，NT$600。這些都是一次性購買，不是訂閱。'],
+        ['一次性方案', ''],
         ['交付與使用', '付款確認後，額度會加入發起購買的 PureLink 帳號。購買前必須登入。一般登入帳號每日免費額度仍優先使用。購買額度只用於 AI 公式草稿功能，且不在帳號間共用。'],
         ['付款狀態', '付款功能目前正在完成供應商審核與正式整合；未啟用前不會收款。'],
         ['核心功能', '網址縮短、手動公式建立、小卡等核心功能不因購買額度而成為付費服務。AI 產生的公式可能有錯，使用前必須自行檢查。'],
@@ -1000,16 +1023,19 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
   });
 }
 
-export function renderAccountPage(user, links, creditBalance = 0, checkoutConfigured = false, purchaseStatus = '', nonce = '', locale = 'zh-Hant') {
+export function renderAccountPage(user, links, creditBalance = 0, providers = {}, purchaseStatus = '', nonce = '', locale = 'zh-Hant') {
   const m = getMessages(locale);
+  const enabledProviders = [providers.ecpay ? ['ecpay', m.billing.providerEcpay] : null, providers.lemon ? ['lemon', m.billing.providerLemon] : null].filter(Boolean);
   const rows = links.length
     ? links.map((link) => `<li><div><span>${escapeHtml(({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content)}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">${m.common.view}</a><a href="${localizedHref(locale, `manage/${link.slug}`)}">${m.common.manage}</a></li>`).join('')
     : `<li class="empty-account">${m.account.empty}</li>`;
   const purchaseNotice = purchaseStatus === 'success'
-    ? `<p class="auth-notice" role="status"><strong>${m.account.returned}</strong><span>${m.account.returnedHelp}</span></p>`
-    : '';
-  const checkoutAction = checkoutConfigured
-    ? `<button id="buy-credits-300" type="button">${m.account.buy}</button><p class="billing-status" id="billing-status" role="status" hidden></p>`
+    ? `<p class="auth-notice" role="status"><strong>${m.billing.returned}</strong><span>${m.billing.returnedHelp}</span></p>`
+    : purchaseStatus === 'pending'
+      ? `<p class="auth-notice" role="status"><strong>${m.billing.pending}</strong><span>${m.billing.pendingHelp}</span></p>`
+      : '';
+  const packActions = enabledProviders.length
+    ? `<div class="credit-pack-list">${listAiCreditPacks().map((pack) => `<section class="credit-pack"><strong>${escapeHtml(m.billing.packNames[pack.id])}</strong><span>${escapeHtml(m.billing.pack.replace('{name}', m.billing.packNames[pack.id]).replace('{credits}', Number(pack.credits).toLocaleString('en-US')).replace('{price}', Number(pack.priceTwd).toLocaleString('en-US')))}</span>${enabledProviders.length > 1 ? `<small>${m.billing.providerChoice}</small>` : ''}<div class="provider-choices">${enabledProviders.map(([provider, name]) => `<button type="button" data-billing-checkout data-provider="${provider}" data-pack-id="${pack.id}">${escapeHtml(enabledProviders.length > 1 ? name : m.billing.buy)}</button>`).join('')}</div></section>`).join('')}</div><p class="billing-status" id="billing-status" role="status" hidden></p>`
     : `<p class="billing-status">${m.account.billingDisabled}</p>`;
   return documentShell({
     title: m.account.title,
@@ -1028,8 +1054,9 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
             <p class="eyebrow">${m.page.creditsEyebrow}</p>
             <h2 id="account-credits-title">${m.account.credits.replace('{count}', Math.max(0, Number(creditBalance || 0)))}</h2>
             <p>${m.account.creditsHelp}</p>
-            ${checkoutAction}
-            <p><a href="${localizedHref(locale, 'ai-credits')}">${m.account.productInfo}</a> · <a href="${localizedHref(locale, 'refund-policy')}">${m.account.refund}</a></p>
+            <p><strong>${m.billing.packs}</strong></p>
+            ${packActions}
+            <p><a href="${localizedHref(locale, 'ai-credits')}">${m.account.productInfo}</a> · <a href="${localizedHref(locale, 'support')}">${m.support.button}</a> · <a href="${localizedHref(locale, 'refund-policy')}">${m.account.refund}</a></p>
           </section>
           <ul class="account-links">${rows}</ul>
           <form action="/auth/logout" method="post"><button class="secondary-button" type="submit">${m.account.logOut}</button></form>
@@ -1037,32 +1064,80 @@ export function renderAccountPage(user, links, creditBalance = 0, checkoutConfig
         </article>
       </main>
     `,
-    script: checkoutConfigured ? `
-      const accountMessages = ${JSON.stringify(m.account).replaceAll('<', '\\u003c')};
-      const buyButton = document.getElementById('buy-credits-300');
+    script: enabledProviders.length ? `
+      const billingMessages = ${JSON.stringify(m.billing).replaceAll('<', '\\u003c')};
       const billingStatus = document.getElementById('billing-status');
-      buyButton?.addEventListener('click', async () => {
-        buyButton.disabled = true;
+      document.querySelectorAll('[data-billing-checkout]').forEach((buyButton) => buyButton.addEventListener('click', async () => {
+        const allButtons = document.querySelectorAll('[data-billing-checkout]');
+        allButtons.forEach((button) => { button.disabled = true; });
         billingStatus.hidden = false;
-        billingStatus.textContent = accountMessages.checkout;
+        billingStatus.textContent = billingMessages.opening;
         try {
           const response = await fetch('/api/billing/checkout', {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: '{}',
+            headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} },
+            body: JSON.stringify({ provider: buyButton.dataset.provider, packId: buyButton.dataset.packId }),
           });
           const payload = await response.json();
-          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || accountMessages.checkoutFailed);
-          location.assign(payload.checkoutUrl);
+          if (!response.ok) throw new Error(payload.error || billingMessages.failed);
+          if (payload.checkoutUrl) location.assign(payload.checkoutUrl);
+          else if (payload.action && payload.fields) {
+            const form = document.createElement('form');
+            form.method = 'post';
+            form.action = payload.action;
+            Object.entries(payload.fields).forEach(([name, value]) => {
+              const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; form.append(input);
+            });
+            document.body.append(form);
+            form.submit();
+          } else throw new Error(billingMessages.failed);
         } catch (error) {
           billingStatus.textContent = error.message;
           billingStatus.dataset.error = 'true';
-          buyButton.disabled = false;
+          allButtons.forEach((button) => { button.disabled = false; });
         }
-      });
+      }));
     ` : '',
     nonce,
   });
+}
+
+export function renderSupportPage(totals, checkoutConfigured = false, thanks = false, nonce = '', locale = 'zh-Hant', turnstileSiteKey = '') {
+  const m = getMessages(locale);
+  const publicSupporters = (totals?.publicSupporters || []).map(escapeHtml).filter(Boolean);
+  const turnstileWidget = checkoutConfigured && turnstileSiteKey
+    ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="support-checkout"></div></div>`
+    : '';
+  const checkout = checkoutConfigured
+    ? `<form id="support-form"><label class="field-label" for="support-display-name">${m.support.optionalName}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${m.support.optionalNameHelp}</p><label class="check-row"><input id="support-public-attribution" type="checkbox" name="publicAttribution" value="true"><span><strong>${m.support.attribute}</strong></span></label>${turnstileWidget}<button class="create-button" id="support-button" type="submit">${m.support.button}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
+    : `<p class="billing-status">${m.support.unavailable}</p>`;
+  return documentShell({
+    title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale,
+    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${thanks ? `<p class="auth-notice" role="status">${m.support.thanks}</p>` : ''}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${m.support.totals}</span><strong>${formatUsd(totals?.netUsdMinor || 0, locale)}</strong><small>${m.support.contributions.replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${m.support.limitedTotals}</p>` : ''}</section>${publicSupporters.length ? `<p class="supporters"><strong>${m.support.supporters}</strong>: ${publicSupporters.join(', ')}</p>` : ''}<p class="notice">${m.support.boundary}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${m.support.aiCredits}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
+    script: checkoutConfigured ? `
+      const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
+      const supportForm = document.getElementById('support-form');
+      const supportButton = document.getElementById('support-button');
+      const supportStatus = document.getElementById('support-status');
+      supportForm.addEventListener('submit', async (event) => {
+        event.preventDefault(); supportButton.disabled = true; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
+        try {
+          const data = Object.fromEntries(new FormData(supportForm));
+          data.turnstileToken = window.turnstile?.getResponse() || '';
+          const response = await fetch('/api/support/checkout', { method: 'POST', headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} }, body: JSON.stringify(data) });
+          const payload = await response.json();
+          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || supportMessages.failed);
+          location.assign(payload.checkoutUrl);
+        } catch (error) { window.turnstile?.reset(); supportStatus.textContent = error.message; supportStatus.dataset.error = 'true'; supportButton.disabled = false; }
+      });
+    ` : '',
+    nonce,
+    externalScript: turnstileSiteKey ? 'https://challenges.cloudflare.com/turnstile/v0/api.js' : '',
+  });
+}
+
+function formatUsd(minor, locale) {
+  return new Intl.NumberFormat(locale === 'zh-Hant' ? 'zh-TW' : 'en-US', { style: 'currency', currency: 'USD' }).format(Math.max(0, Number(minor || 0)) / 100);
 }
 
 export function renderNotFoundPage(locale = 'zh-Hant') {
@@ -1348,6 +1423,13 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .account-credits h2 { font-size: clamp(1.15rem, 3vw, 1.65rem); }
     .account-credits > p { color: var(--muted); line-height: 1.55; }
     .account-credits button { width: 100%; border: 0; background: var(--ink); color: white; }
+    .credit-pack-list { display: grid; gap: .65rem; }
+    .credit-pack { display: grid; gap: .35rem; padding: .8rem; border: 1px solid #bdd7cb; border-radius: .9rem; background: rgba(255,255,255,.58); }
+    .credit-pack > span, .credit-pack > small { color: var(--muted); }
+    .provider-choices { display: grid; gap: .45rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+    .provider-choices button { margin: 0; }
+    .support-totals { display: grid; gap: .25rem; padding: 1rem; border-radius: 1rem; background: #edf5f1; border: 1px solid #bdd7cb; }
+    .support-totals strong { font-size: 1.5rem; }
     .billing-status { color: var(--green); font-size: .78rem; }
     .billing-status[data-error="true"] { color: #8f2f2a; }
     .account-links li { display: grid; grid-template-columns: 1fr auto auto; gap: .8rem; align-items: center; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage } from '../src/pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderSupportPage } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -208,15 +208,36 @@ describe('interactive pages', () => {
     expect(refunds).toContain('Consumed credits are generally not refundable');
   });
 
-  it('shows purchased credits and creates checkout only when billing is configured', () => {
+  it('shows canonical packs and only enabled payment rails on the account page', () => {
     const disabled = renderAccountPage({ email: 'person@example.com' }, [], 12, false);
-    const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, true, 'success', 'billing-nonce');
+    const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, { ecpay: true, lemon: true }, 'success', 'billing-nonce', 'en');
     expect(disabled).toContain('可用購買額度：12 次');
-    expect(disabled).not.toContain('id="buy-credits-300"');
-    expect(enabled).toContain('id="buy-credits-300"');
-    expect(enabled).toContain('付款流程已返回 PureLink');
+    expect(disabled).not.toContain('data-billing-checkout');
+    expect(enabled).toContain('data-provider="ecpay" data-pack-id="small"');
+    expect(enabled).toContain('data-provider="lemon" data-pack-id="large"');
+    expect(enabled).toContain('Small: 150 AI formula drafts — NT$150');
+    expect(enabled).toContain('The payment flow has returned to PureLink');
     expect(enabled).toContain('nonce="billing-nonce"');
     expect(() => new Function(extractScript(enabled))).not.toThrow();
+  });
+
+  it('explains that a returned checkout is pending verified server confirmation', () => {
+    const english = renderAccountPage({ email: 'person@example.com' }, [], 0, { lemon: true }, 'pending', 'billing-nonce', 'en');
+    const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, 'pending', 'billing-nonce', 'zh-Hant');
+    expect(english).toContain('Waiting for verified payment confirmation.');
+    expect(english).toContain('Returning in this browser does not grant credits.');
+    expect(english).toContain('refreshing or revisiting this page cannot duplicate credits');
+    expect(chinese).toContain('正在等待已驗證的付款確認。');
+    expect(chinese).toContain('重新整理或再次造訪這個頁面不會重複加入額度');
+  });
+
+  it('uses a Turnstile challenge for an enabled anonymous support checkout', () => {
+    const html = renderSupportPage({ netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, true, false, 'support-nonce', 'en', 'site-key');
+    expect(html).toContain('data-action="support-checkout"');
+    expect(html).toContain('data-sitekey="site-key"');
+    expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');
+    expect(html).toContain('data.turnstileToken = window.turnstile?.getResponse() || \'\';');
+    expect(() => new Function(extractScript(html))).not.toThrow();
   });
 
   it('loads Turnstile as a regular deferred script', () => {
