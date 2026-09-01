@@ -79,6 +79,8 @@ PureLink 會自動把網址帶入建立頁，使用者仍能檢查目的地、�
 
 一般登入帳號每日仍有 5 次免費 AI 公式生成。額外額度是一次性數位商品，不是訂閱，只用於 AI 公式草稿；目前價格、交付與退款說明請以公開的[繁體中文 AI 公式額度頁面](https://no-no.uk/zh-Hant/ai-credits)為準。
 
+自架供應商設定、已簽名付款確認、退款、歷史 Creem 相容與 Test Mode QA 請見[付款與 AI 公式額度](BILLING.zh-Hant.md)（[English](BILLING.en.md)）。
+
 ## 專案結構
 
 - `src/index.js`：路由與使用情境協調。

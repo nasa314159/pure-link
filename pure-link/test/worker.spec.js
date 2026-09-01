@@ -101,6 +101,24 @@ describe('PureLink worker', () => {
     }
   });
 
+  it('keeps voluntary support separate, public, and localized while checkout is disabled', async () => {
+    const response = await worker.fetch(new Request('https://pure.test/en/support'), env);
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('<html lang="en">');
+    expect(body).toContain('Support provides no AI credits');
+    expect(body).toContain('Support checkout is not available yet.');
+    expect(body).not.toContain('data-billing-checkout');
+  });
+
+  it('uses the page locale for billing API notices without affecting access checks', async () => {
+    const response = await worker.fetch(new Request('https://pure.test/api/billing/checkout', {
+      method: 'POST', headers: { origin: 'https://pure.test', 'content-type': 'application/json', 'x-purelink-locale': 'en' }, body: JSON.stringify({ provider: 'ecpay', packId: 'small' }),
+    }), env);
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toMatchObject({ error: 'Sign in before purchasing AI formula credits.' });
+  });
+
   it('publishes a public-only sitemap and points robots.txt to it', async () => {
     env.PUBLIC_ORIGIN = 'https://no-no.uk';
     const robots = await worker.fetch(new Request('https://pure.test/robots.txt'), env);
@@ -118,6 +136,7 @@ describe('PureLink worker', () => {
     expect(sitemapBody).toContain('<loc>https://no-no.uk/en/</loc>');
     expect(sitemapBody).toContain('<loc>https://no-no.uk/en/privacy</loc>');
     expect(sitemapBody).toContain('<loc>https://no-no.uk/en/ai-credits</loc>');
+    expect(sitemapBody).toContain('<loc>https://no-no.uk/en/support</loc>');
     expect(sitemapBody).not.toContain('/account');
     expect(sitemapBody).not.toContain('/manage/');
 
@@ -507,7 +526,15 @@ class MemoryStatement {
     if (this.sql.startsWith('SELECT slug, content_type')) {
       return this.db.links.get(this.values[0]) || null;
     }
+    if (this.sql.startsWith('SELECT COALESCE(SUM') && this.sql.includes('lemon_support_contributions')) {
+      return { net_usd_minor: 0, contribution_count: 0, unconverted_count: 0 };
+    }
     throw new Error(`Unsupported first query: ${this.sql}`);
+  }
+
+  async all() {
+    if (this.sql.startsWith('SELECT public_display_name FROM lemon_support_contributions')) return { results: [] };
+    throw new Error(`Unsupported all query: ${this.sql}`);
   }
 
   async run() {

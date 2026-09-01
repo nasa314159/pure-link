@@ -23,7 +23,9 @@ export function html(markup, init = {}, options = {}) {
   const turnstilePolicy = options.turnstile ? '; frame-src https://challenges.cloudflare.com' : '';
   const connectSources = options.turnstile ? "'self' https://challenges.cloudflare.com" : "'self'";
   const scriptPolicy = `; script-src ${scriptSources.join(' ')}; connect-src ${connectSources}${turnstilePolicy}`;
-  headers.set('content-security-policy', `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${scriptPolicy}`);
+  const formActions = ["'self'"];
+  if (options.ecpayCheckout) formActions.push('https://payment-stage.ecpay.com.tw', 'https://payment.ecpay.com.tw');
+  headers.set('content-security-policy', `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action ${formActions.join(' ')}; frame-ancestors 'none'${scriptPolicy}`);
   applyBaseHeaders(headers);
   return new Response(markup, { ...init, headers });
 }

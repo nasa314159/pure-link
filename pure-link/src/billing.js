@@ -1,5 +1,7 @@
 import { json } from './http.js';
 
+// Historical Creem compatibility only. New purchase routes use payments.js,
+// lemon-squeezy.js, and ecpay.js; this module never selects Creem publicly.
 export const CREEM_PRODUCT_300_ID = 'prod_4UdvN9knG2AzhhktS3Nwj9';
 export const CREEM_CREDITS_300 = 300;
 const DEFAULT_CREEM_API_BASE = 'https://api.creem.io';
@@ -13,10 +15,13 @@ export class BillingError extends Error {
   }
 }
 
-export function isCheckoutConfigured(env) {
+export function isLegacyCreemCheckoutConfigured(env) {
   return env.CREEM_LIVE_CHECKOUT_ENABLED === 'true'
     && Boolean(env.CREEM_API_KEY && env.CREEM_WEBHOOK_SECRET && configuredProductId(env));
 }
+
+// Kept as a source-compatible alias for historical self-hosted integrations.
+export const isCheckoutConfigured = isLegacyCreemCheckoutConfigured;
 
 export async function getCreditBalance(db, userId) {
   if (!db || !userId) return 0;
@@ -28,10 +33,10 @@ export async function getCreditBalance(db, userId) {
   return Math.max(0, Number(row?.balance || 0));
 }
 
-export async function createCheckout({ requestUrl, user, env, fetchImplementation = fetch }) {
+export async function createLegacyCreemCheckout({ requestUrl, user, env, fetchImplementation = fetch }) {
   const apiKey = String(env.CREEM_API_KEY || '');
   const productId = configuredProductId(env);
-  if (!isCheckoutConfigured(env)) throw new BillingError('AI 額度結帳目前尚未開放。', 503);
+  if (!isLegacyCreemCheckoutConfigured(env)) throw new BillingError('AI 額度結帳目前尚未開放。', 503);
 
   const requestId = crypto.randomUUID();
   await env.pure_link_db.prepare(`
@@ -89,6 +94,8 @@ export async function createCheckout({ requestUrl, user, env, fetchImplementatio
   }
   return { checkoutUrl };
 }
+
+export const createCheckout = createLegacyCreemCheckout;
 
 export async function handleCreemWebhook(request, env) {
   if (!env.CREEM_WEBHOOK_SECRET) {

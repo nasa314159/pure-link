@@ -9,12 +9,12 @@
 
 ## Maintainer checks before launch
 
-- [ ] Back up remote D1 and apply outstanding migrations in order.
+- [ ] Back up remote D1 and apply outstanding migrations in order through `0009`.
 - [ ] Verify creation, preview, redirect, formula, card, PNG, reporting, and deletion in staging.
 - [ ] Verify mobile, keyboard, error, and Turnstile accessibility paths.
 - [ ] Confirm logging, access controls, and retention match public privacy disclosures.
 - [ ] Establish report handling, review frequency, and emergency takedown procedures.
-- [ ] Complete payment-provider test-mode payment, webhook, refund, and dispute verification before enabling live checkout.
+- [ ] Complete Lemon Squeezy and ECPay Test Mode checkout, webhook, cumulative refund, duplicate-callback, and wrong-signature/store/merchant verification before enabling live checkout.
 - [ ] Verify the public source, documentation, and quiet voluntary-support path are current.
 
 ## Release order

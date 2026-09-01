@@ -157,13 +157,15 @@ describe('interactive pages', () => {
     expect(refunds).toContain('Consumed credits are generally not refundable');
   });
 
-  it('shows purchased credits and creates checkout only when billing is configured', () => {
+  it('shows canonical packs and only enabled payment rails on the account page', () => {
     const disabled = renderAccountPage({ email: 'person@example.com' }, [], 12, false);
-    const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, true, 'success', 'billing-nonce');
+    const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, { ecpay: true, lemon: true }, 'success', 'billing-nonce', 'en');
     expect(disabled).toContain('可用購買額度：12 次');
-    expect(disabled).not.toContain('id="buy-credits-300"');
-    expect(enabled).toContain('id="buy-credits-300"');
-    expect(enabled).toContain('付款流程已返回 PureLink');
+    expect(disabled).not.toContain('data-billing-checkout');
+    expect(enabled).toContain('data-provider="ecpay" data-pack-id="small"');
+    expect(enabled).toContain('data-provider="lemon" data-pack-id="large"');
+    expect(enabled).toContain('Small: 150 AI formula drafts — NT$150');
+    expect(enabled).toContain('The payment flow has returned to PureLink');
     expect(enabled).toContain('nonce="billing-nonce"');
     expect(() => new Function(extractScript(enabled))).not.toThrow();
   });
