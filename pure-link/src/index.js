@@ -1,6 +1,6 @@
 import { normalizeCreateInput, ValidationError } from './content.js';
 import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requireSameOrigin, startGoogleAuth } from './auth.js';
-import { enforceWriteProtection } from './abuse.js';
+import { consumeAuthenticatedCheckoutRateLimit, enforceWriteProtection, isPublicWriteProtectionConfigured } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text, xml } from './http.js';
 import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderSupportPage, renderUrlPreview } from './pages.js';
@@ -106,8 +106,9 @@ export async function routeRequest(request, env, context) {
   if (isPublicRead && path === 'support') {
     if (!localeRoute) return redirect(localizedPath(locale, path), 302);
     const nonce = createSlug() + createSlug();
+    const checkoutConfigured = isLemonSupportConfigured(env) && isPublicWriteProtectionConfigured(env);
     return publicReadResponse(request, html(renderSupportPage(
-      await getSupportTotals(env.pure_link_db), isLemonSupportConfigured(env), requestUrl.searchParams.get('thanks') === '1', nonce, locale,
+      await getSupportTotals(env.pure_link_db), checkoutConfigured, requestUrl.searchParams.get('thanks') === '1', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '',
     ), {}, { scriptNonce: nonce }));
   }
 
@@ -150,6 +151,9 @@ export async function routeRequest(request, env, context) {
     const messages = getMessages(resolveResponseLocale(request));
     const user = await getCurrentUser(request, env);
     if (!user) return json({ error: messages.billing.signInRequired }, { status: 401 });
+    const throttle = await consumeAuthenticatedCheckoutRateLimit({ request, env, db: env.pure_link_db, userId: user.id, context });
+    if (!throttle.configured) return json({ error: messages.billing.billingUnavailable }, { status: 503 });
+    if (!throttle.allowed) return json({ error: messages.billing.checkoutRateLimited }, { status: 429, headers: { 'retry-after': String(throttle.retryAfterSeconds) } });
     const input = await readCreateInput(request);
     return json(await createCreditCheckout({
       provider: String(input.provider || ''), packId: String(input.packId || ''), requestUrl, user,
@@ -162,6 +166,16 @@ export async function routeRequest(request, env, context) {
       return json({ error: getMessages(resolveResponseLocale(request)).api.invalidRequest }, { status: 403 });
     }
     const input = await readCreateInput(request);
+    const protectionResponse = await enforceWriteProtection({
+      request,
+      requestUrl,
+      env,
+      db: env.pure_link_db,
+      action: 'support-checkout',
+      token: input.turnstileToken || input['cf-turnstile-response'],
+      context,
+    });
+    if (protectionResponse) return protectionResponse;
     return json(await createLemonSupportCheckout({
       requestUrl, locale: resolveResponseLocale(request), env,
       displayName: input.displayName, publicAttribution: input.publicAttribution,

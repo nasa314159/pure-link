@@ -19,7 +19,7 @@
 - [x] 選定並註冊正式網域 `no-no.uk`。
 - [x] 建立 Managed Turnstile widget，允許 `no-no.uk` 與 `staging.no-no.uk`。
 - [x] 產生獨立的 `RATE_LIMIT_SECRET`，不得沿用其他服務密鑰。
-- [ ] 在遠端 D1 先備份，再依序套用所有尚未套用的 migration（目前至 `0009`）。
+- [ ] 在遠端 D1 先備份，再依序套用所有尚未套用的 migration（目前至 `0010`）。
 - [x] 建立與正式環境隔離的 `pure-link-staging` D1。
 - [x] 在 staging 驗證建立、預覽、跳轉、公式、小卡、PNG、檢舉與刪除。
 - [ ] 驗證手機、鍵盤操作、錯誤畫面與 Turnstile 無障礙流程。

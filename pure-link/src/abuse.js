@@ -26,13 +26,28 @@ export async function enforceWriteProtection({ request, requestUrl, env, db, act
   return null;
 }
 
-export async function consumeRateLimit({ request, env, db, action, context, now = Date.now() }) {
+// Billing checkout remains account-only, but it should not generate an
+// unbounded number of provider checkout sessions from a single account.
+// The database retains only the same HMAC-derived, short-lived bucket key as
+// public writes; it never receives the account ID as a rate-limit value.
+export async function consumeAuthenticatedCheckoutRateLimit({ request, env, db, userId, context }) {
+  if (!env.RATE_LIMIT_SECRET || !userId) return { allowed: false, configured: false, retryAfterSeconds: 0 };
+  return { ...await consumeRateLimit({ request, env, db, action: 'billing-checkout', context, clientIdentity: `user:${userId}` }), configured: true };
+}
+
+export function isPublicWriteProtectionConfigured(env) {
+  return Boolean(env.RATE_LIMIT_SECRET && env.TURNSTILE_SECRET_KEY && env.TURNSTILE_SITE_KEY);
+}
+
+export async function consumeRateLimit({ request, env, db, action, context, clientIdentity = '', now = Date.now() }) {
   const limits = action === 'report'
     ? { maximum: 8, windowSeconds: 60 * 60 }
-    : { maximum: 20, windowSeconds: 10 * 60 };
+    : action === 'billing-checkout'
+      ? { maximum: 5, windowSeconds: 10 * 60 }
+      : { maximum: 20, windowSeconds: 10 * 60 };
   const windowStart = Math.floor(now / (limits.windowSeconds * 1000)) * limits.windowSeconds;
-  const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
-  const bucketKey = await createRateLimitKey(env.RATE_LIMIT_SECRET, action, clientIp, windowStart);
+  const clientKey = clientIdentity || request.headers.get('CF-Connecting-IP') || 'unknown';
+  const bucketKey = await createRateLimitKey(env.RATE_LIMIT_SECRET, action, clientKey, windowStart);
   const expiresAt = windowStart + limits.windowSeconds + 60;
 
   const row = await db.prepare(`

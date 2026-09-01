@@ -9,7 +9,7 @@
 
 ## Maintainer checks before launch
 
-- [ ] Back up remote D1 and apply outstanding migrations in order through `0009`.
+- [ ] Back up remote D1 and apply outstanding migrations in order through `0010`.
 - [ ] Verify creation, preview, redirect, formula, card, PNG, reporting, and deletion in staging.
 - [ ] Verify mobile, keyboard, error, and Turnstile accessibility paths.
 - [ ] Confirm logging, access controls, and retention match public privacy disclosures.

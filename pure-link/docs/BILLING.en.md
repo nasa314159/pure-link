@@ -46,7 +46,7 @@ Keep API keys, webhook secrets, and ECPay hashes as Worker secrets. Provider IDs
 
 Credits are granted only after a verified provider callback: a signed Lemon Squeezy `order_created` webhook or a verified ECPay ReturnURL callback with `RtnCode=1` and `SimulatePaid!=1`. Browser return pages never grant credits.
 
-Lemon refund webhooks use the provider's cumulative `total`, `refunded_amount`, `total_usd`, and `refunded_amount_usd` fields. Repeated notifications revoke only the additional proportional credits and support totals only lose the corresponding refunded USD amount. ECPay refunds are currently handled by the merchant/operator; PureLink does not claim an automatic ECPay refund API.
+Lemon refund webhooks use the provider's cumulative `total`, `refunded_amount`, `total_usd`, and `refunded_amount_usd` fields. Verified refunds received before `order_created` are retained and reconciled when the order arrives. Repeated notifications revoke only the additional proportional credits and support totals only lose the corresponding refunded USD amount. ECPay refunds are currently handled by the merchant/operator; PureLink does not claim an automatic ECPay refund API.
 
 Historical Creem migration `0006`, tables, and authenticated webhook compatibility remain for existing records. New Creem checkout is not exposed and remains disabled unless the legacy `CREEM_LIVE_CHECKOUT_ENABLED=true` configuration is deliberately used by a self-hosted historical deployment. The old `CREEM_PRODUCT_300_ID` configuration can be removed manually only after historical compatibility is no longer needed.
 

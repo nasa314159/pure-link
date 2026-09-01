@@ -46,7 +46,7 @@ API key、webhook secret 與 ECPay hash 必須使用 Worker secret。供應商 I
 
 額度只能在已驗證的供應商通知後加入：Lemon Squeezy 已簽名的 `order_created` webhook，或 `RtnCode=1` 且 `SimulatePaid!=1` 的 ECPay ReturnURL。瀏覽器回到成功頁永遠不會加入額度。
 
-Lemon 退款 webhook 使用供應商提供的累積 `total`、`refunded_amount`、`total_usd`、`refunded_amount_usd`。重複通知只會撤回新增的相稱額度；支持總額也只扣除相對應的退款美元金額。ECPay 退款目前由商家／營運端處理；PureLink 不宣稱支援自動 ECPay 退款 API。
+Lemon 退款 webhook 使用供應商提供的累積 `total`、`refunded_amount`、`total_usd`、`refunded_amount_usd`。若已驗證退款早於 `order_created` 到達，會先保留並在訂單到達後對帳。重複通知只會撤回新增的相稱額度；支持總額也只扣除相對應的退款美元金額。ECPay 退款目前由商家／營運端處理；PureLink 不宣稱支援自動 ECPay 退款 API。
 
 歷史 Creem migration `0006`、資料表與已驗證 webhook 相容邏輯會保留，以支援既有紀錄。新的 Creem 結帳不會公開；只有歷史自架部署刻意設定 `CREEM_LIVE_CHECKOUT_ENABLED=true` 時才可能啟用。舊的 `CREEM_PRODUCT_300_ID` 只能在不再需要歷史相容時由維運人員手動移除。
 

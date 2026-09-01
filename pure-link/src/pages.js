@@ -1031,7 +1031,9 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
     : `<li class="empty-account">${m.account.empty}</li>`;
   const purchaseNotice = purchaseStatus === 'success'
     ? `<p class="auth-notice" role="status"><strong>${m.billing.returned}</strong><span>${m.billing.returnedHelp}</span></p>`
-    : '';
+    : purchaseStatus === 'pending'
+      ? `<p class="auth-notice" role="status"><strong>${m.billing.pending}</strong><span>${m.billing.pendingHelp}</span></p>`
+      : '';
   const packActions = enabledProviders.length
     ? `<div class="credit-pack-list">${listAiCreditPacks().map((pack) => `<section class="credit-pack"><strong>${escapeHtml(m.billing.packNames[pack.id])}</strong><span>${escapeHtml(m.billing.pack.replace('{name}', m.billing.packNames[pack.id]).replace('{credits}', Number(pack.credits).toLocaleString('en-US')).replace('{price}', Number(pack.priceTwd).toLocaleString('en-US')))}</span>${enabledProviders.length > 1 ? `<small>${m.billing.providerChoice}</small>` : ''}<div class="provider-choices">${enabledProviders.map(([provider, name]) => `<button type="button" data-billing-checkout data-provider="${provider}" data-pack-id="${pack.id}">${escapeHtml(enabledProviders.length > 1 ? name : m.billing.buy)}</button>`).join('')}</div></section>`).join('')}</div><p class="billing-status" id="billing-status" role="status" hidden></p>`
     : `<p class="billing-status">${m.account.billingDisabled}</p>`;
@@ -1100,11 +1102,14 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
   });
 }
 
-export function renderSupportPage(totals, checkoutConfigured = false, thanks = false, nonce = '', locale = 'zh-Hant') {
+export function renderSupportPage(totals, checkoutConfigured = false, thanks = false, nonce = '', locale = 'zh-Hant', turnstileSiteKey = '') {
   const m = getMessages(locale);
   const publicSupporters = (totals?.publicSupporters || []).map(escapeHtml).filter(Boolean);
+  const turnstileWidget = checkoutConfigured && turnstileSiteKey
+    ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="support-checkout"></div></div>`
+    : '';
   const checkout = checkoutConfigured
-    ? `<form id="support-form"><label class="field-label" for="support-display-name">${m.support.optionalName}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${m.support.optionalNameHelp}</p><label class="check-row"><input id="support-public-attribution" type="checkbox" name="publicAttribution" value="true"><span><strong>${m.support.attribute}</strong></span></label><button class="create-button" id="support-button" type="submit">${m.support.button}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
+    ? `<form id="support-form"><label class="field-label" for="support-display-name">${m.support.optionalName}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${m.support.optionalNameHelp}</p><label class="check-row"><input id="support-public-attribution" type="checkbox" name="publicAttribution" value="true"><span><strong>${m.support.attribute}</strong></span></label>${turnstileWidget}<button class="create-button" id="support-button" type="submit">${m.support.button}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
     : `<p class="billing-status">${m.support.unavailable}</p>`;
   return documentShell({
     title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale,
@@ -1117,14 +1122,17 @@ export function renderSupportPage(totals, checkoutConfigured = false, thanks = f
       supportForm.addEventListener('submit', async (event) => {
         event.preventDefault(); supportButton.disabled = true; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
         try {
-          const response = await fetch('/api/support/checkout', { method: 'POST', headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} }, body: JSON.stringify(Object.fromEntries(new FormData(supportForm))) });
+          const data = Object.fromEntries(new FormData(supportForm));
+          data.turnstileToken = window.turnstile?.getResponse() || '';
+          const response = await fetch('/api/support/checkout', { method: 'POST', headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} }, body: JSON.stringify(data) });
           const payload = await response.json();
           if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || supportMessages.failed);
           location.assign(payload.checkoutUrl);
-        } catch (error) { supportStatus.textContent = error.message; supportStatus.dataset.error = 'true'; supportButton.disabled = false; }
+        } catch (error) { window.turnstile?.reset(); supportStatus.textContent = error.message; supportStatus.dataset.error = 'true'; supportButton.disabled = false; }
       });
     ` : '',
     nonce,
+    externalScript: turnstileSiteKey ? 'https://challenges.cloudflare.com/turnstile/v0/api.js' : '',
   });
 }
 

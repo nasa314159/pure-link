@@ -112,6 +112,36 @@ describe('PureLink worker', () => {
     expect(body).not.toContain('data-billing-checkout');
   });
 
+  it('blocks anonymous support checkout before creating a row or calling Lemon when Turnstile fails', async () => {
+    Object.assign(env, {
+      APP_ENV: 'production',
+      RATE_LIMIT_SECRET: 'rate-limit-test-secret',
+      TURNSTILE_SECRET_KEY: 'turnstile-test-secret',
+      TURNSTILE_SITE_KEY: 'site-key',
+      LEMON_SQUEEZY_CHECKOUT_ENABLED: 'true',
+      LEMON_SQUEEZY_API_KEY: 'lemon-api-key',
+      LEMON_SQUEEZY_WEBHOOK_SECRET: 'webhook-secret',
+      LEMON_SQUEEZY_STORE_ID: '1',
+      LEMON_SQUEEZY_SUPPORT_VARIANT_ID: '199',
+    });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ success: false })));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const response = await worker.fetch(new Request('https://pure.test/api/support/checkout', {
+        method: 'POST',
+        headers: { origin: 'https://pure.test', 'content-type': 'application/json' },
+        body: JSON.stringify({ displayName: 'not stored', turnstileToken: 'invalid-token' }),
+      }), env);
+      expect(response.status).toBe(403);
+      expect(db.lemonCheckoutRequests).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(String(fetchMock.mock.calls[0][0])).toContain('challenges.cloudflare.com/turnstile');
+      expect(fetchMock.mock.calls.flat().some((value) => String(value).includes('api.lemonsqueezy.com'))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('uses the page locale for billing API notices without affecting access checks', async () => {
     const response = await worker.fetch(new Request('https://pure.test/api/billing/checkout', {
       method: 'POST', headers: { origin: 'https://pure.test', 'content-type': 'application/json', 'x-purelink-locale': 'en' }, body: JSON.stringify({ provider: 'ecpay', packId: 'small' }),
@@ -523,6 +553,7 @@ class MemoryD1 {
     this.reports = [];
     this.nativeTokens = new Map();
     this.rateLimits = new Map();
+    this.lemonCheckoutRequests = 0;
   }
 
   prepare(sql) {
@@ -628,6 +659,10 @@ class MemoryStatement {
     if (this.sql.startsWith('INSERT INTO reports')) {
       const [id, slug, category, details] = this.values;
       this.db.reports.push({ id, slug, category, details, status: 'new' });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith('INSERT INTO lemon_checkout_requests')) {
+      this.db.lemonCheckoutRequests += 1;
       return { success: true, meta: { changes: 1 } };
     }
     throw new Error(`Unsupported run query: ${this.sql}`);

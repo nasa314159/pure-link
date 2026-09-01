@@ -72,6 +72,30 @@ describe('Lemon Squeezy billing and support', () => {
     expect(db.creditOrder.credits_refunded).toBe(150); expect(db.balance).toBe(0);
   });
 
+  it('reconciles a verified full refund that arrives before order_created without leaving net credits', async () => {
+    const db = new LemonDb(); db.checkout = creditCheckout('small'); const env = billingEnv(db);
+    await refund(env, '301', { status: 'refunded', total: 500, refunded_amount: 500, total_usd: 500, refunded_amount_usd: 500 });
+    expect(db.pendingRefund).toMatchObject({ provider_order_id: '301', refunded_amount_minor: 500 });
+    expect(db.balance).toBe(0);
+    await handleLemonSqueezyWebhook(await webhookRequest('order_created', paidOrder('301', db.checkout.id, '101', { total: 500, total_usd: 500 }), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
+    expect(db.creditOrder).toMatchObject({ credits_refunded: 150, refunded_amount_minor: 500, status: 'refunded' });
+    expect(db.balance).toBe(0);
+    expect(db.pendingRefund).toBeNull();
+  });
+
+  it('keeps out-of-order partial refunds cumulative and idempotent before order_created', async () => {
+    const db = new LemonDb(); db.checkout = creditCheckout('small'); const env = billingEnv(db);
+    const first = { status: 'partial_refund', total: 500, refunded_amount: 100, total_usd: 500, refunded_amount_usd: 100 };
+    await refund(env, '302', first);
+    await refund(env, '302', first);
+    await refund(env, '302', { ...first, refunded_amount: 250, refunded_amount_usd: 250 });
+    expect(db.pendingRefund).toMatchObject({ refunded_amount_minor: 250, refunded_usd_amount_minor: 250, status: 'partial_refund' });
+    await handleLemonSqueezyWebhook(await webhookRequest('order_created', paidOrder('302', db.checkout.id, '101', { total: 500, total_usd: 500 }), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
+    expect(db.creditOrder).toMatchObject({ credits_refunded: 75, refunded_amount_minor: 250, status: 'partial_refund' });
+    expect(db.balance).toBe(75);
+    expect(db.pendingRefund).toBeNull();
+  });
+
   it('keeps support refunds separate and subtracts only cumulative provider USD refunds', async () => {
     const db = new LemonDb(); db.checkout = supportCheckout(); const env = billingEnv(db);
     await handleLemonSqueezyWebhook(await webhookRequest('order_created', paidOrder('199', db.checkout.id, '199', { total: 1200, total_usd: 1200 }), env.LEMON_SQUEEZY_WEBHOOK_SECRET), env);
@@ -93,7 +117,7 @@ async function webhookRequest(eventName, payload, secret) { const body = JSON.st
 async function sign(body, secret) { const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']); const bytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body))); return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join(''); }
 
 class LemonDb {
-  constructor() { this.checkout = null; this.creditOrder = null; this.supportOrder = null; this.balance = 0; this.events = new Set(); this.queries = 0; }
+  constructor() { this.checkout = null; this.creditOrder = null; this.supportOrder = null; this.pendingRefund = null; this.balance = 0; this.events = new Set(); this.queries = 0; }
   prepare(sql) {
     this.queries += 1; const normalized = sql.replace(/\s+/g, ' ').trim(); const db = this;
     return {
@@ -104,6 +128,7 @@ class LemonDb {
         if (normalized.startsWith('SELECT id, kind, user_id')) return db.checkout?.id === values[0] ? db.checkout : null;
         if (normalized.startsWith('SELECT provider_order_id, credits_total')) return db.creditOrder?.provider_order_id === values[0] ? db.creditOrder : null;
         if (normalized.startsWith('SELECT provider_order_id, amount_minor')) return db.supportOrder?.provider_order_id === values[0] ? db.supportOrder : null;
+        if (normalized.startsWith('SELECT provider_order_id, status, total_minor')) return db.pendingRefund?.provider_order_id === values[0] ? db.pendingRefund : null;
         if (normalized.startsWith('SELECT COALESCE(SUM')) { const support = db.supportOrder?.status !== 'refunded' ? db.supportOrder : null; return { net_usd_minor: support ? support.usd_amount_minor - support.refunded_usd_amount_minor : 0, contribution_count: support ? 1 : 0, unconverted_count: support && support.usd_amount_minor == null ? 1 : 0 }; }
         return null;
       },
@@ -115,6 +140,8 @@ class LemonDb {
         if (normalized.startsWith('UPDATE lemon_checkout_requests')) { db.checkout.status = normalized.includes("'failed'") ? 'failed' : 'completed'; return changed(1); }
         if (normalized.startsWith('UPDATE lemon_credit_orders')) { const next = Math.max(db.creditOrder.credits_refunded, values[0]); db.balance = Math.max(0, db.balance - (next - db.creditOrder.credits_refunded)); db.creditOrder.credits_refunded = next; db.creditOrder.refunded_amount_minor = Math.max(db.creditOrder.refunded_amount_minor, values[1]); db.creditOrder.status = db.creditOrder.refunded_amount_minor >= db.creditOrder.amount_minor ? 'refunded' : 'partial_refund'; return changed(1); }
         if (normalized.startsWith('UPDATE lemon_support_contributions')) { db.supportOrder.refunded_amount_minor = Math.max(db.supportOrder.refunded_amount_minor, values[0]); db.supportOrder.refunded_usd_amount_minor = Math.max(db.supportOrder.refunded_usd_amount_minor, values[1]); db.supportOrder.status = db.supportOrder.refunded_amount_minor >= db.supportOrder.amount_minor ? 'refunded' : 'partial_refund'; return changed(1); }
+        if (normalized.startsWith('INSERT INTO lemon_pending_refunds')) { if (!db.pendingRefund) db.pendingRefund = { provider_order_id: values[0], status: values[1], total_minor: values[2], refunded_amount_minor: values[3], total_usd_minor: values[4], refunded_usd_amount_minor: values[5] }; else if (db.pendingRefund.total_minor === values[2] && db.pendingRefund.total_usd_minor === values[4]) { db.pendingRefund.refunded_amount_minor = Math.max(db.pendingRefund.refunded_amount_minor, values[3]); db.pendingRefund.refunded_usd_amount_minor = Math.max(db.pendingRefund.refunded_usd_amount_minor, values[5]); db.pendingRefund.status = db.pendingRefund.refunded_amount_minor >= db.pendingRefund.total_minor ? 'refunded' : 'partial_refund'; } return changed(1); }
+        if (normalized.startsWith('DELETE FROM lemon_pending_refunds')) { if (db.pendingRefund?.provider_order_id === values[0]) db.pendingRefund = null; return changed(1); }
         if (normalized.startsWith('INSERT OR IGNORE INTO lemon_webhook_events')) { db.events.add(values[0]); return changed(1); }
         return changed(0);
       },

@@ -104,7 +104,9 @@ export async function handleLemonSqueezyWebhook(request, env) {
   }
   if (eventName === 'order_created') await recordPaidOrder(env.pure_link_db, payload, env, orderId);
   else await recordRefund(env.pure_link_db, payload, orderId);
-  const refundKey = eventName === 'order_refunded' ? `:${String(payload?.data?.attributes?.refunded_amount || '')}` : '';
+  const refundKey = eventName === 'order_refunded'
+    ? `:${String(payload?.data?.attributes?.refunded_amount || '')}:${String(payload?.data?.attributes?.refunded_amount_usd || '')}`
+    : '';
   await recordWebhookEvent(env.pure_link_db, `lemon:${orderId}:${eventName}${refundKey}`, eventName, orderId);
   return json({ received: true });
 }
@@ -171,7 +173,7 @@ async function recordPaidOrder(db, payload, env, orderId) {
     SELECT id, kind, user_id, pack_id, variant_id, credits, public_attribution, public_display_name, status
     FROM lemon_checkout_requests WHERE id = ?
   `).bind(requestId).first();
-  if (!checkout || checkout.status !== 'pending' || checkout.variant_id !== variantId) return;
+  if (!checkout || !['pending', 'completed'].includes(checkout.status) || checkout.variant_id !== variantId) return;
   if (checkout.kind === 'credit') {
     const pack = lemonPackForVariant(env, variantId);
     if (!pack || !checkout.user_id || checkout.pack_id !== pack.id || Number(checkout.credits) !== pack.credits) return;
@@ -180,6 +182,7 @@ async function recordPaidOrder(db, payload, env, orderId) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'paid')
     `).bind(orderId, checkout.id, checkout.user_id, pack.id, variantId, pack.credits, nonNegativeInteger(attributes.total), String(attributes.currency || 'USD').slice(0, 8)).run();
     if (changes(result) > 0) await markCheckoutCompleted(db, checkout.id);
+    await reconcilePendingRefund(db, orderId);
     return;
   }
   if (checkout.kind !== 'support' || variantId !== String(env.LEMON_SQUEEZY_SUPPORT_VARIANT_ID || '')) return;
@@ -190,20 +193,42 @@ async function recordPaidOrder(db, payload, env, orderId) {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, 'paid')
   `).bind(orderId, checkout.id, nonNegativeInteger(attributes.total), String(attributes.currency || '').slice(0, 8), providerUsdAmount(attributes), Number(checkout.public_attribution) === 1 ? 1 : 0, Number(checkout.public_attribution) === 1 ? checkout.public_display_name || null : null).run();
   if (changes(result) > 0) await markCheckoutCompleted(db, checkout.id);
+  await reconcilePendingRefund(db, orderId);
 }
 
-// Lemon sends cumulative totals. The stored maxima and DB triggers revoke only
-// the delta, making repeat and out-of-order notifications safe.
+// Lemon can deliver a signed refund before the matching paid order webhook.
+// Keep the highest verified cumulative state until the order exists, then apply
+// it through the same monotonic update used for ordinary refund delivery.
 async function recordRefund(db, payload, orderId) {
-  const attributes = payload?.data?.attributes || {};
-  const status = String(attributes.status || '');
-  if (!['partial_refund', 'refunded'].includes(status)) return;
-  const total = nonNegativeInteger(attributes.total);
-  const refundedAmount = nonNegativeInteger(attributes.refunded_amount);
+  const refund = normalizeRefund(payload?.data?.attributes || {});
+  if (!refund) return;
+  if (await applyRefundToKnownOrder(db, orderId, refund)) return;
+  await storePendingRefund(db, orderId, refund);
+}
+
+async function reconcilePendingRefund(db, orderId) {
+  const pending = await db.prepare(`
+    SELECT provider_order_id, status, total_minor, refunded_amount_minor, total_usd_minor, refunded_usd_amount_minor
+    FROM lemon_pending_refunds WHERE provider_order_id = ?
+  `).bind(orderId).first();
+  if (!pending) return;
+  const refund = {
+    status: String(pending.status),
+    total: Number(pending.total_minor),
+    refundedAmount: Number(pending.refunded_amount_minor),
+    totalUsd: Number(pending.total_usd_minor),
+    refundedUsd: Number(pending.refunded_usd_amount_minor),
+  };
+  if (await applyRefundToKnownOrder(db, orderId, refund)) {
+    await db.prepare('DELETE FROM lemon_pending_refunds WHERE provider_order_id = ?').bind(orderId).run();
+  }
+}
+
+async function applyRefundToKnownOrder(db, orderId, refund) {
   const credit = await db.prepare('SELECT provider_order_id, credits_total, credits_refunded, amount_minor FROM lemon_credit_orders WHERE provider_order_id = ?').bind(orderId).first();
   if (credit) {
-    if (!validCumulativeRefund(total, refundedAmount, credit.amount_minor)) return;
-    const cumulativeAmount = status === 'refunded' ? Number(credit.amount_minor) : refundedAmount;
+    if (!validCumulativeRefund(refund, credit.amount_minor)) return false;
+    const cumulativeAmount = refund.refundedAmount;
     const cumulativeCredits = refundedCredits(credit.credits_total, credit.amount_minor, cumulativeAmount);
     await db.prepare(`
       UPDATE lemon_credit_orders
@@ -212,13 +237,13 @@ async function recordRefund(db, payload, orderId) {
           updated_at = CURRENT_TIMESTAMP
       WHERE provider_order_id = ?
     `).bind(cumulativeCredits, cumulativeAmount, cumulativeAmount, orderId).run();
-    return;
+    return true;
   }
   const support = await db.prepare('SELECT provider_order_id, amount_minor, usd_amount_minor FROM lemon_support_contributions WHERE provider_order_id = ?').bind(orderId).first();
-  if (!support || !validCumulativeRefund(total, refundedAmount, support.amount_minor)) return;
-  const cumulativeAmount = status === 'refunded' ? Number(support.amount_minor) : refundedAmount;
-  const refundedUsd = cumulativeUsdRefund(attributes, support.usd_amount_minor, status);
-  if (refundedUsd == null) return;
+  if (!support || !validCumulativeRefund(refund, support.amount_minor)) return false;
+  const cumulativeAmount = refund.refundedAmount;
+  const refundedUsd = cumulativeUsdRefund(refund, support.usd_amount_minor);
+  if (refundedUsd == null) return false;
   await db.prepare(`
     UPDATE lemon_support_contributions
     SET refunded_amount_minor = MAX(refunded_amount_minor, ?), refunded_usd_amount_minor = MAX(refunded_usd_amount_minor, ?),
@@ -226,6 +251,22 @@ async function recordRefund(db, payload, orderId) {
         updated_at = CURRENT_TIMESTAMP
     WHERE provider_order_id = ?
   `).bind(cumulativeAmount, refundedUsd, cumulativeAmount, orderId).run();
+  return true;
+}
+
+async function storePendingRefund(db, orderId, refund) {
+  await db.prepare(`
+    INSERT INTO lemon_pending_refunds (
+      provider_order_id, status, total_minor, refunded_amount_minor, total_usd_minor, refunded_usd_amount_minor
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(provider_order_id) DO UPDATE SET
+      status = CASE WHEN MAX(lemon_pending_refunds.refunded_amount_minor, excluded.refunded_amount_minor) >= lemon_pending_refunds.total_minor THEN 'refunded' ELSE 'partial_refund' END,
+      refunded_amount_minor = MAX(lemon_pending_refunds.refunded_amount_minor, excluded.refunded_amount_minor),
+      refunded_usd_amount_minor = MAX(lemon_pending_refunds.refunded_usd_amount_minor, excluded.refunded_usd_amount_minor),
+      updated_at = CURRENT_TIMESTAMP
+    WHERE excluded.total_minor = lemon_pending_refunds.total_minor
+      AND excluded.total_usd_minor = lemon_pending_refunds.total_usd_minor
+  `).bind(orderId, refund.status, refund.total, refund.refundedAmount, refund.totalUsd, refund.refundedUsd).run();
 }
 
 async function markCheckoutCompleted(db, requestId) { await db.prepare("UPDATE lemon_checkout_requests SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(requestId).run(); }
@@ -233,10 +274,22 @@ async function markCheckoutFailed(db, requestId) { await db.prepare("UPDATE lemo
 async function recordWebhookEvent(db, eventKey, eventName, orderId) { await db.prepare('INSERT OR IGNORE INTO lemon_webhook_events (event_key, event_name, provider_order_id) VALUES (?, ?, ?)').bind(eventKey, eventName, orderId).run(); }
 function normalizeDisplayName(value) { const name = String(value || '').trim().replace(/\s+/g, ' '); return name ? name.slice(0, 60) : null; }
 function providerUsdAmount(attributes) { const value = Number(attributes?.total_usd); return Number.isSafeInteger(value) && value >= 0 ? value : null; }
-function validCumulativeRefund(total, refundedAmount, storedAmount) { return Number.isSafeInteger(total) && Number.isSafeInteger(refundedAmount) && total === Number(storedAmount) && refundedAmount <= total; }
+function normalizeRefund(attributes) {
+  const status = String(attributes.status || '');
+  const total = parseNonNegativeInteger(attributes.total);
+  const refundedAmount = parseNonNegativeInteger(attributes.refunded_amount);
+  const totalUsd = parseNonNegativeInteger(attributes.total_usd);
+  const refundedUsd = parseNonNegativeInteger(attributes.refunded_amount_usd);
+  if (!['partial_refund', 'refunded'].includes(status) || total == null || refundedAmount == null || totalUsd == null || refundedUsd == null) return null;
+  if (refundedAmount > total || refundedUsd > totalUsd) return null;
+  if (status === 'refunded' && (refundedAmount !== total || refundedUsd !== totalUsd)) return null;
+  return { status, total, refundedAmount, totalUsd, refundedUsd };
+}
+function validCumulativeRefund(refund, storedAmount) { return refund.total === Number(storedAmount) && refund.refundedAmount <= refund.total; }
 function refundedCredits(creditsTotal, amountMinor, refundedAmount) { if (!amountMinor || refundedAmount >= amountMinor) return Number(creditsTotal); return Math.min(Number(creditsTotal), Math.floor((Number(creditsTotal) * refundedAmount) / amountMinor)); }
-function cumulativeUsdRefund(attributes, storedUsdAmount, status) { if (storedUsdAmount == null) return 0; const totalUsd = nonNegativeInteger(attributes.total_usd); const refundedUsd = nonNegativeInteger(attributes.refunded_amount_usd); if (totalUsd !== Number(storedUsdAmount) || refundedUsd > totalUsd) return null; return status === 'refunded' ? totalUsd : refundedUsd; }
+function cumulativeUsdRefund(refund, storedUsdAmount) { if (storedUsdAmount == null) return 0; if (refund.totalUsd !== Number(storedUsdAmount) || refund.refundedUsd > refund.totalUsd) return null; return refund.refundedUsd; }
 function nonNegativeInteger(value) { const number = Number(value); return Number.isSafeInteger(number) && number >= 0 ? number : 0; }
+function parseNonNegativeInteger(value) { const number = Number(value); return Number.isSafeInteger(number) && number >= 0 ? number : null; }
 function publicOrigin(requestUrl, env) { return String(env.PUBLIC_ORIGIN || requestUrl.origin).replace(/\/$/, ''); }
 function safeCheckoutUrl(value) { try { const url = new URL(String(value || '')); return url.protocol === 'https:' && url.hostname.endsWith('.lemonsqueezy.com') ? url.toString() : ''; } catch { return ''; } }
 function validLemonId(value) { return /^[1-9][0-9]{0,15}$/.test(String(value || '')); }
