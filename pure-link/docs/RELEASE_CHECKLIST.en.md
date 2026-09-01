@@ -14,7 +14,7 @@
 - [ ] Verify mobile, keyboard, error, and Turnstile accessibility paths.
 - [ ] Confirm logging, access controls, and retention match public privacy disclosures.
 - [ ] Establish report handling, review frequency, and emergency takedown procedures.
-- [ ] Complete Creem test-mode payment, webhook, refund, and dispute verification before enabling live checkout.
+- [ ] Complete payment-provider test-mode payment, webhook, refund, and dispute verification before enabling live checkout.
 - [ ] Verify the public source, documentation, and quiet voluntary-support path are current.
 
 ## Release order

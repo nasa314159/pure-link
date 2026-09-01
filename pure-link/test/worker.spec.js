@@ -88,6 +88,19 @@ describe('PureLink worker', () => {
     }
   });
 
+  it('serves localized AI credit information publicly without authentication', async () => {
+    for (const [locale, title] of [['zh-Hant', 'PureLink AI 公式額度'], ['en', 'PureLink AI Formula Credits']]) {
+      const response = await worker.fetch(new Request(`https://pure.test/${locale}/ai-credits`), env);
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain(`<html lang="${locale}">`);
+      expect(body).toContain(title);
+      expect(body).toContain('index, follow');
+      expect(body).toContain(`https://no-no.uk/${locale}/ai-credits`);
+      expect(body).not.toContain('Creem');
+    }
+  });
+
   it('publishes a public-only sitemap and points robots.txt to it', async () => {
     env.PUBLIC_ORIGIN = 'https://no-no.uk';
     const robots = await worker.fetch(new Request('https://pure.test/robots.txt'), env);

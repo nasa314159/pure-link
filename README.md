@@ -80,9 +80,7 @@ PureLink does not serve behavioral advertising, track people across sites, sell 
 
 ## AI credits and payment boundary
 
-Signed-in accounts receive five free AI formula drafts per day. Optional extra credits are one-time digital purchases, not subscriptions: US$5 for 300, US$10 for 800, or US$20 for 2,000 generations. Credits are delivered only after confirmed payment, are tied to the account that started checkout, and do not expire while the AI formula service continues to operate.
-
-Creem acts as merchant of record only for AI formula credit purchases. Voluntary open-source support is separate and grants no credits or product benefits. Public details are available at [`/ai-credits`](https://no-no.uk/ai-credits) and [`/refund-policy`](https://no-no.uk/refund-policy).
+Signed-in accounts receive five free AI formula drafts per day. Optional AI formula credits are one-time digital purchases, not subscriptions, and are used only for AI formula drafts. Delivery, current NT$ pricing, payment status, refund policy, and support contact are maintained on the canonical [AI credits page](https://no-no.uk/en/ai-credits).
 
 ## Project structure
 
