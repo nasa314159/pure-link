@@ -121,8 +121,38 @@ export const messages = Object.freeze({
   },
 });
 
+const homepageMessages = Object.freeze({
+  en: Object.freeze({
+    signaturePlaceholder: 'For example: Thinking of you',
+    trackingRemovePlaceholder: 'For example: campaign_id, ref_*',
+    trackingKeepPlaceholder: 'For example: utm_source, ref_code',
+    customFormulaLabelPlaceholder: 'For example: Ĥ',
+    customFormulaLatexPlaceholder: 'For example: \\hat{H}',
+    accountSaved: 'Saved to your PureLink account',
+    accountSavedHelp: 'This PureLink is linked to your signed-in account and can be managed from My PureLinks on other devices. The generated management credential remains an optional backup.',
+    backupCredential: 'Optional backup management credential',
+    backupCredentialHelp: 'Use this only as an additional recovery method. Your signed-in account remains the primary way to manage this PureLink.',
+    copyBackupManagement: 'Copy backup management address',
+    downloadBackupRecovery: 'Download backup recovery file',
+  }),
+  'zh-Hant': Object.freeze({
+    signaturePlaceholder: '例如：一直惦記你的我',
+    trackingRemovePlaceholder: '例如：campaign_id, ref_*',
+    trackingKeepPlaceholder: '例如：utm_source, ref_code',
+    customFormulaLabelPlaceholder: '例如：Ĥ',
+    customFormulaLatexPlaceholder: '例如：\\hat{H}',
+    accountSaved: '已儲存到你的 PureLink 帳號',
+    accountSavedHelp: '這個 PureLink 已連結到你的登入帳號，也可以在其他裝置從「我的 PureLink」管理。產生的管理憑證仍可作為選用的備份。',
+    backupCredential: '選用的備用管理憑證',
+    backupCredentialHelp: '僅作為額外復原方式。你的登入帳號仍是管理這個 PureLink 的主要方式。',
+    copyBackupManagement: '複製備用管理地址',
+    downloadBackupRecovery: '下載備用復原檔案',
+  }),
+});
+
 export function getMessages(locale) {
-  return messages[normalizeLocale(locale) || DEFAULT_LOCALE];
+  const selected = normalizeLocale(locale) || DEFAULT_LOCALE;
+  return { ...messages[selected], home: { ...messages[selected].home, ...homepageMessages[selected] } };
 }
 
 export function interpolate(message, values = {}) {

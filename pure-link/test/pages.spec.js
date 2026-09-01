@@ -126,6 +126,57 @@ describe('interactive pages', () => {
     expect(englishReport).toContain("'x-purelink-locale': \"en\"");
   });
 
+  it('uses localized GET links for language switching', () => {
+    const chineseHome = renderHomePage('test-nonce', '', false, '', null, 'zh-Hant');
+    const englishHome = renderHomePage('test-nonce', '', false, '', null, 'en');
+    const chinesePrivacy = renderLegalPage('privacy', 'zh-Hant');
+    const englishCredits = renderLegalPage('ai-credits', 'en');
+
+    expect(chineseHome).toContain('href="/en/"');
+    expect(englishHome).toContain('href="/zh-Hant/"');
+    expect(chinesePrivacy).toContain('href="/en/privacy"');
+    expect(englishCredits).toContain('href="/zh-Hant/ai-credits"');
+    expect(chineseHome).not.toContain('<form method="post" action="/locale">');
+  });
+
+  it('localizes homepage placeholders and signed-in result recovery copy', () => {
+    const english = renderHomePage('test-nonce', '', true, '', { id: 'user-1', email: 'person@example.com' }, 'en');
+    const chinese = renderHomePage('test-nonce', '', true, '', null, 'zh-Hant');
+    const anonymous = renderHomePage('test-nonce', '', false, '', null, 'en');
+    const signedInChinese = renderHomePage('test-nonce', '', true, '', { id: 'user-1', email: 'person@example.com' }, 'zh-Hant');
+
+    expect(english).not.toContain('例如：');
+    expect(english).not.toContain('一直惦記你的我');
+    expect(english).toContain('placeholder="For example: Thinking of you"');
+    expect(english).toContain('placeholder="For example: campaign_id, ref_*"');
+    expect(english).toContain('placeholder="For example: utm_source, ref_code"');
+    expect(english).toContain('placeholder="For example: Ĥ"');
+    expect(english).toContain('placeholder="For example: \\hat{H}"');
+    expect(english).toContain('Saved to your PureLink account');
+    expect(english).toContain('optional backup');
+    expect(english).toContain('<strong id="recovery-title">Saved to your PureLink account</strong>');
+    expect(english).not.toContain('<strong id="recovery-title">Save your anonymous management credential</strong>');
+    expect(english).toContain('Copy backup management address');
+    expect(english).toContain('Download backup recovery file');
+    expect(english).toContain('Use this only as an additional recovery method. Your signed-in account remains the primary way to manage this PureLink.');
+    expect(anonymous).toContain('<strong id="recovery-title">Save your anonymous management credential</strong>');
+    expect(anonymous).toContain('Copy management address');
+    expect(anonymous).toContain('Download recovery file');
+    expect(chinese).toContain('placeholder="例如：一直惦記你的我"');
+    expect(chinese).toContain('placeholder="例如：campaign_id, ref_*"');
+    expect(chinese).toContain('placeholder="例如：utm_source, ref_code"');
+    expect(chinese).toContain('placeholder="例如：Ĥ"');
+    expect(chinese).toContain('placeholder="例如：\\hat{H}"');
+    expect(signedInChinese).toContain('<strong id="recovery-title">已儲存到你的 PureLink 帳號</strong>');
+    expect(signedInChinese).toContain('選用的備用管理憑證');
+    expect(signedInChinese).toContain('僅作為額外復原方式。你的登入帳號仍是管理這個 PureLink 的主要方式。');
+    expect(signedInChinese).toContain('複製備用管理地址');
+    expect(signedInChinese).toContain('下載備用復原檔案');
+    expect(signedInChinese).not.toContain('<strong id="recovery-title">請保存匿名管理憑證</strong>');
+    expect(chinese).toContain('複製管理地址');
+    expect(chinese).toContain('下載恢復檔案');
+  });
+
   it('publishes review-ready AI credit information in both locales', () => {
     const credits = renderLegalPage('ai-credits', 'en');
     const chineseCredits = renderLegalPage('ai-credits', 'zh-Hant');

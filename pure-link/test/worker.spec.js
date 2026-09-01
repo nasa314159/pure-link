@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import worker from '../src/index.js';
+import { hashManagementToken } from '../src/security.js';
 
 describe('PureLink worker', () => {
   let db;
@@ -333,6 +334,30 @@ describe('PureLink worker', () => {
     expect(await englishReport.json()).toMatchObject({ error: 'This PureLink could not be found.' });
   });
 
+  it('signals account ownership for signed-in creates and keeps anonymous creates separate', async () => {
+    const sessionToken = await authenticateTestUser(env);
+    const signedIn = await worker.fetch(new Request('https://pure.test/api/links', {
+      method: 'POST',
+      headers: { cookie: `purelink_session=${sessionToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ contentType: 'card', content: 'Account-owned card', slug: 'account-owned' }),
+    }), env);
+    const signedInBody = await signedIn.json();
+    expect(signedIn.status).toBe(201);
+    expect(signedInBody.ownerLinked).toBe(true);
+    expect(db.links.get('account-owned').owner_user_id).toBe('user-1');
+
+    const account = await worker.fetch(new Request('https://pure.test/en/account', {
+      headers: { cookie: `purelink_session=${sessionToken}` },
+    }), env);
+    expect(account.status).toBe(200);
+    expect(await account.text()).toContain('account-owned');
+
+    const anonymous = await createLink(env, { contentType: 'card', content: 'Anonymous card', slug: 'anonymous-card' });
+    expect(anonymous.response.status).toBe(201);
+    expect(anonymous.body.ownerLinked).toBe(false);
+    expect(db.links.get('anonymous-card').owner_user_id).toBeNull();
+  });
+
   it('creates, redirects, and previews a URL', async () => {
     const created = await createLink(env, {
       contentType: 'url',
@@ -446,6 +471,16 @@ async function createLink(env, body) {
   return { response, body: await response.json() };
 }
 
+async function authenticateTestUser(env) {
+  const token = 'test-session-token';
+  const user = { id: 'user-1', email: 'person@example.com', display_name: 'Person', avatar_url: null, is_admin: 0 };
+  env.GOOGLE_CLIENT_ID = 'test-client';
+  env.GOOGLE_CLIENT_SECRET = 'test-secret';
+  env.pure_link_db.users.set(user.id, user);
+  env.pure_link_db.sessions.set(await hashManagementToken(token), user.id);
+  return token;
+}
+
 async function completeNativeChallenge(env, verification) {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(verification))));
   try {
@@ -483,6 +518,8 @@ async function postNativeCard(env, body) {
 class MemoryD1 {
   constructor() {
     this.links = new Map();
+    this.users = new Map();
+    this.sessions = new Map();
     this.reports = [];
     this.nativeTokens = new Map();
     this.rateLimits = new Map();
@@ -506,6 +543,11 @@ class MemoryStatement {
   }
 
   async first() {
+    if (this.sql.startsWith('SELECT users.id')) {
+      const userId = this.db.sessions.get(this.values[0]);
+      return userId ? this.db.users.get(userId) || null : null;
+    }
+    if (this.sql.startsWith('SELECT balance')) return null;
     if (this.sql.startsWith('INSERT INTO rate_limits')) {
       const [bucketKey, expiresAt] = this.values;
       const current = this.db.rateLimits.get(bucketKey) || { request_count: 0, expires_at: expiresAt };
@@ -534,6 +576,14 @@ class MemoryStatement {
 
   async all() {
     if (this.sql.startsWith('SELECT public_display_name FROM lemon_support_contributions')) return { results: [] };
+    if (this.sql.startsWith('SELECT slug, content_type')) {
+      const ownerUserId = this.values[0];
+      return {
+        results: [...this.db.links.values()]
+          .filter((link) => link.owner_user_id === ownerUserId)
+          .map(({ slug, content_type, content, signature, theme, status, created_at }) => ({ slug, content_type, content, signature, theme, status, created_at })),
+      };
+    }
     throw new Error(`Unsupported all query: ${this.sql}`);
   }
 
