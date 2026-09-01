@@ -131,6 +131,7 @@ describe('interactive pages', () => {
     const chineseCredits = renderLegalPage('ai-credits', 'zh-Hant');
     const refunds = renderLegalPage('refund-policy', 'en');
     expect(credits).toContain('<html lang="en">');
+    expect(credits).toContain('Last updated: September 1, 2026');
     expect(credits).toContain('PureLink AI Formula Credits');
     expect(credits).toContain('Small: 150 AI formula drafts — NT$150');
     expect(credits).toContain('Standard: 400 AI formula drafts — NT$300');
@@ -139,6 +140,7 @@ describe('interactive pages', () => {
     expect(credits).toContain('Checkout is completing provider approval and production integration');
     expect(credits).not.toMatch(/US\$5|US\$10|US\$20|300 AI formula generations|800 generations|2,000 generations|Creem/);
     expect(chineseCredits).toContain('<html lang="zh-Hant">');
+    expect(chineseCredits).toContain('MVP 說明版本：2026-09-01');
     expect(chineseCredits).toContain('PureLink AI 公式額度');
     expect(chineseCredits).toContain('小型方案：150 次 AI 公式草稿，NT$150');
     expect(chineseCredits).toContain('標準方案：400 次 AI 公式草稿，NT$300');
@@ -150,6 +152,7 @@ describe('interactive pages', () => {
     expect(chineseCredits).not.toMatch(/US\$5|US\$10|US\$20|300 次 AI 公式生成|800 次|2,000 次|Creem/);
     expect(credits).toContain('nasa3.14159@gmail.com');
     expect(refunds).toContain('<html lang="en">');
+    expect(refunds).toContain('Last updated: August 14, 2026');
     expect(refunds).toContain('within 14 calendar days');
     expect(refunds).toContain('Consumed credits are generally not refundable');
   });

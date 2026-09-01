@@ -769,6 +769,9 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
   };
   const content = localizedLegalContent(page, locale, pages) || pages.transparency;
   const m = getMessages(locale);
+  const updated = page === 'ai-credits'
+    ? (locale === 'en' ? 'Last updated: September 1, 2026' : 'MVP 說明版本：2026-09-01')
+    : (locale === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14');
   return documentShell({
     title: `${content.title} — PureLink`,
     description: content.intro,
@@ -786,7 +789,7 @@ export function renderLegalPage(page, locale = 'zh-Hant') {
           ${page === 'ai-credits' ? `<p class="legal-contact"><a href="${localizedHref(locale, 'refund-policy')}">${locale === 'en' ? 'Refund policy' : '退款政策'}</a> · <a href="mailto:nasa3.14159@gmail.com">${locale === 'en' ? 'Support: nasa3.14159@gmail.com' : '支援：nasa3.14159@gmail.com'}</a></p>` : ''}
           <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
           ${languageSwitcher(locale, page)}
-          <p class="legal-updated">${locale === 'en' ? 'Last updated: August 14, 2026' : 'MVP 說明版本：2026-08-14'}</p>
+          <p class="legal-updated">${updated}</p>
         </article>
       </main>
     `,
