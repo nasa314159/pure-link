@@ -100,8 +100,8 @@ function renderFormulaShortcutPalette(m) {
 export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '', user = null, locale = 'zh-Hant') {
   const m = getMessages(locale);
   const recoveryCopy = user
-    ? { title: m.home.accountSaved, help: m.home.accountSavedHelp }
-    : { title: m.home.saveCredential, help: m.home.saveCredentialHelp };
+    ? { title: m.home.accountSaved, help: m.home.accountSavedHelp, backupTitle: m.home.backupCredential, backupHelp: m.home.backupCredentialHelp, copy: m.home.copyBackupManagement, download: m.home.downloadBackupRecovery }
+    : { title: m.home.saveCredential, help: m.home.saveCredentialHelp, backupTitle: '', backupHelp: '', copy: m.home.copyManagement, download: m.home.downloadRecovery };
   const turnstileWidget = turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="create"></div></div>`
     : '';
@@ -270,9 +270,13 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
             <div class="recovery-box">
               <strong id="recovery-title">${recoveryCopy.title}</strong>
               <p id="recovery-help">${recoveryCopy.help}</p>
+              <div id="recovery-backup"${recoveryCopy.backupTitle ? '' : ' hidden'}>
+                <strong>${recoveryCopy.backupTitle}</strong>
+                <p>${recoveryCopy.backupHelp}</p>
+              </div>
               <div class="recovery-actions">
-                <button class="secondary-button" id="copy-management" type="button">${m.home.copyManagement}</button>
-                <button class="secondary-button" id="download-recovery" type="button">${m.home.downloadRecovery}</button>
+                <button class="secondary-button" id="copy-management" type="button">${recoveryCopy.copy}</button>
+                <button class="secondary-button" id="download-recovery" type="button">${recoveryCopy.download}</button>
               </div>
             </div>
             <button class="quiet-button" id="create-another" type="button">${m.home.createAnother}</button>
@@ -310,8 +314,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       const shareResult = document.getElementById('share-result');
       let latestResult = null;
       const recoveryMessages = {
-        anonymous: { title: ${JSON.stringify(m.home.saveCredential)}, help: ${JSON.stringify(m.home.saveCredentialHelp)} },
-        account: { title: ${JSON.stringify(m.home.accountSaved)}, help: ${JSON.stringify(m.home.accountSavedHelp)} },
+        anonymous: { title: ${JSON.stringify(m.home.saveCredential)}, help: ${JSON.stringify(m.home.saveCredentialHelp)}, backupTitle: '', backupHelp: '', copy: ${JSON.stringify(m.home.copyManagement)}, download: ${JSON.stringify(m.home.downloadRecovery)} },
+        account: { title: ${JSON.stringify(m.home.accountSaved)}, help: ${JSON.stringify(m.home.accountSavedHelp)}, backupTitle: ${JSON.stringify(m.home.backupCredential)}, backupHelp: ${JSON.stringify(m.home.backupCredentialHelp)}, copy: ${JSON.stringify(m.home.copyBackupManagement)}, download: ${JSON.stringify(m.home.downloadBackupRecovery)} },
       };
 
       quickOpenForm.addEventListener('submit', (event) => {
@@ -418,6 +422,12 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           const recovery = result.ownerLinked === true ? recoveryMessages.account : recoveryMessages.anonymous;
           document.getElementById('recovery-title').textContent = recovery.title;
           document.getElementById('recovery-help').textContent = recovery.help;
+          const recoveryBackup = document.getElementById('recovery-backup');
+          recoveryBackup.hidden = !recovery.backupTitle;
+          recoveryBackup.querySelector('strong').textContent = recovery.backupTitle;
+          recoveryBackup.querySelector('p').textContent = recovery.backupHelp;
+          document.getElementById('copy-management').textContent = recovery.copy;
+          document.getElementById('download-recovery').textContent = recovery.download;
           localStorage.setItem('purelink:management:' + result.slug, result.managementToken);
           document.getElementById('result-url').textContent = result.url;
           document.getElementById('result-url').href = result.url;
