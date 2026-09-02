@@ -204,6 +204,44 @@ describe('PureLink worker', () => {
     }
   });
 
+  it('serves the localized start page and redirects unlocalized requests', async () => {
+    const unlocalized = await worker.fetch(new Request('https://pure.test/start', { redirect: 'manual' }), env);
+    expect(unlocalized.status).toBe(302);
+    expect(unlocalized.headers.get('location')).toMatch(/^\/(zh-Hant|en)\/start$/);
+
+    for (const [locale, title] of [['zh-Hant', '20 秒看懂 PureLink'], ['en', 'Understand PureLink in 20 seconds']]) {
+      const response = await worker.fetch(new Request(`https://pure.test/${locale}/start`), env);
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).toContain(`<html lang="${locale}">`);
+      expect(body).toContain(title);
+      expect(body).toContain(`<link rel="canonical" href="https://no-no.uk/${locale}/start">`);
+      expect(body).toContain('hreflang="zh-Hant"');
+      expect(body).toContain('hreflang="x-default"');
+      expect(body).toContain('<meta name="robots" content="index, follow">');
+      expect(body).toContain(`href="/${locale === 'en' ? 'zh-Hant' : 'en'}/start"`);
+    }
+  });
+
+  it('does not leak cross-language content on the start page via routes', async () => {
+    const englishBody = await worker.fetch(new Request('https://pure.test/en/start'), env).then((r) => r.text());
+    const chineseBody = await worker.fetch(new Request('https://pure.test/zh-Hant/start'), env).then((r) => r.text());
+    expect(englishBody).not.toContain('20 秒看懂 PureLink');
+    expect(englishBody).not.toContain('第一次使用');
+    expect(englishBody).not.toContain('把你想分享的');
+    expect(chineseBody).not.toContain('Understand PureLink in 20 seconds');
+    expect(chineseBody).not.toContain('First time here?');
+    expect(chineseBody).not.toContain('Paste what you want to share');
+  });
+
+  it('includes the start page in the sitemap', async () => {
+    env.PUBLIC_ORIGIN = 'https://no-no.uk';
+    const sitemap = await worker.fetch(new Request('https://pure.test/sitemap.xml'), env);
+    const sitemapBody = await sitemap.text();
+    expect(sitemapBody).toContain('<loc>https://no-no.uk/en/start</loc>');
+    expect(sitemapBody).toContain('<loc>https://no-no.uk/zh-Hant/start</loc>');
+  });
+
   it('serves social and favicon assets for GET and HEAD requests', async () => {
     env.ASSETS = {
       fetch: async (request) => new Response(request.method === 'HEAD' ? null : 'brand asset', {

@@ -3,7 +3,7 @@ import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requi
 import { consumeAuthenticatedCheckoutRateLimit, enforceWriteProtection, isPublicWriteProtectionConfigured } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text, xml } from './http.js';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderSupportPage, renderUrlPreview } from './pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderStartPage, renderSupportPage, renderUrlPreview } from './pages.js';
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
@@ -110,6 +110,10 @@ export async function routeRequest(request, env, context) {
     return publicReadResponse(request, html(renderSupportPage(
       await getSupportTotals(env.pure_link_db), checkoutConfigured, requestUrl.searchParams.get('thanks') === '1', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '',
     ), {}, { scriptNonce: nonce, turnstile: checkoutConfigured }));
+  }
+  if (isPublicRead && path === 'start') {
+    if (!localeRoute) return redirect(localizedPath(locale, 'start'), 302);
+    return publicReadResponse(request, html(renderStartPage(locale)));
   }
 
   if (isPublicRead && (path.startsWith('assets/') || ['favicon.svg', 'og.png'].includes(path))) {
@@ -488,7 +492,7 @@ function publicOrigin(requestUrl, env) {
 }
 
 function renderSitemap(origin) {
-  const paths = ['', 'privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy', 'support'];
+  const paths = ['', 'privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy', 'support', 'start'];
   const urls = ['zh-Hant', 'en'].flatMap((locale) => paths.map((path) => `  <url><loc>${origin}${localizedPath(locale, path)}</loc></url>`)).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }

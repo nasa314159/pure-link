@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderSupportPage } from '../src/pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderStartPage, renderSupportPage } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -259,6 +259,90 @@ describe('interactive pages', () => {
     const script = extractScript(html);
     expect(html).toContain('reported-link');
     expect(() => new Function(script)).not.toThrow();
+  });
+
+  it('renders the start page with correct content and SEO metadata in both locales', () => {
+    const englishStart = renderStartPage('en');
+    const chineseStart = renderStartPage('zh-Hant');
+    expect(englishStart).toContain('<html lang="en">');
+    expect(englishStart).toContain('Understand PureLink in 20 seconds');
+    expect(englishStart).toContain('PureLink is a clean sharing tool.');
+    expect(englishStart).toContain('No ads. No cross-site tracking.');
+    expect(englishStart).toContain('Paste what you want to share');
+    expect(englishStart).toContain('Start sharing →');
+    expect(englishStart).toContain('<link rel="canonical" href="https://no-no.uk/en/start">');
+    expect(englishStart).toContain('hreflang="zh-Hant"');
+    expect(englishStart).toContain('hreflang="x-default"');
+    expect(englishStart).toContain('<meta name="robots" content="index, follow">');
+
+    expect(chineseStart).toContain('<html lang="zh-Hant">');
+    expect(chineseStart).toContain('20 秒看懂 PureLink');
+    expect(chineseStart).toContain('PureLink 是一個乾淨的分享工具。');
+    expect(chineseStart).toContain('沒有廣告、不做跨站追蹤');
+    expect(chineseStart).toContain('把你想分享的東西貼進來');
+    expect(chineseStart).toContain('開始分享 →');
+    expect(chineseStart).toContain('<link rel="canonical" href="https://no-no.uk/zh-Hant/start">');
+    expect(chineseStart).not.toContain('First time here?');
+    expect(chineseStart).not.toContain('Understand PureLink in 20 seconds');
+  });
+
+  it('does not leak cross-language content on the start page', () => {
+    const englishStart = renderStartPage('en');
+    const chineseStart = renderStartPage('zh-Hant');
+    expect(englishStart).not.toContain('20 秒看懂 PureLink');
+    expect(englishStart).not.toContain('第一次使用');
+    expect(englishStart).not.toContain('把你想分享的');
+    expect(englishStart).not.toContain('安心分享');
+    expect(chineseStart).not.toContain('Understand PureLink in 20 seconds');
+    expect(chineseStart).not.toContain('First time here?');
+    expect(chineseStart).not.toContain('Paste what you want to share');
+    expect(chineseStart).not.toContain('Just share');
+  });
+
+  it('shows the homepage onboarding link in both locales', () => {
+    const englishHome = renderHomePage('test-nonce', '', false, '', null, 'en');
+    const chineseHome = renderHomePage('test-nonce', '', false, '', null, 'zh-Hant');
+    expect(englishHome).toContain('First time here? Understand PureLink in 20 seconds →');
+    expect(englishHome).toContain('href="/en/start"');
+    expect(chineseHome).toContain('第一次使用嗎？20 秒看懂 PureLink →');
+    expect(chineseHome).toContain('href="/zh-Hant/start"');
+  });
+
+  it('shows mode microcopy for each creation mode on the homepage', () => {
+    const englishHome = renderHomePage('test-nonce', '', false, '', null, 'en');
+    const chineseHome = renderHomePage('test-nonce', '', false, '', null, 'zh-Hant');
+    expect(englishHome).toContain('URL: Shorten a long URL and optionally preview it before opening');
+    expect(englishHome).toContain('Formula: Paste LaTeX or Unicode math and share it as a link or PNG');
+    expect(englishHome).toContain('Card: Turn short text, notes, or multiple links into a simple shareable card');
+    expect(chineseHome).toContain('網址：把長網址縮短，分享前也能先預覽');
+    expect(chineseHome).toContain('公式：貼 LaTeX / Unicode，分享成連結或 PNG');
+    expect(chineseHome).toContain('小卡：把短文、留言或多個連結整理成一張卡');
+  });
+
+  it('mode microcopy container becomes visible when data-active is set', () => {
+    const html = renderHomePage('test-nonce', '', false, '', null, 'en');
+    expect(html).toContain('id="mode-microcopy"');
+    expect(html).toContain('data-active="url"');
+    const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+    expect(styleMatch).toBeTruthy();
+    const css = styleMatch[1];
+    expect(css).toContain('.mode-microcopy[data-active="url"]');
+    const activeRuleMatch = css.match(/\.mode-microcopy\[data-active="url"\][^{]*\{([^}]*)\}/);
+    expect(activeRuleMatch).toBeTruthy();
+    expect(activeRuleMatch[1]).toContain('display: flex');
+    expect(activeRuleMatch[1]).not.toContain('display: none');
+    expect(css).toContain('.mode-microcopy span { display: none; }');
+  });
+
+  it('homepage does not leak cross-language mode microcopy', () => {
+    const englishHome = renderHomePage('test-nonce', '', false, '', null, 'en');
+    const chineseHome = renderHomePage('test-nonce', '', false, '', null, 'zh-Hant');
+    expect(englishHome).not.toContain('網址：');
+    expect(englishHome).not.toContain('公式：');
+    expect(englishHome).not.toContain('小卡：');
+    expect(chineseHome).not.toContain('URL: Shorten');
+    expect(chineseHome).not.toContain('Formula: Paste');
+    expect(chineseHome).not.toContain('Card: Turn');
   });
 });
 
