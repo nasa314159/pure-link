@@ -42,6 +42,16 @@ npx wrangler deploy --dry-run
 
 `npm run assets:prepare` bundles the self-hosted KaTeX assets and the browser-side PNG export code into `public/assets`. Content tools do not depend on a third-party CDN.
 
+## CI
+
+GitHub Actions runs on every pull request targeting `main` and on every push to `main`. CI checks:
+
+1. `npm ci` — install locked dependencies
+2. `npm test -- --run` — run the full test suite (vitest)
+3. `npx wrangler deploy --dry-run --env=""` — validate wrangler configuration
+
+CI does not deploy, apply D1 migrations, access production secrets, or modify repository contents. Deployment and migrations remain manual.
+
 ## iOS share shortcut
 
 The first release does not expose an anonymous write API that could bypass Turnstile. An iPhone or iPad Shortcut can receive a URL from the share sheet, URL-encode it, and open:
