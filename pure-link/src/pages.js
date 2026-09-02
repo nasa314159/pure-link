@@ -1333,10 +1333,13 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .suggestion { width: auto; padding: .55rem .8rem; border: 1px solid #bed8ca; background: #edf7f1; color: var(--green); font-size: .75rem; }
     .type-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: .65rem; margin-bottom: 1.6rem; }
     .mode-microcopy { display: none; flex-wrap: wrap; gap: .5rem 1.5rem; margin-bottom: 1.4rem; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+    .mode-microcopy span { display: none; }
+    .mode-microcopy[data-active="url"],
+    .mode-microcopy[data-active="formula"],
+    .mode-microcopy[data-active="card"] { display: flex; }
     .mode-microcopy[data-active="url"] .microcopy-url,
     .mode-microcopy[data-active="formula"] .microcopy-formula,
     .mode-microcopy[data-active="card"] .microcopy-card { display: block; }
-    .mode-microcopy span { display: none; }
     .type-tab { display: flex; align-items: center; justify-content: center; gap: .5rem; border: 1px solid var(--line); background: transparent; color: var(--muted); }
     .type-tab span { font-size: 1.2rem; }
     .type-tab.active { border-color: var(--ink); background: var(--ink); color: white; }

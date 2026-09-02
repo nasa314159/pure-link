@@ -319,6 +319,21 @@ describe('interactive pages', () => {
     expect(chineseHome).toContain('小卡：把短文、留言或多個連結整理成一張卡');
   });
 
+  it('mode microcopy container becomes visible when data-active is set', () => {
+    const html = renderHomePage('test-nonce', '', false, '', null, 'en');
+    expect(html).toContain('id="mode-microcopy"');
+    expect(html).toContain('data-active="url"');
+    const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+    expect(styleMatch).toBeTruthy();
+    const css = styleMatch[1];
+    expect(css).toContain('.mode-microcopy[data-active="url"]');
+    const activeRuleMatch = css.match(/\.mode-microcopy\[data-active="url"\][^{]*\{([^}]*)\}/);
+    expect(activeRuleMatch).toBeTruthy();
+    expect(activeRuleMatch[1]).toContain('display: flex');
+    expect(activeRuleMatch[1]).not.toContain('display: none');
+    expect(css).toContain('.mode-microcopy span { display: none; }');
+  });
+
   it('homepage does not leak cross-language mode microcopy', () => {
     const englishHome = renderHomePage('test-nonce', '', false, '', null, 'en');
     const chineseHome = renderHomePage('test-nonce', '', false, '', null, 'zh-Hant');
