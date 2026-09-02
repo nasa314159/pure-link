@@ -6,10 +6,16 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     name: Test and validate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,4 +37,4 @@ jobs:
 
       - name: Validate wrangler configuration
         working-directory: pure-link
-        run: npx wrangler deploy --dry-run --env=""
+        run: npx --no-install wrangler deploy --dry-run --env=""

@@ -48,7 +48,7 @@ GitHub Actions runs on every pull request targeting `main` and on every push to 
 
 1. `npm ci` — install locked dependencies
 2. `npm test -- --run` — run the full test suite (vitest)
-3. `npx wrangler deploy --dry-run --env=""` — validate wrangler configuration
+3. `npx --no-install wrangler deploy --dry-run --env=""` — validate wrangler configuration
 
 CI does not deploy, apply D1 migrations, access production secrets, or modify repository contents. Deployment and migrations remain manual.
 
