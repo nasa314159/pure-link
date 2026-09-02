@@ -160,6 +160,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
           <h1>${m.home.heroTitle}</h1>
           <p class="lede">${m.home.heroLead}</p>
           <p class="hero-summary">${m.home.heroSummary}</p>
+          <a class="onboarding-link" href="${localizedHref(locale, 'start')}">${m.home.onboardingLink}</a>
         </header>
 
         <section class="quick-open" aria-labelledby="quick-open-title">
@@ -197,6 +198,11 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
               <button class="type-tab active" type="button" data-type="url" aria-pressed="true"><span>↗</span>${m.common.url}</button>
               <button class="type-tab" type="button" data-type="formula" aria-pressed="false"><span>∑</span>${m.common.formula}</button>
               <button class="type-tab" type="button" data-type="card" aria-pressed="false"><span>✦</span>${m.common.card}</button>
+            </div>
+            <div class="mode-microcopy" id="mode-microcopy">
+              <span class="microcopy-url">${m.home.modeMicrocopy.url}</span>
+              <span class="microcopy-formula">${m.home.modeMicrocopy.formula}</span>
+              <span class="microcopy-card">${m.home.modeMicrocopy.card}</span>
             </div>
 
             <div class="content-workspace" id="content-workspace">
@@ -375,6 +381,8 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         cardOptions.hidden = type !== 'card';
         formulaTools.hidden = type !== 'formula';
         contentWorkspace.classList.toggle('formula-mode', type === 'formula');
+        const microcopy = document.getElementById('mode-microcopy');
+        if (microcopy) microcopy.dataset.active = type;
         updateCount();
         updateSuggestion();
         document.dispatchEvent(new CustomEvent('purelink:typechange', { detail: { type } }));
@@ -541,6 +549,47 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       '/assets/formula-editor.js',
       turnstileSiteKey ? 'https://challenges.cloudflare.com/turnstile/v0/api.js' : '',
     ],
+  });
+}
+
+export function renderStartPage(locale = 'zh-Hant') {
+  const m = getMessages(locale);
+  return documentShell({
+    title: m.start.title,
+    description: m.start.description,
+    robots: 'index, follow',
+    canonicalPath: localizedHref(locale, 'start'),
+    locale,
+    body: `
+      <main class="page start-page">
+        <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
+        <article class="panel start-panel">
+          <p class="eyebrow">PURELINK</p>
+          <h1 class="start-intro">${m.start.intro}</h1>
+          <p class="start-no-account">${m.start.noAccount}</p>
+
+          <section class="start-section">
+            <h2>${m.start.youCanShare}</h2>
+            <ul class="start-examples">
+              <li>${m.start.shareExamples}</li>
+            </ul>
+          </section>
+
+          <section class="start-section">
+            <h2>${m.start.pureLinkOrganizes}</h2>
+            <ul class="start-examples">
+              <li><span class="example-url">${m.start.examples.url}</span></li>
+              <li><span class="example-formula">${m.start.examples.formula}</span></li>
+              <li><span class="example-card">${m.start.examples.card}</span></li>
+            </ul>
+          </section>
+
+          <p class="start-closing">${m.start.closing}</p>
+          <a class="primary-link" href="${localizedHref(locale)}">${m.start.cta}</a>
+        </article>
+        ${languageSwitcher(locale, 'start')}
+      </main>
+    `,
   });
 }
 
@@ -1259,6 +1308,8 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .language-switcher button[aria-current="true"] { border-color: var(--green); color: var(--green); background: #edf7f1; }
     .hero { padding-top: 3rem; }
     .hero-summary { max-width: 42rem; margin: 1rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.65; }
+    .onboarding-link { display: inline-block; margin-top: 1.2rem; color: var(--green); font-size: .82rem; text-decoration: none; }
+    .onboarding-link:hover, .onboarding-link:focus-visible { text-decoration: underline; }
     .quick-open { width: 100%; padding: 1.1rem; border: 1px solid rgba(35,92,72,.2); border-radius: 1.45rem; background: rgba(255,255,255,.72); box-shadow: 0 1rem 3rem rgba(35,62,50,.07); backdrop-filter: blur(18px); }
     .quick-open-heading { display: flex; align-items: baseline; gap: .9rem; margin-bottom: .75rem; }
     .quick-open-heading .eyebrow { margin: 0; }
@@ -1281,6 +1332,11 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     h2 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.5rem); letter-spacing: -.04em; }
     .suggestion { width: auto; padding: .55rem .8rem; border: 1px solid #bed8ca; background: #edf7f1; color: var(--green); font-size: .75rem; }
     .type-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: .65rem; margin-bottom: 1.6rem; }
+    .mode-microcopy { display: none; flex-wrap: wrap; gap: .5rem 1.5rem; margin-bottom: 1.4rem; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+    .mode-microcopy[data-active="url"] .microcopy-url,
+    .mode-microcopy[data-active="formula"] .microcopy-formula,
+    .mode-microcopy[data-active="card"] .microcopy-card { display: block; }
+    .mode-microcopy span { display: none; }
     .type-tab { display: flex; align-items: center; justify-content: center; gap: .5rem; border: 1px solid var(--line); background: transparent; color: var(--muted); }
     .type-tab span { font-size: 1.2rem; }
     .type-tab.active { border-color: var(--ink); background: var(--ink); color: white; }
@@ -1436,6 +1492,19 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .account-links li div { display: grid; gap: .2rem; }
     .account-links li span { color: var(--muted); font-size: .72rem; }
     .account-links .empty-account { display: block; color: var(--muted); }
+    .start-page { justify-content: flex-start; padding-top: 5rem; }
+    .start-panel { max-width: 44rem; }
+    .start-intro { max-width: 18ch; margin: 0; font-size: clamp(2.2rem, 6vw, 4rem); letter-spacing: -.05em; }
+    .start-no-account { margin: 1rem 0 0; color: var(--muted); font-size: clamp(.95rem, 2vw, 1.1rem); line-height: 1.65; }
+    .start-section { margin: 2rem 0 0; }
+    .start-section h2 { margin: 0 0 .75rem; font-size: .9rem; font-weight: 700; letter-spacing: .04em; }
+    .start-examples { margin: 0; padding: 0 0 0 1.2rem; color: var(--muted); font-size: .88rem; line-height: 1.9; }
+    .start-examples li { margin: .35rem 0; }
+    .example-url::before { content: '↗ '; color: var(--green); }
+    .example-formula::before { content: '∑ '; color: var(--green); }
+    .example-card::before { content: '✦ '; color: var(--green); }
+    .start-closing { margin: 2rem 0 1.5rem; color: var(--muted); font-size: .88rem; line-height: 1.7; }
+    .start-panel .primary-link { display: inline-flex; text-decoration: none; }
     button { width: 100%; padding: .95rem 1.1rem; border-radius: 999px; font: inherit; font-weight: 700; cursor: pointer; }
     button:disabled { cursor: wait; opacity: .55; }
     .secondary-button { border: 1px solid var(--line); background: transparent; color: var(--ink); }
