@@ -1,6 +1,7 @@
 # Local development can use placeholder values. Localhost bypasses public write
 # protection so the creation and report flows remain easy to test.
 APP_ENV=development
+PUBLIC_ORIGIN=https://no-no.uk
 TURNSTILE_SITE_KEY=replace-with-public-site-key
 TURNSTILE_SECRET_KEY=replace-with-secret-key
 RATE_LIMIT_SECRET=replace-with-at-least-32-random-bytes
@@ -15,9 +16,13 @@ LEMON_SQUEEZY_VARIANT_STANDARD_ID=replace-with-standard-variant-id
 LEMON_SQUEEZY_VARIANT_LARGE_ID=replace-with-large-variant-id
 LEMON_SQUEEZY_SUPPORT_VARIANT_ID=replace-with-pay-what-you-want-variant-id
 ECPAY_CHECKOUT_ENABLED=false
+# Use stage for local/Test Mode or production only after production QA.
 ECPAY_ENVIRONMENT=stage
 ECPAY_MERCHANT_ID=replace-with-ecpay-merchant-id
 ECPAY_HASH_KEY=replace-with-ecpay-hash-key
 ECPAY_HASH_IV=replace-with-ecpay-hash-iv
 # Historical Creem compatibility only. Do not enable for new checkouts.
 CREEM_LIVE_CHECKOUT_ENABLED=false
+# Discord webhook for report notifications (optional). Only send reports here;
+# D1 remains the authoritative store. Do not commit the actual webhook URL.
+DISCORD_REPORT_WEBHOOK_URL=https://discord.com/api/webhooks/your-webhook-id/your-webhook-token

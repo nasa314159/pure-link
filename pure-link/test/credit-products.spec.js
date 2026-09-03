@@ -18,7 +18,7 @@ describe('canonical AI credit catalog', () => {
     for (const pack of listAiCreditPacks()) {
       expect(page).toContain(`${AI_CREDIT_PACKS[pack.id].credits.toLocaleString('en-US')} AI formula drafts — NT$${AI_CREDIT_PACKS[pack.id].priceTwd}`);
     }
-    expect(page).toContain('Checkout is completing provider approval and production integration');
+    expect(page).toContain('No payment rail is enabled in this deployment');
     expect(page).not.toContain('Creem');
   });
 });

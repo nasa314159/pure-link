@@ -15,6 +15,8 @@
 - [ ] Confirm logging, access controls, and retention match public privacy disclosures.
 - [ ] Establish report handling, review frequency, and emergency takedown procedures.
 - [ ] Complete Lemon Squeezy and ECPay Test Mode checkout, webhook, cumulative refund, duplicate-callback, and wrong-signature/store/merchant verification before enabling live checkout.
+- [ ] For production ECPay, set `PUBLIC_ORIGIN=https://no-no.uk`, `ECPAY_ENVIRONMENT=production`, and the complete secret set only after merchant approval; confirm the production V5 endpoint is selected.
+- [ ] Run the manual production QA checklist: browser returns are informational only, while the verified server-side ECPay callback is authoritative for fulfillment.
 - [ ] Verify the public source, documentation, and quiet voluntary-support path are current.
 
 ## Release order
