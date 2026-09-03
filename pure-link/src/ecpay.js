@@ -1,5 +1,5 @@
 import { getAiCreditPack } from './credit-products.js';
-import { text } from './http.js';
+import { redirect, text } from './http.js';
 import { PaymentError } from './payment-error.js';
 
 export const ECPAY_STAGE_ENDPOINT = 'https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5';
@@ -48,11 +48,23 @@ export async function createEcpayCheckout({ requestUrl, user, packId, locale, en
     TradeDesc: 'PureLink AI formula credits',
     ItemName: `PureLink AI formula drafts x ${pack.credits}`,
     ReturnURL: `${origin}/api/webhooks/ecpay`,
-    OrderResultURL: `${origin}/${resultLocale}/account?purchase=pending`,
+    // ECPay POSTs browser results here. This route intentionally redirects
+    // without inspecting the payload; only ReturnURL can fulfill an order.
+    OrderResultURL: `${origin}/api/payment-return/ecpay?locale=${resultLocale}`,
+    // Some ECPay payment methods use a client-back flow instead of OrderResultURL.
+    ClientBackURL: `${origin}/${resultLocale}/account?purchase=pending`,
     ChoosePayment: 'ALL',
     EncryptType: '1',
   };
   return { provider: 'ecpay', action: ecpayEndpoint(env), fields: { ...fields, CheckMacValue: await createCheckMacValue(fields, env) } };
+}
+
+// This browser-facing endpoint is deliberately non-authoritative. Do not read
+// its body or use its fields for fulfillment; ReturnURL is the sole ECPay
+// fulfillment boundary and validates its own signed callback.
+export function handleEcpayBrowserReturn(requestUrl) {
+  const locale = requestUrl.searchParams.get('locale') === 'zh-Hant' ? 'zh-Hant' : 'en';
+  return redirect(`/${locale}/account?purchase=pending`, 303);
 }
 
 export async function handleEcpayCallback(request, env) {

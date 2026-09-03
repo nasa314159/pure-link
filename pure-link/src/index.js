@@ -9,7 +9,7 @@ import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
 import { BillingError, getCreditBalance, handleCreemWebhook } from './billing.js';
-import { handleEcpayCallback } from './ecpay.js';
+import { handleEcpayBrowserReturn, handleEcpayCallback } from './ecpay.js';
 import { createLemonSupportCheckout, getSupportTotals, handleLemonSqueezyWebhook, isLemonSupportConfigured } from './lemon-squeezy.js';
 import { createCreditCheckout, enabledPaymentProviders, PaymentError } from './payments.js';
 import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
@@ -132,6 +132,7 @@ export async function routeRequest(request, env, context) {
   }
   if (request.method === 'POST' && path === 'api/webhooks/lemon-squeezy') return handleLemonSqueezyWebhook(request, env);
   if (request.method === 'POST' && path === 'api/webhooks/ecpay') return handleEcpayCallback(request, env);
+  if (request.method === 'POST' && path === 'api/payment-return/ecpay') return handleEcpayBrowserReturn(requestUrl);
   if (request.method === 'GET' && path === 'account') {
     if (!localeRoute) return redirect(localizedPath(locale, 'account'), 302);
     const user = await getCurrentUser(request, env);

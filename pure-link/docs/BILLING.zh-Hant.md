@@ -49,7 +49,7 @@ API key、webhook secret 與 ECPay hash 必須使用 Worker secret。供應商 I
 
 ## 確認付款與退款
 
-額度只能在已驗證的供應商通知後加入：Lemon Squeezy 已簽名的 `order_created` webhook，或 `RtnCode=1` 且 `SimulatePaid!=1` 的 ECPay ReturnURL。瀏覽器回到成功頁永遠不會加入額度。
+額度只能在已驗證的供應商通知後加入：Lemon Squeezy 已簽名的 `order_created` webhook，或 `RtnCode=1` 且 `SimulatePaid!=1` 的 ECPay ReturnURL。ECPay 的 `ReturnURL` 固定為 `https://no-no.uk/api/webhooks/ecpay`，是唯一可交付額度的 ECPay 端點。ECPay 會將瀏覽器結果 POST 到 `https://no-no.uk/api/payment-return/ecpay?locale=en` 或 `?locale=zh-Hant`；該端點會忽略全部 POST 欄位，並以 `303` 轉址至對應語言的待確認帳號頁。對於瀏覽器返回行為不同的付款方式，`ClientBackURL` 固定使用 `https://no-no.uk/{locale}/account?purchase=pending`。瀏覽器返回永遠不會加入額度。
 
 Lemon 退款 webhook 使用供應商提供的累積 `total`、`refunded_amount`、`total_usd`、`refunded_amount_usd`。若已驗證退款早於 `order_created` 到達，會先保留並在訂單到達後對帳。重複通知只會撤回新增的相稱額度；支持總額也只扣除相對應的退款美元金額。ECPay 退款目前由商家／營運端處理；PureLink 不宣稱支援自動 ECPay 退款 API。
 

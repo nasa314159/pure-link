@@ -49,7 +49,7 @@ Keep API keys, webhook secrets, and ECPay hashes as Worker secrets. Provider IDs
 
 ## Confirmation and refunds
 
-Credits are granted only after a verified provider callback: a signed Lemon Squeezy `order_created` webhook or a verified ECPay ReturnURL callback with `RtnCode=1` and `SimulatePaid!=1`. Browser return pages never grant credits.
+Credits are granted only after a verified provider callback: a signed Lemon Squeezy `order_created` webhook or a verified ECPay ReturnURL callback with `RtnCode=1` and `SimulatePaid!=1`. ECPay `ReturnURL` is always `https://no-no.uk/api/webhooks/ecpay`, the only ECPay fulfillment endpoint. ECPay posts browser results to `https://no-no.uk/api/payment-return/ecpay?locale=en` or `?locale=zh-Hant`; that endpoint ignores all POST fields and responds with a `303` to the matching localized pending account page. `ClientBackURL` is the canonical `https://no-no.uk/{locale}/account?purchase=pending` page for payment methods with different browser-return behavior. Browser returns never grant credits.
 
 Lemon refund webhooks use the provider's cumulative `total`, `refunded_amount`, `total_usd`, and `refunded_amount_usd` fields. Verified refunds received before `order_created` are retained and reconciled when the order arrives. Repeated notifications revoke only the additional proportional credits and support totals only lose the corresponding refunded USD amount. ECPay refunds are currently handled by the merchant/operator; PureLink does not claim an automatic ECPay refund API.
 

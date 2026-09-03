@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AI_CREDIT_PACKS } from '../src/credit-products.js';
-import { createCheckMacValue, createEcpayCheckout, createMerchantTradeNo, ecpayEndpoint, ecpayTradeDate, ECPAY_PRODUCTION_ENDPOINT, ECPAY_STAGE_ENDPOINT, handleEcpayCallback, isEcpayCheckoutConfigured, verifyCheckMacValue } from '../src/ecpay.js';
+import { createCheckMacValue, createEcpayCheckout, createMerchantTradeNo, ecpayEndpoint, ecpayTradeDate, ECPAY_PRODUCTION_ENDPOINT, ECPAY_STAGE_ENDPOINT, handleEcpayBrowserReturn, handleEcpayCallback, isEcpayCheckoutConfigured, verifyCheckMacValue } from '../src/ecpay.js';
 
 const env = {
   ECPAY_CHECKOUT_ENABLED: 'true', ECPAY_MERCHANT_ID: '2000132', ECPAY_HASH_KEY: 'test-hash-key-12', ECPAY_HASH_IV: 'test-hash-iv-123', ECPAY_ENVIRONMENT: 'stage', PUBLIC_ORIGIN: 'https://no-no.uk',
@@ -39,7 +39,8 @@ describe('ECPay credit checkout', () => {
     const checkout = await createEcpayCheckout({ requestUrl: new URL('https://attacker.example/en/account'), user: { id: 'user-1' }, packId: 'small', locale: 'en', env: { ...env, ECPAY_ENVIRONMENT: 'production', pure_link_db: new EcpayDb() } });
     expect(checkout.action).toBe(ECPAY_PRODUCTION_ENDPOINT);
     expect(checkout.fields.ReturnURL).toBe('https://no-no.uk/api/webhooks/ecpay');
-    expect(checkout.fields.OrderResultURL).toContain('https://no-no.uk/en/account?purchase=pending');
+    expect(checkout.fields.OrderResultURL).toBe('https://no-no.uk/api/payment-return/ecpay?locale=en');
+    expect(checkout.fields.ClientBackURL).toBe('https://no-no.uk/en/account?purchase=pending');
   });
 
   it('maps only canonical pack IDs to server-controlled amounts and credits', async () => {
@@ -48,7 +49,9 @@ describe('ECPay credit checkout', () => {
       const checkout = await createEcpayCheckout({ requestUrl: new URL('https://no-no.uk/zh-Hant/account'), user: { id: 'user-1' }, packId: pack.id, locale: 'zh-Hant', env: { ...env, pure_link_db: db } });
       expect(db.checkout).toMatchObject({ pack_id: pack.id, expected_amount: pack.priceTwd, expected_credits: pack.credits, user_id: 'user-1' });
       expect(checkout.fields.TotalAmount).toBe(String(pack.priceTwd));
-      expect(checkout.fields.OrderResultURL).toBe('https://no-no.uk/zh-Hant/account?purchase=pending');
+      expect(checkout.fields.ReturnURL).toBe('https://no-no.uk/api/webhooks/ecpay');
+      expect(checkout.fields.OrderResultURL).toBe('https://no-no.uk/api/payment-return/ecpay?locale=zh-Hant');
+      expect(checkout.fields.ClientBackURL).toBe('https://no-no.uk/zh-Hant/account?purchase=pending');
       await expect(verifyCheckMacValue(checkout.fields, env)).resolves.toBe(true);
     }
   });
@@ -60,6 +63,27 @@ describe('ECPay credit checkout', () => {
   it('uses a deterministic Asia/Taipei MerchantTradeDate and short ASCII trade numbers', () => {
     expect(ecpayTradeDate(new Date('2026-01-01T18:30:45.000Z'))).toBe('2026/01/02 02:30:45');
     expect(createMerchantTradeNo(1723622400000, () => 0.1234)).toMatch(/^[A-Za-z0-9]{1,20}$/);
+  });
+
+  it('redirects browser returns without trusting their payload or touching fulfillment', async () => {
+    const { db, fields } = await pendingCallback('large');
+    const forged = new URL('https://no-no.uk/api/payment-return/ecpay?locale=zh-Hant');
+    forged.searchParams.set('RtnCode', '1');
+    forged.searchParams.set('TradeAmt', '1');
+    forged.searchParams.set('MerchantTradeNo', fields.MerchantTradeNo);
+    forged.searchParams.set('CheckMacValue', fields.CheckMacValue);
+    const response = handleEcpayBrowserReturn(forged);
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/zh-Hant/account?purchase=pending');
+    expect(db.balance).toBe(0);
+    expect(db.orders).toHaveLength(0);
+    expect(db.checkout.status).toBe('pending');
+  });
+
+  it('constrains browser return locales to the supported localized account pages', () => {
+    expect(handleEcpayBrowserReturn(new URL('https://no-no.uk/api/payment-return/ecpay?locale=en')).headers.get('location')).toBe('/en/account?purchase=pending');
+    expect(handleEcpayBrowserReturn(new URL('https://no-no.uk/api/payment-return/ecpay?locale=zh-Hant')).headers.get('location')).toBe('/zh-Hant/account?purchase=pending');
+    expect(handleEcpayBrowserReturn(new URL('https://no-no.uk/api/payment-return/ecpay?locale=https://attacker.example')).headers.get('location')).toBe('/en/account?purchase=pending');
   });
 
   it('fulfills a valid callback once and acknowledges its exact duplicate', async () => {
