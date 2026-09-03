@@ -1,9 +1,10 @@
 const MAX_DETAILS_LENGTH = 300;
 const WEBHOOK_TIMEOUT_MS = 5000;
 const DISCORD_MENTION_PATTERN = /@(?:everyone|here|[!&]?[0-9]{17,20})/g;
+const DISCORD_WEBHOOK_PATTERN = /^https:\/\/(?:discord\.com|ptb\.discord\.com|canary\.discord\.com)\/api\/webhooks\/[0-9]{17,20}\/[-a-zA-Z0-9_]{1,100}$/;
 
 export function isDiscordReportWebhookConfigured(env) {
-  return Boolean(env.DISCORD_REPORT_WEBHOOK_URL && env.DISCORD_REPORT_WEBHOOK_URL.startsWith('https://'));
+  return Boolean(env.DISCORD_REPORT_WEBHOOK_URL && DISCORD_WEBHOOK_PATTERN.test(env.DISCORD_REPORT_WEBHOOK_URL));
 }
 
 export async function sendReportNotification({ report, env, context, fetchImplementation = fetch }) {
@@ -28,11 +29,11 @@ export async function sendReportNotification({ report, env, context, fetchImplem
         console.warn('Discord report webhook delivery failed', { status: response.status, reportId: report.id });
       }
     } catch (error) {
-      const message = error?.message || String(error);
-      if (message.includes('aborted')) {
+      const errorName = error?.name || 'Error';
+      if (errorName === 'AbortError') {
         console.warn('Discord report webhook timed out', { reportId: report.id });
       } else {
-        console.warn('Discord report webhook error', { message, reportId: report.id });
+        console.warn('Discord report webhook delivery failed', { errorName, reportId: report.id });
       }
     } finally {
       clearTimeout(timeoutId);
@@ -50,7 +51,6 @@ export function buildReportPayload(report) {
     { name: 'Report ID', value: String(report.id), inline: true },
     { name: 'Category', value: categoryDisplayName(report.category), inline: true },
     { name: 'PureLink', value: String(report.slug), inline: true },
-    { name: 'Reporter', value: report.authenticated ? 'Authenticated' : 'Anonymous', inline: true },
     { name: 'Created', value: formatTimestamp(report.created_at), inline: true },
   ];
 
@@ -101,6 +101,7 @@ const SENSITIVE_PATTERNS = [
   /(?:credit[_-]?card|card[_-]?number|cvv|cvc)[:\s]*.{0,50}/gi,
   /(?:google[_-]?(?:client[_-]?id|client[_-]?secret))[:\s]*.{0,50}/gi,
   /(?:oauth|authorization)[-]?[:]?\s*.{0,50}/gi,
+  /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
 ];
 
 function sanitizeAndTruncateDetails(details) {

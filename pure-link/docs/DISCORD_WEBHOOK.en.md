@@ -24,15 +24,14 @@ npx wrangler secret put DISCORD_REPORT_WEBHOOK_URL
 
 ## Notification Payload
 
-When a report is successfully stored in D1, an Discord webhook is sent with the following embed:
+When a report is successfully stored in D1, a Discord webhook is sent with the following embed:
 
 | Field | Description |
 | --- | --- |
 | Report ID | Unique identifier (Base58) |
 | Category | Phishing, Malware, Impersonation, Copyright, Privacy, or Other |
 | PureLink | The slug being reported |
-| Reporter | Whether the reporter was "Authenticated" or "Anonymous" |
-| Created | ISO timestamp in UTC |
+| Created | Server-side timestamp in UTC |
 | Summary | Sanitized and truncated report details (max 300 chars) |
 
 ## Privacy Constraints
@@ -43,7 +42,7 @@ Discord notifications explicitly exclude:
 - OAuth credentials (Google, etc.)
 - Full card or payment data
 - IP addresses (only HMAC-derived rate-limit keys are stored)
-- Email addresses (not collected in the report form)
+- Email addresses (redacted if included in report details)
 - Webhook secrets or API keys
 - Recovery or management credentials
 - Sensitive headers or cookies
@@ -53,7 +52,8 @@ Report details are sanitized before being sent:
 1. Control characters are removed
 2. `@everyone` and `@here` mentions are neutralized
 3. Role and user mentions are stripped of their trigger prefix
-4. Free-form details are truncated at 300 characters
+4. Email addresses in free-form text are redacted
+5. Free-form details are truncated at 300 characters
 
 ## Webhook Behavior
 
@@ -72,5 +72,6 @@ Report details are sanitized before being sent:
 
 - Only the configured webhook URL receives notifications
 - No user-controlled arbitrary outbound URL or fetch primitive is created
-- The webhook URL is never logged; errors log only the report ID and error message
+- The webhook URL is never logged; errors log only safe metadata (report ID and error name)
 - Discord `allowed_mentions` is set to `parse: []` to prevent mention abuse
+- Webhook URLs must be valid Discord webhook URLs on discord.com, ptb.discord.com, or canary.discord.com

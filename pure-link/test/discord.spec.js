@@ -13,17 +13,36 @@ describe('Discord report webhook', () => {
     });
 
     it('returns false when webhook URL does not start with https', () => {
-      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'http://discord.com/webhook' })).toBe(false);
+      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'http://discord.com/api/webhooks/123/abc' })).toBe(false);
     });
 
-    it('returns true when valid https webhook URL is configured', () => {
-      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com/api/webhooks/123/abc' })).toBe(true);
+    it('returns false for non-discord webhook hosts', () => {
+      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'https://evil.com/api/webhooks/123/abc' })).toBe(false);
+      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com.example.com/api/webhooks/123/abc' })).toBe(false);
+    });
+
+    it('returns false for invalid webhook paths', () => {
+      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com/api/webhooks/123' })).toBe(false);
+      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com/api/webhooks/123/abc/extra' })).toBe(false);
+      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com/api/other/123/abc' })).toBe(false);
+    });
+
+    it('returns true for valid discord.com webhook URL', () => {
+      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyzABCDEFGH' })).toBe(true);
+    });
+
+    it('returns true for valid ptb.discord.com webhook URL', () => {
+      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'https://ptb.discord.com/api/webhooks/123456789012345678/abcdefghijklmnop' })).toBe(true);
+    });
+
+    it('returns true for valid canary.discord.com webhook URL', () => {
+      expect(isDiscordReportWebhookConfigured({ DISCORD_REPORT_WEBHOOK_URL: 'https://canary.discord.com/api/webhooks/123456789012345678/abcdefghijklmnop' })).toBe(true);
     });
   });
 
   describe('buildReportPayload', () => {
     it('creates payload with required fields', () => {
-      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: 'Suspicious content', created_at: '2026-09-03T12:00:00Z', authenticated: false };
+      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: 'Suspicious content', created_at: '2026-09-03T12:00:00Z' };
       const payload = buildReportPayload(report);
 
       expect(payload.embeds).toHaveLength(1);
@@ -35,25 +54,18 @@ describe('Discord report webhook', () => {
       expect(fields.find(f => f.name === 'Report ID')?.value).toBe('abc123');
       expect(fields.find(f => f.name === 'Category')?.value).toBe('Phishing');
       expect(fields.find(f => f.name === 'PureLink')?.value).toBe('test-link');
-      expect(fields.find(f => f.name === 'Reporter')?.value).toBe('Anonymous');
-    });
-
-    it('shows authenticated for authenticated reporters', () => {
-      const report = { id: 'xyz789', slug: 'my-link', category: 'malware', created_at: '2026-09-03T12:00:00Z', authenticated: true };
-      const payload = buildReportPayload(report);
-
-      expect(payload.embeds[0].fields.find(f => f.name === 'Reporter')?.value).toBe('Authenticated');
+      expect(fields.find(f => f.name === 'Created')?.value).toBe('2026-09-03 12:00:00 UTC');
     });
 
     it('includes summary field when details are provided', () => {
-      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: 'Bad actor', created_at: '2026-09-03T12:00:00Z', authenticated: false };
+      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: 'Bad actor', created_at: '2026-09-03T12:00:00Z' };
       const payload = buildReportPayload(report);
 
       expect(payload.embeds[0].fields.find(f => f.name === 'Summary')?.value).toBe('Bad actor');
     });
 
     it('does not include summary field when details are empty', () => {
-      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: '', created_at: '2026-09-03T12:00:00Z', authenticated: false };
+      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: '', created_at: '2026-09-03T12:00:00Z' };
       const payload = buildReportPayload(report);
 
       expect(payload.embeds[0].fields.find(f => f.name === 'Summary')).toBeUndefined();
@@ -87,10 +99,30 @@ describe('Discord report webhook', () => {
     });
   });
 
+  describe('sensitive data redaction', () => {
+    it('redacts email addresses from report details', () => {
+      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: 'Contact me at user@example.com for more info', created_at: '2026-09-03T12:00:00Z' };
+      const payload = buildReportPayload(report);
+
+      const summary = payload.embeds[0].fields.find(f => f.name === 'Summary')?.value;
+      expect(summary).not.toContain('user@example.com');
+      expect(summary).toContain('[REDACTED]');
+    });
+
+    it('redacts multiple email addresses', () => {
+      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: 'Emails: a@b.com and c@d.co.uk here', created_at: '2026-09-03T12:00:00Z' };
+      const payload = buildReportPayload(report);
+
+      const summary = payload.embeds[0].fields.find(f => f.name === 'Summary')?.value;
+      expect(summary).not.toContain('a@b.com');
+      expect(summary).not.toContain('c@d.co.uk');
+    });
+  });
+
   describe('long report text truncation', () => {
     it('truncates details longer than 300 characters', () => {
       const longText = 'x'.repeat(400);
-      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: longText, created_at: '2026-09-03T12:00:00Z', authenticated: false };
+      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: longText, created_at: '2026-09-03T12:00:00Z' };
       const payload = buildReportPayload(report);
 
       const summary = payload.embeds[0].fields.find(f => f.name === 'Summary');
@@ -100,7 +132,7 @@ describe('Discord report webhook', () => {
 
     it('does not truncate details at exactly 300 characters', () => {
       const exactText = 'x'.repeat(300);
-      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: exactText, created_at: '2026-09-03T12:00:00Z', authenticated: false };
+      const report = { id: 'abc123', slug: 'test-link', category: 'phishing', details: exactText, created_at: '2026-09-03T12:00:00Z' };
       const payload = buildReportPayload(report);
 
       const summary = payload.embeds[0].fields.find(f => f.name === 'Summary');
@@ -119,7 +151,7 @@ describe('report submission with Discord webhook', () => {
     env = {
       pure_link_db: db,
       APP_ENV: 'test',
-      DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456/abcdef',
+      DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz',
     };
   });
 
@@ -158,7 +190,7 @@ describe('report submission with Discord webhook', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
 
       const [url, options] = fetchMock.mock.calls[0];
-      expect(url).toBe('https://discord.com/api/webhooks/123456/abcdef');
+      expect(url).toBe('https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz');
       expect(options.method).toBe('POST');
       expect(options.headers['content-type']).toBe('application/json');
 
@@ -326,7 +358,7 @@ describe('report submission with Discord webhook', () => {
         RATE_LIMIT_SECRET: 'rate-limit-test-secret',
         TURNSTILE_SECRET_KEY: 'turnstile-test-secret',
         TURNSTILE_SITE_KEY: 'site-key',
-        DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com/api/webhooks/123/abc',
+        DISCORD_REPORT_WEBHOOK_URL: 'https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnop',
       };
 
       const slug = 'ratelimit-same-slug';
@@ -393,6 +425,10 @@ class MemoryStatement {
       return userId ? this.db.users.get(userId) || null : null;
     }
     if (this.sql.startsWith('SELECT balance')) return null;
+    if (this.sql.startsWith('SELECT created_at FROM reports')) {
+      const report = this.db.reports.find(r => r.id === this.values[0]);
+      return report ? { created_at: report.created_at } : null;
+    }
     if (this.sql.startsWith('INSERT INTO rate_limits')) {
       const [bucketKey, expiresAt] = this.values;
       const current = this.db.rateLimits.get(bucketKey) || { request_count: 0, expires_at: expiresAt };
@@ -472,7 +508,7 @@ class MemoryStatement {
     }
     if (this.sql.startsWith('INSERT INTO reports')) {
       const [id, slug, category, details] = this.values;
-      this.db.reports.push({ id, slug, category, details, status: 'new' });
+      this.db.reports.push({ id, slug, category, details, status: 'new', created_at: '2026-09-03T12:00:00Z' });
       return { success: true, meta: { changes: 1 } };
     }
     if (this.sql.startsWith('INSERT INTO lemon_checkout_requests')) {
