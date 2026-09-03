@@ -705,6 +705,10 @@ class MemoryStatement {
     if (this.sql.startsWith('SELECT COALESCE(SUM') && this.sql.includes('lemon_support_contributions')) {
       return { net_usd_minor: 0, contribution_count: 0, unconverted_count: 0 };
     }
+    if (this.sql.startsWith('SELECT created_at FROM reports')) {
+      const report = this.db.reports.find(r => r.id === this.values[0]);
+      return report ? { created_at: report.created_at } : null;
+    }
     throw new Error(`Unsupported first query: ${this.sql}`);
   }
 
@@ -761,7 +765,7 @@ class MemoryStatement {
     }
     if (this.sql.startsWith('INSERT INTO reports')) {
       const [id, slug, category, details] = this.values;
-      this.db.reports.push({ id, slug, category, details, status: 'new' });
+      this.db.reports.push({ id, slug, category, details, status: 'new', created_at: '2026-09-03T12:00:00Z' });
       return { success: true, meta: { changes: 1 } };
     }
     if (this.sql.startsWith('INSERT INTO lemon_checkout_requests')) {

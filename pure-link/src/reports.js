@@ -20,8 +20,11 @@ export function normalizeReportInput(input, errorMessages = null) {
 }
 
 export async function createReport(db, report) {
-  return db.prepare(`
+  const result = await db.prepare(`
     INSERT INTO reports (id, slug, category, details, status, created_at)
     VALUES (?, ?, ?, ?, 'new', CURRENT_TIMESTAMP)
   `).bind(report.id, report.slug, report.category, report.details).run();
+
+  const row = await db.prepare('SELECT created_at FROM reports WHERE id = ?').bind(report.id).first();
+  return { ...report, created_at: row?.created_at };
 }
