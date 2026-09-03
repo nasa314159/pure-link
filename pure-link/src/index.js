@@ -7,6 +7,7 @@ import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, r
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
+import { sendReportNotification } from './discord.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
 import { BillingError, getCreditBalance, handleCreemWebhook } from './billing.js';
 import { handleEcpayBrowserReturn, handleEcpayCallback } from './ecpay.js';
@@ -429,6 +430,7 @@ async function submitReport(request, requestUrl, env, context) {
   if (!exists) return json({ error: messages.api.reportNotFound }, { status: 404 });
   await storeReport(env.pure_link_db, report);
   recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'report', contentType: 'none' });
+  sendReportNotification({ report, env, context });
   return json({ received: true, reference: report.id }, { status: 201 });
 }
 
