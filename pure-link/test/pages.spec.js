@@ -188,7 +188,7 @@ describe('interactive pages', () => {
     expect(credits).toContain('Standard: 400 AI formula drafts — NT$300');
     expect(credits).toContain('Large: 1,000 AI formula drafts — NT$600');
     expect(credits).toContain('one-time purchases, not subscriptions');
-    expect(credits).toContain('Checkout is completing provider approval and production integration');
+    expect(credits).toContain('No payment rail is enabled in this deployment');
     expect(credits).not.toMatch(/US\$5|US\$10|US\$20|300 AI formula generations|800 generations|2,000 generations|Creem/);
     expect(chineseCredits).toContain('<html lang="zh-Hant">');
     expect(chineseCredits).toContain('MVP 說明版本：2026-09-01');
@@ -197,7 +197,7 @@ describe('interactive pages', () => {
     expect(chineseCredits).toContain('標準方案：400 次 AI 公式草稿，NT$300');
     expect(chineseCredits).toContain('大型方案：1,000 次 AI 公式草稿，NT$600');
     expect(chineseCredits).toContain('一次性購買，不是訂閱');
-    expect(chineseCredits).toContain('付款功能目前正在完成供應商審核與正式整合；未啟用前不會收款');
+    expect(chineseCredits).toContain('此部署尚未啟用任何付款方式；啟用前不會收款');
     expect(chineseCredits).toContain('href="/zh-Hant/refund-policy"');
     expect(chineseCredits).toContain('mailto:nasa3.14159@gmail.com');
     expect(chineseCredits).not.toMatch(/US\$5|US\$10|US\$20|300 次 AI 公式生成|800 次|2,000 次|Creem/);
@@ -206,6 +206,20 @@ describe('interactive pages', () => {
     expect(refunds).toContain('Last updated: August 14, 2026');
     expect(refunds).toContain('within 14 calendar days');
     expect(refunds).toContain('Consumed credits are generally not refundable');
+  });
+
+  it('exposes the configured Taiwan ECPay rail consistently without exposing it when disabled', () => {
+    const englishDisabled = renderLegalPage('ai-credits', 'en');
+    const englishEcpay = renderLegalPage('ai-credits', 'en', { ecpay: true });
+    const chineseEcpay = renderLegalPage('ai-credits', 'zh-Hant', { ecpay: true });
+    expect(englishDisabled).not.toContain('ECPay');
+    expect(englishDisabled).not.toContain('legal-purchase');
+    expect(englishEcpay).toContain('Taiwan one-time payment — ECPay');
+    expect(englishEcpay).toContain('Sign in to purchase AI formula credits');
+    expect(chineseEcpay).toContain('台灣一次性付款 — ECPay');
+    expect(chineseEcpay).toContain('登入購買 AI 公式額度');
+    expect(englishEcpay).not.toContain('台灣一次性付款');
+    expect(chineseEcpay).not.toContain('Taiwan one-time payment');
   });
 
   it('shows canonical packs and only enabled payment rails on the account page', () => {
@@ -219,6 +233,15 @@ describe('interactive pages', () => {
     expect(enabled).toContain('The payment flow has returned to PureLink');
     expect(enabled).toContain('nonce="billing-nonce"');
     expect(() => new Function(extractScript(enabled))).not.toThrow();
+  });
+
+  it('keeps account billing copy localized when ECPay is enabled', () => {
+    const english = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'en');
+    const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'zh-Hant');
+    expect(english).toContain('Taiwan one-time payment — ECPay');
+    expect(english).not.toContain('台灣一次性付款');
+    expect(chinese).toContain('台灣一次性付款 — ECPay');
+    expect(chinese).not.toContain('Taiwan one-time payment');
   });
 
   it('explains that a returned checkout is pending verified server confirmation', () => {

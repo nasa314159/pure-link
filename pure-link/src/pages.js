@@ -827,7 +827,7 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}) {
         ['What the product does', 'A signed-in customer can describe a mathematical expression in natural language and receive an editable LaTeX draft with an immediate visual preview. The result is never published automatically, may contain mistakes, and must be reviewed by the customer before use.'],
         ['One-time plans', ''],
         ['Delivery and use', 'After payment is confirmed, credits are added to the PureLink account that started the purchase. Customers must be signed in before purchasing. The regular five free daily credits are used first. Purchased credits are only for the AI formula draft feature and are not shared between accounts.'],
-        ['Payment status', 'Checkout is completing provider approval and production integration. No payment is accepted until it is enabled.'],
+        ['Payment status', 'No payment rail is enabled in this deployment. No payment is accepted until it is enabled.'],
         ['Support', 'For purchase, delivery, or account questions, contact nasa3.14159@gmail.com. Include the email address used for your PureLink account and the order number, but never send a password, full card number, or Google credential.'],
       ],
     },
@@ -878,6 +878,7 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}) {
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
+          ${page === 'ai-credits' && paymentProviders.length ? `<p class="legal-purchase"><a href="${localizedHref(locale, 'account')}">${m.billing.purchase}</a></p>` : ''}
           ${page === 'ai-credits' ? `<p class="legal-contact"><a href="${localizedHref(locale, 'refund-policy')}">${locale === 'en' ? 'Refund policy' : '退款政策'}</a> · <a href="mailto:nasa3.14159@gmail.com">${locale === 'en' ? 'Support: nasa3.14159@gmail.com' : '支援：nasa3.14159@gmail.com'}</a></p>` : ''}
           <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'support')}">${m.support.button}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
           ${languageSwitcher(locale, page)}
@@ -921,7 +922,7 @@ function localizedLegalContent(page, locale, defaults) {
         ['商品內容', '已登入的使用者可用自然語言描述數學式，取得可編輯、可立即預覽的 LaTeX 草稿。結果不會自動發布，可能有錯，使用前必須自行檢查。'],
         ['一次性方案', ''],
         ['交付與使用', '付款確認後，額度會加入發起購買的 PureLink 帳號。購買前必須登入。一般登入帳號每日免費額度仍優先使用。購買額度只用於 AI 公式草稿功能，且不在帳號間共用。'],
-        ['付款狀態', '付款功能目前正在完成供應商審核與正式整合；未啟用前不會收款。'],
+        ['付款狀態', '此部署尚未啟用任何付款方式；啟用前不會收款。'],
         ['核心功能', '網址縮短、手動公式建立、小卡等核心功能不因購買額度而成為付費服務。AI 產生的公式可能有錯，使用前必須自行檢查。'],
         ['支援', '若有購買、交付或帳號問題，請聯絡 nasa3.14159@gmail.com。請提供 PureLink 帳號電子郵件與訂單編號，但不要傳送密碼、完整卡號或 Google 憑證。'],
       ]],

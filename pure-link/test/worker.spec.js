@@ -176,6 +176,44 @@ describe('PureLink worker', () => {
     await expect(response.json()).resolves.toMatchObject({ error: 'Sign in before purchasing AI formula credits.' });
   });
 
+  it('keeps browser payment returns informational and does not grant credits', async () => {
+    const sessionToken = await authenticateTestUser(env);
+    Object.assign(env, {
+      ECPAY_CHECKOUT_ENABLED: 'true',
+      ECPAY_ENVIRONMENT: 'production',
+      ECPAY_MERCHANT_ID: '2000132',
+      ECPAY_HASH_KEY: 'test-hash-key-12',
+      ECPAY_HASH_IV: 'test-hash-iv-123',
+      PUBLIC_ORIGIN: 'https://no-no.uk',
+    });
+    const response = await worker.fetch(new Request('https://pure.test/en/account?purchase=success', {
+      headers: { cookie: `purelink_session=${sessionToken}` },
+    }), env);
+    const body = await response.text();
+    expect(response.status).toBe(200);
+    expect(body).toContain('Only a verified provider notification adds credits');
+    expect(body).not.toContain('Available purchased credits: 1');
+    expect(db.ecpayOrders).toHaveLength(0);
+  });
+
+  it('accepts ECPay POST browser returns only as a locale-constrained 303 redirect', async () => {
+    const response = await worker.fetch(new Request('https://pure.test/api/payment-return/ecpay?locale=zh-Hant', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'RtnCode=1&TradeAmt=1&MerchantTradeNo=forged&CheckMacValue=forged',
+      redirect: 'manual',
+    }), env);
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/zh-Hant/account?purchase=pending');
+    expect(db.ecpayOrders).toHaveLength(0);
+
+    const invalidLocale = await worker.fetch(new Request('https://pure.test/api/payment-return/ecpay?locale=https%3A%2F%2Fattacker.example', {
+      method: 'POST', redirect: 'manual',
+    }), env);
+    expect(invalidLocale.status).toBe(303);
+    expect(invalidLocale.headers.get('location')).toBe('/en/account?purchase=pending');
+  });
+
   it('publishes a public-only sitemap and points robots.txt to it', async () => {
     env.PUBLIC_ORIGIN = 'https://no-no.uk';
     const robots = await worker.fetch(new Request('https://pure.test/robots.txt'), env);
@@ -618,6 +656,7 @@ class MemoryD1 {
     this.nativeTokens = new Map();
     this.rateLimits = new Map();
     this.lemonCheckoutRequests = 0;
+    this.ecpayOrders = [];
   }
 
   prepare(sql) {
