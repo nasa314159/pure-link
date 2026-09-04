@@ -26,8 +26,23 @@ describe('Google account integration', () => {
     expect(db.values[2]).toBe('/account');
   });
 
-  it('rejects cross-origin account mutations', () => {
-    const request = new Request('https://no-no.uk/auth/logout', { method: 'POST', headers: { origin: 'https://attacker.example' } });
+  it('accepts an opaque or absent Origin only with same-origin Fetch Metadata', () => {
+    const env = { PUBLIC_ORIGIN: 'https://no-no.uk' };
+    expect(requireSameOrigin(new Request('https://no-no.uk/auth/logout', {
+      method: 'POST', headers: { origin: 'null', 'sec-fetch-site': 'same-origin' },
+    }), env)).toBe(true);
+    expect(requireSameOrigin(new Request('https://no-no.uk/auth/logout', {
+      method: 'POST', headers: { 'sec-fetch-site': 'same-origin' },
+    }), env)).toBe(true);
+    expect(requireSameOrigin(new Request('https://no-no.uk/auth/logout', {
+      method: 'POST', headers: { origin: 'null', 'sec-fetch-site': 'same-site' },
+    }), env)).toBe(false);
+  });
+
+  it('rejects explicit cross-origin account mutations even with conflicting metadata', () => {
+    const request = new Request('https://no-no.uk/auth/logout', {
+      method: 'POST', headers: { origin: 'https://attacker.example', 'sec-fetch-site': 'same-origin' },
+    });
     expect(requireSameOrigin(request, { PUBLIC_ORIGIN: 'https://no-no.uk' })).toBe(false);
   });
 });

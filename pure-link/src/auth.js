@@ -132,8 +132,12 @@ export async function logout(request, env) {
 
 export function requireSameOrigin(request, env) {
   const origin = request.headers.get('origin');
-  if (!origin) return true;
-  return origin === getPublicOrigin(new URL(request.url), env);
+  if (origin === getPublicOrigin(new URL(request.url), env)) return true;
+  // Some privacy-preserving browser contexts send an opaque or omitted Origin
+  // for a same-origin form POST. Accept only the browser-controlled Fetch
+  // Metadata signal in that case; an explicit foreign Origin always rejects.
+  if (origin && origin !== 'null') return false;
+  return request.headers.get('sec-fetch-site') === 'same-origin';
 }
 
 async function upsertGoogleUser(db, profile) {
