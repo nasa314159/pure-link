@@ -176,6 +176,53 @@ describe('PureLink worker', () => {
     await expect(response.json()).resolves.toMatchObject({ error: 'Sign in before purchasing AI formula credits.' });
   });
 
+  it('logs out an authenticated user with a normal same-origin Origin', async () => {
+    const sessionToken = await authenticateTestUser(env);
+    const response = await worker.fetch(new Request('https://pure.test/auth/logout', {
+      method: 'POST', headers: { origin: 'https://pure.test', cookie: `purelink_session=${sessionToken}` }, redirect: 'manual',
+    }), env);
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe('/');
+    expect(response.headers.get('set-cookie')).toContain('purelink_session=');
+    expect(env.pure_link_db.sessions.size).toBe(0);
+  });
+
+  it('rejects a cross-origin logout without ending the session', async () => {
+    const sessionToken = await authenticateTestUser(env);
+    const response = await worker.fetch(new Request('https://pure.test/auth/logout', {
+      method: 'POST', headers: { origin: 'https://attacker.example', cookie: `purelink_session=${sessionToken}` }, redirect: 'manual',
+    }), env);
+    expect(response.status).toBe(403);
+    expect(env.pure_link_db.sessions.size).toBe(1);
+  });
+
+  it('logs out a Safari-compatible opaque-Origin form only with same-origin Fetch Metadata', async () => {
+    const sessionToken = await authenticateTestUser(env);
+    const response = await worker.fetch(new Request('https://pure.test/auth/logout', {
+      method: 'POST', headers: { origin: 'null', 'sec-fetch-site': 'same-origin', cookie: `purelink_session=${sessionToken}` }, redirect: 'manual',
+    }), env);
+    expect(response.status).toBe(303);
+    expect(env.pure_link_db.sessions.size).toBe(0);
+  });
+
+  it('rejects an opaque-Origin logout without sufficient same-origin evidence', async () => {
+    const sessionToken = await authenticateTestUser(env);
+    const response = await worker.fetch(new Request('https://pure.test/auth/logout', {
+      method: 'POST', headers: { origin: 'null', cookie: `purelink_session=${sessionToken}` }, redirect: 'manual',
+    }), env);
+    expect(response.status).toBe(403);
+    expect(env.pure_link_db.sessions.size).toBe(1);
+  });
+
+  it('does not apply the logout opaque-Origin exception to locale changes', async () => {
+    const response = await worker.fetch(new Request('https://pure.test/locale', {
+      method: 'POST',
+      headers: { origin: 'null', 'sec-fetch-site': 'same-origin', 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'locale=en&returnTo=%2Fen%2F', redirect: 'manual',
+    }), env);
+    expect(response.status).toBe(403);
+  });
+
   it('keeps browser payment returns informational and does not grant credits', async () => {
     const sessionToken = await authenticateTestUser(env);
     Object.assign(env, {
@@ -770,6 +817,10 @@ class MemoryStatement {
     }
     if (this.sql.startsWith('INSERT INTO lemon_checkout_requests')) {
       this.db.lemonCheckoutRequests += 1;
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith('DELETE FROM user_sessions')) {
+      this.db.sessions.delete(this.values[0]);
       return { success: true, meta: { changes: 1 } };
     }
     throw new Error(`Unsupported run query: ${this.sql}`);

@@ -1,5 +1,5 @@
 import { normalizeCreateInput, ValidationError } from './content.js';
-import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requireSameOrigin, startGoogleAuth } from './auth.js';
+import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requireSameOrigin, requireSameOriginForLogout, startGoogleAuth } from './auth.js';
 import { consumeAuthenticatedCheckoutRateLimit, enforceWriteProtection, isPublicWriteProtectionConfigured } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text, xml } from './http.js';
@@ -125,7 +125,7 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'GET' && path === 'auth/google') return startGoogleAuth(request, env);
   if (request.method === 'GET' && path === 'auth/google/callback') return finishGoogleAuth(request, env);
   if (request.method === 'POST' && path === 'auth/logout') {
-    if (!requireSameOrigin(request, env)) return json({ error: 'Invalid request origin.' }, { status: 403 });
+    if (!requireSameOriginForLogout(request, env)) return json({ error: 'Invalid request origin.' }, { status: 403 });
     return logout(request, env);
   }
   if (request.method === 'POST' && path === 'api/webhooks/creem') {
