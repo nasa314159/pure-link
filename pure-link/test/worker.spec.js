@@ -214,6 +214,15 @@ describe('PureLink worker', () => {
     expect(env.pure_link_db.sessions.size).toBe(1);
   });
 
+  it('does not apply the logout opaque-Origin exception to locale changes', async () => {
+    const response = await worker.fetch(new Request('https://pure.test/locale', {
+      method: 'POST',
+      headers: { origin: 'null', 'sec-fetch-site': 'same-origin', 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'locale=en&returnTo=%2Fen%2F', redirect: 'manual',
+    }), env);
+    expect(response.status).toBe(403);
+  });
+
   it('keeps browser payment returns informational and does not grant credits', async () => {
     const sessionToken = await authenticateTestUser(env);
     Object.assign(env, {

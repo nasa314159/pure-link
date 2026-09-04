@@ -132,6 +132,12 @@ export async function logout(request, env) {
 
 export function requireSameOrigin(request, env) {
   const origin = request.headers.get('origin');
+  if (!origin) return true;
+  return origin === getPublicOrigin(new URL(request.url), env);
+}
+
+export function requireSameOriginForLogout(request, env) {
+  const origin = request.headers.get('origin');
   if (origin === getPublicOrigin(new URL(request.url), env)) return true;
   // Some privacy-preserving browser contexts send an opaque or omitted Origin
   // for a same-origin form POST. Accept only the browser-controlled Fetch
