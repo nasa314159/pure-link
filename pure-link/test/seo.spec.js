@@ -153,11 +153,15 @@ describe('SEO metadata', () => {
       expect(accountJsonLd).toBeNull();
     });
 
-    it('includes potentialAction in WebSite schema', () => {
+    it('includes minimal truthful WebSite JSON-LD without SearchAction', () => {
       const enHome = renderHomePage('test-nonce', '', false, '', null, 'en');
       const jsonLd = extractJsonLd(enHome);
-      expect(jsonLd.potentialAction).toBeDefined();
-      expect(jsonLd.potentialAction['@type']).toBe('SearchAction');
+      expect(jsonLd['@context']).toBe('https://schema.org');
+      expect(jsonLd['@type']).toBe('WebSite');
+      expect(jsonLd.name).toBe('PureLink');
+      expect(jsonLd.url).toBe('https://no-no.uk');
+      expect(jsonLd.description).toBeTruthy();
+      expect(jsonLd.potentialAction).toBeUndefined();
     });
   });
 

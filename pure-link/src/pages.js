@@ -1270,15 +1270,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     '@type': 'WebSite',
     name: 'PureLink',
     url: 'https://no-no.uk',
-    description: 'Privacy-friendly URL shortener and formula sharing. No ads, no cross-site tracking, and no account needed to share content.',
-    potentialAction: {
-      '@type': 'SearchAction',
-      target: {
-        '@type': 'EntryPoint',
-        urlTemplate: 'https://no-no.uk/en/?url={search_term_string}'
-      },
-      'query-input': 'required name=search_term_string'
-    }
+    description: 'Privacy-friendly URL shortener and formula sharing. No ads, no cross-site tracking, and no account needed to share content.'
   })}</script>` : '';
   return `<!doctype html>
 <html lang="${escapeHtml(locale)}">
