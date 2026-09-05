@@ -334,32 +334,50 @@ CREATE INDEX IF NOT EXISTS idx_ecpay_support_reconciliations_trade ON ecpay_supp
 
 -- The manual ledger is append-only. Reject an unknown contribution and any
 -- cumulative refund above the original verified support at the database edge.
-CREATE TRIGGER IF NOT EXISTS ecpay_support_reconciliation_insert_guard
+CREATE TRIGGER IF NOT EXISTS ecpay_support_reconciliation_insert_unknown_guard
 BEFORE INSERT ON ecpay_support_reconciliations
+FOR EACH ROW WHEN NOT EXISTS (
+    SELECT 1 FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
+)
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
-        SELECT 1 FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
-    ) THEN RAISE(ABORT, 'Unknown ECPay support contribution') END;
-    SELECT CASE WHEN NEW.amount > (
-        SELECT amount - COALESCE((
-            SELECT SUM(amount) FROM ecpay_support_reconciliations
-            WHERE merchant_trade_no = NEW.merchant_trade_no AND kind = 'refund'
-        ), 0)
-        FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
-    ) THEN RAISE(ABORT, 'ECPay support refund exceeds contribution amount') END;
+    SELECT RAISE(ABORT, 'Unknown ECPay support contribution');
 END;
 
-CREATE TRIGGER IF NOT EXISTS ecpay_support_reconciliation_update_guard
-BEFORE UPDATE OF merchant_trade_no, kind, amount ON ecpay_support_reconciliations
+CREATE TRIGGER IF NOT EXISTS ecpay_support_reconciliation_insert_amount_guard
+BEFORE INSERT ON ecpay_support_reconciliations
+FOR EACH ROW WHEN EXISTS (
+    SELECT 1 FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
+) AND NEW.amount > (
+    SELECT amount - COALESCE((
+        SELECT SUM(amount) FROM ecpay_support_reconciliations
+        WHERE merchant_trade_no = NEW.merchant_trade_no AND kind = 'refund'
+    ), 0)
+    FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
+)
 BEGIN
-    SELECT CASE WHEN NOT EXISTS (
-        SELECT 1 FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
-    ) THEN RAISE(ABORT, 'Unknown ECPay support contribution') END;
-    SELECT CASE WHEN NEW.amount > (
-        SELECT amount - COALESCE((
-            SELECT SUM(amount) FROM ecpay_support_reconciliations
-            WHERE merchant_trade_no = NEW.merchant_trade_no AND kind = 'refund' AND id != OLD.id
-        ), 0)
-        FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
-    ) THEN RAISE(ABORT, 'ECPay support refund exceeds contribution amount') END;
+    SELECT RAISE(ABORT, 'ECPay support refund exceeds contribution amount');
+END;
+
+CREATE TRIGGER IF NOT EXISTS ecpay_support_reconciliation_update_unknown_guard
+BEFORE UPDATE OF merchant_trade_no, kind, amount ON ecpay_support_reconciliations
+FOR EACH ROW WHEN NOT EXISTS (
+    SELECT 1 FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Unknown ECPay support contribution');
+END;
+
+CREATE TRIGGER IF NOT EXISTS ecpay_support_reconciliation_update_amount_guard
+BEFORE UPDATE OF merchant_trade_no, kind, amount ON ecpay_support_reconciliations
+FOR EACH ROW WHEN EXISTS (
+    SELECT 1 FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
+) AND NEW.amount > (
+    SELECT amount - COALESCE((
+        SELECT SUM(amount) FROM ecpay_support_reconciliations
+        WHERE merchant_trade_no = NEW.merchant_trade_no AND kind = 'refund' AND id != OLD.id
+    ), 0)
+    FROM ecpay_support_contributions WHERE merchant_trade_no = NEW.merchant_trade_no
+)
+BEGIN
+    SELECT RAISE(ABORT, 'ECPay support refund exceeds contribution amount');
 END;

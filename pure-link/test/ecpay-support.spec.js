@@ -105,6 +105,8 @@ describe('ECPay voluntary support', () => {
       expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-2', 'PLSUPPORT', 'refund', 300)")).not.toThrow();
       expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-3', 'PLSUPPORT', 'refund', 1)")).toThrow(/exceeds contribution amount/);
       expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-unknown', 'PLUNKNOWN', 'refund', 1)")).toThrow(/Unknown ECPay support contribution/);
+      expect(() => db.exec("UPDATE ecpay_support_reconciliations SET amount = 301 WHERE id = 'refund-2'")).toThrow(/exceeds contribution amount/);
+      expect(() => db.exec("UPDATE ecpay_support_reconciliations SET merchant_trade_no = 'PLUNKNOWN' WHERE id = 'refund-1'")).toThrow(/Unknown ECPay support contribution/);
     } finally {
       db.close();
     }
