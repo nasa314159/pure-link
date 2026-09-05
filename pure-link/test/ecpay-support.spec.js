@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { createCheckMacValue, verifyCheckMacValue } from '../src/ecpay.js';
 import { SUPPORT_MAX_AMOUNT, SUPPORT_MIN_AMOUNT, SUPPORT_PRESET_AMOUNTS, createEcpaySupportCheckout, getEcpaySupportTotals, handleEcpaySupportBrowserReturn, handleEcpaySupportCallback, isEcpaySupportCheckoutConfigured, normalizePublicAttribution, parseSupportAmount } from '../src/ecpay-support.js';
 
@@ -84,11 +86,28 @@ describe('ECPay voluntary support', () => {
     expect(db.checkout.status).toBe('failed');
   });
 
-  it('shows a net total and staircase history after a manual refund reconciliation', async () => {
+  it('shows the remaining public amount after a partial refund and removes a fully refunded supporter', async () => {
     const db = new SupportDb();
-    db.contributions.push({ merchant_trade_no: 'PLSUPPORT', trade_no: 'TN1', checkout_request_id: 'checkout-1', amount: 500, public_name: 0, public_message: 0, public_amount: 0, created_at: '2026-09-01 10:00:00' });
+    db.contributions.push({ merchant_trade_no: 'PLSUPPORT', trade_no: 'TN1', checkout_request_id: 'checkout-1', amount: 500, public_name: 0, public_message: 0, public_amount: 1, created_at: '2026-09-01 10:00:00' });
     db.reconciliations.push({ merchant_trade_no: 'PLSUPPORT', kind: 'refund', amount: 200, created_at: '2026-09-02 10:00:00' });
-    await expect(getEcpaySupportTotals(db)).resolves.toMatchObject({ netTwd: 300, contributionCount: 1, history: [{ day: '2026-09-01', total: 500 }, { day: '2026-09-02', total: 300 }] });
+    await expect(getEcpaySupportTotals(db)).resolves.toMatchObject({ netTwd: 300, contributionCount: 1, publicSupporters: [{ name: '', message: '', amount: 300 }], history: [{ day: '2026-09-01', total: 500 }, { day: '2026-09-02', total: 300 }] });
+    db.reconciliations.push({ merchant_trade_no: 'PLSUPPORT', kind: 'refund', amount: 300, created_at: '2026-09-03 10:00:00' });
+    await expect(getEcpaySupportTotals(db)).resolves.toMatchObject({ netTwd: 0, contributionCount: 0, publicSupporters: [], history: [{ day: '2026-09-01', total: 500 }, { day: '2026-09-02', total: 300 }, { day: '2026-09-03', total: 0 }] });
+  });
+
+  it('rejects unknown and cumulative over-refunds at the SQLite migration boundary', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      db.exec(readFileSync(new URL('../migrations/0011_ecpay_support.sql', import.meta.url), 'utf8'));
+      db.exec("INSERT INTO ecpay_support_checkout_requests (id, merchant_trade_no, expected_amount) VALUES ('checkout-1', 'PLSUPPORT', 500)");
+      db.exec("INSERT INTO ecpay_support_contributions (merchant_trade_no, trade_no, checkout_request_id, amount) VALUES ('PLSUPPORT', 'TN1', 'checkout-1', 500)");
+      expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-1', 'PLSUPPORT', 'refund', 200)")).not.toThrow();
+      expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-2', 'PLSUPPORT', 'refund', 300)")).not.toThrow();
+      expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-3', 'PLSUPPORT', 'refund', 1)")).toThrow(/exceeds contribution amount/);
+      expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-unknown', 'PLUNKNOWN', 'refund', 1)")).toThrow(/Unknown ECPay support contribution/);
+    } finally {
+      db.close();
+    }
   });
 });
 
@@ -116,7 +135,14 @@ class SupportDb {
         return null;
       },
       async all() {
-        if (normalized.startsWith('SELECT contribution.public_name')) return { results: db.contributions.filter((item) => item.public_name || item.public_message || item.public_amount) };
+        if (normalized.startsWith('SELECT contribution.public_name')) {
+          return {
+            results: db.contributions.map((item) => ({
+              ...item,
+              net_amount: Math.max(0, item.amount - db.reconciliations.filter((refund) => refund.merchant_trade_no === item.merchant_trade_no).reduce((sum, refund) => sum + refund.amount, 0)),
+            })).filter((item) => item.net_amount > 0 && (item.public_name || item.public_message || item.public_amount)),
+          };
+        }
         if (normalized.startsWith('SELECT day, SUM(amount)')) {
           const days = new Map();
           for (const row of db.contributions) { const day = row.created_at.slice(0, 10); days.set(day, (days.get(day) || 0) + row.amount); }

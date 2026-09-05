@@ -127,7 +127,8 @@ export async function getEcpaySupportTotals(db) {
   `).bind().first();
   const supporters = await db.prepare(`
     SELECT contribution.public_name, contribution.public_message, contribution.public_amount,
-      contribution.public_display_name, contribution.public_message_text, contribution.amount
+      contribution.public_display_name, contribution.public_message_text,
+      MAX(0, contribution.amount - COALESCE(refund.refunded_amount, 0)) AS net_amount
     FROM ecpay_support_contributions contribution
     LEFT JOIN (
       SELECT merchant_trade_no, SUM(amount) AS refunded_amount
@@ -150,7 +151,7 @@ export async function getEcpaySupportTotals(db) {
     publicSupporters: (supporters?.results || []).map((row) => ({
       name: Number(row.public_name) === 1 ? String(row.public_display_name || '') : '',
       message: Number(row.public_message) === 1 ? neutralizeMentions(String(row.public_message_text || '')) : '',
-      amount: Number(row.public_amount) === 1 ? Number(row.amount) : null,
+      amount: Number(row.public_amount) === 1 && Number(row.net_amount) > 0 ? Number(row.net_amount) : null,
     })),
     history: cumulativeHistory(history?.results || []),
   };
