@@ -44,6 +44,30 @@ describe('ECPay voluntary support', () => {
     expect(totals.publicSupporters).toEqual([{ name: 'nasa', message: 'thanks @\u200Beveryone', amount: 100 }]);
   });
 
+  it('accepts 2,000-character multiline public messages and preserves newlines', () => {
+    const message = `\n${'a'.repeat(997)}\n${'b'.repeat(1000)}\n`;
+    expect(message).toHaveLength(2000);
+    expect(normalizePublicAttribution({ message, publicMessage: true })).toMatchObject({ publicMessage: 1, message });
+    expect(normalizePublicAttribution({ message: 'line one\nline two', publicMessage: true })).toMatchObject({ message: 'line one\nline two' });
+    expect(normalizePublicAttribution({ message: 'x'.repeat(200), publicMessage: true })).toMatchObject({ publicMessage: 1 });
+    expect(() => normalizePublicAttribution({ message: 'x'.repeat(2001), publicMessage: true })).toThrow(/supportAttributionInvalid/);
+  });
+
+  it('uses Unicode code points for public-message and display-name limits', () => {
+    const message = '😀'.repeat(2000);
+    const name = '😀'.repeat(60);
+    expect(message.length).toBe(4000);
+    expect(Array.from(message)).toHaveLength(2000);
+    expect(normalizePublicAttribution({ message, publicMessage: true })).toMatchObject({ publicMessage: 1, message });
+    expect(() => normalizePublicAttribution({ message: `${message}😀`, publicMessage: true })).toThrow(/supportAttributionInvalid/);
+    expect(normalizePublicAttribution({ displayName: name, publicName: true })).toMatchObject({ publicName: 1, displayName: name });
+    expect(() => normalizePublicAttribution({ displayName: `${name}😀`, publicName: true })).toThrow(/supportAttributionInvalid/);
+  });
+
+  it('keeps private support text private without validating or storing it', () => {
+    expect(normalizePublicAttribution({ displayName: 'private', message: 'x'.repeat(2001) })).toEqual({ publicName: 0, publicMessage: 0, publicAmount: 0, displayName: null, message: null });
+  });
+
   it('uses a 303-only browser return that cannot record support or credits', async () => {
     const { db, checkout } = await pendingCheckout('300');
     const response = handleEcpaySupportBrowserReturn(new URL(`https://no-no.uk/api/payment-return/ecpay-support?locale=zh-Hant&RtnCode=1&MerchantTradeNo=${checkout.fields.MerchantTradeNo}`));
@@ -107,6 +131,27 @@ describe('ECPay voluntary support', () => {
       expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-unknown', 'PLUNKNOWN', 'refund', 1)")).toThrow(/Unknown ECPay support contribution/);
       expect(() => db.exec("UPDATE ecpay_support_reconciliations SET amount = 301 WHERE id = 'refund-2'")).toThrow(/exceeds contribution amount/);
       expect(() => db.exec("UPDATE ecpay_support_reconciliations SET merchant_trade_no = 'PLUNKNOWN' WHERE id = 'refund-1'")).toThrow(/Unknown ECPay support contribution/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('preserves an existing support ledger while upgrading the message constraint', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+      db.exec('PRAGMA foreign_keys = ON');
+      applyMigration(db, '0011_ecpay_support.sql');
+      db.exec("INSERT INTO ecpay_support_checkout_requests (id, merchant_trade_no, expected_amount, public_message, public_message_text, created_at, updated_at) VALUES ('checkout-upgrade', 'PLUPGRADE', 500, 1, 'existing message', '2026-09-01 01:02:03', '2026-09-01 01:02:04')");
+      db.exec("INSERT INTO ecpay_support_contributions (merchant_trade_no, trade_no, checkout_request_id, amount, public_message, public_message_text, created_at) VALUES ('PLUPGRADE', 'TNUPGRADE', 'checkout-upgrade', 500, 1, 'existing message', '2026-09-01 01:02:05')");
+      db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount, created_at) VALUES ('refund-upgrade', 'PLUPGRADE', 'refund', 100, '2026-09-01 01:02:06')");
+      applyMigration(db, '0012_support_public_message_limit.sql');
+      expect(db.prepare("SELECT public_message_text, created_at FROM ecpay_support_contributions WHERE merchant_trade_no = 'PLUPGRADE'").get()).toEqual({ public_message_text: 'existing message', created_at: '2026-09-01 01:02:05' });
+      expect(db.prepare("SELECT amount, created_at FROM ecpay_support_reconciliations WHERE id = 'refund-upgrade'").get()).toEqual({ amount: 100, created_at: '2026-09-01 01:02:06' });
+      expect(() => db.exec(`INSERT INTO ecpay_support_checkout_requests (id, merchant_trade_no, expected_amount, public_message, public_message_text) VALUES ('checkout-long', 'PLLONG', 500, 1, '${'m'.repeat(2000)}')`)).not.toThrow();
+      expect(() => db.exec(`INSERT INTO ecpay_support_checkout_requests (id, merchant_trade_no, expected_amount, public_message, public_message_text) VALUES ('checkout-too-long', 'PLTOOLONG', 500, 1, '${'m'.repeat(2001)}')`)).toThrow();
+      expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-upgrade-rest', 'PLUPGRADE', 'refund', 400)")).not.toThrow();
+      expect(() => db.exec("INSERT INTO ecpay_support_reconciliations (id, merchant_trade_no, kind, amount) VALUES ('refund-upgrade-excess', 'PLUPGRADE', 'refund', 1)")).toThrow(/exceeds contribution amount/);
+      expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     } finally {
       db.close();
     }
@@ -178,6 +223,7 @@ async function pendingCheckout(amount) {
 async function paidFields(checkout) { return sign({ MerchantID: env.ECPAY_MERCHANT_ID, MerchantTradeNo: checkout.fields.MerchantTradeNo, TradeNo: 'TNsupport123', RtnCode: '1', RtnMsg: 'Succeeded', TradeAmt: checkout.fields.TotalAmount, SimulatePaid: '0' }); }
 async function sign(fields) { return { ...fields, CheckMacValue: await createCheckMacValue(fields, env) }; }
 function callbackRequest(fields) { return new Request('https://no-no.uk/api/webhooks/ecpay-support', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(fields) }); }
+function applyMigration(db, name) { db.exec(readFileSync(new URL(`../migrations/${name}`, import.meta.url), 'utf8')); }
 
 class SupportDb {
   constructor() { this.checkout = null; this.contributions = []; this.reconciliations = []; this.creditBalance = 0; }

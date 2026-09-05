@@ -170,7 +170,7 @@ export function normalizePublicAttribution(input = {}) {
   // Do not retain, validate, or expose text unless its independent public
   // consent control is checked.
   const displayName = wantsName ? normalizeText(input.displayName, 60, false) : null;
-  const message = wantsMessage ? normalizeText(input.message, 200, true) : null;
+  const message = wantsMessage ? normalizeText(input.message, 2000, true) : null;
   return {
     publicName: wantsName && displayName ? 1 : 0,
     publicMessage: wantsMessage && message ? 1 : 0,
@@ -183,10 +183,12 @@ export function normalizePublicAttribution(input = {}) {
 function emptyTotals() { return { netTwd: 0, contributionCount: 0, publicSupporters: [], history: [] }; }
 function checked(value) { return value === true || String(value) === 'true' || String(value) === 'on'; }
 function normalizeText(value, maximum, multiline) {
-  const source = String(value || '').replace(/\r\n?/g, '\n').trim();
-  if (source.length > maximum) throw new PaymentError('supportAttributionInvalid', 400);
+  const source = String(value || '').replace(/\r\n?/g, '\n');
   const normalized = source.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
-  return multiline ? normalized : normalized.replace(/\s+/g, ' ');
+  const result = multiline ? (normalized.trim() ? normalized : '') : normalized.trim().replace(/\s+/g, ' ');
+  // SQLite length(TEXT) counts Unicode code points, rather than UTF-16 units.
+  if (Array.from(result).length > maximum) throw new PaymentError('supportAttributionInvalid', 400);
+  return result;
 }
 function neutralizeMentions(value) { return value.replaceAll('@', '@\u200B'); }
 function validTradeNo(value, maximum = 20) { return new RegExp(`^[A-Za-z0-9]{1,${maximum}}$`).test(value); }
