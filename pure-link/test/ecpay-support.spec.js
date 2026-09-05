@@ -113,6 +113,63 @@ describe('ECPay voluntary support', () => {
   });
 });
 
+describe('Support amount validation and checkout creation', () => {
+  it.each([100, 300, 500, 1000])('accepts preset amount %i and creates checkout with correct TotalAmount', async (presetAmount) => {
+    const db = new SupportDb();
+    const checkout = await createEcpaySupportCheckout({
+      requestUrl: new URL('https://no-no.uk/en/support'), locale: 'en', input: { amount: String(presetAmount) }, env: { ...env, pure_link_db: db },
+    });
+    expect(checkout.fields.TotalAmount).toBe(String(presetAmount));
+    expect(db.checkout.expected_amount).toBe(presetAmount);
+  });
+
+  it('accepts custom minimum amount 50', async () => {
+    const db = new SupportDb();
+    const checkout = await createEcpaySupportCheckout({
+      requestUrl: new URL('https://no-no.uk/en/support'), locale: 'en', input: { amount: '50' }, env: { ...env, pure_link_db: db },
+    });
+    expect(checkout.fields.TotalAmount).toBe('50');
+    expect(db.checkout.expected_amount).toBe(50);
+  });
+
+  it('accepts custom maximum amount 10000', async () => {
+    const db = new SupportDb();
+    const checkout = await createEcpaySupportCheckout({
+      requestUrl: new URL('https://no-no.uk/en/support'), locale: 'en', input: { amount: '10000' }, env: { ...env, pure_link_db: db },
+    });
+    expect(checkout.fields.TotalAmount).toBe('10000');
+    expect(db.checkout.expected_amount).toBe(10000);
+  });
+
+  it('rejects custom amount below minimum (49)', async () => {
+    const db = new SupportDb();
+    await expect(createEcpaySupportCheckout({
+      requestUrl: new URL('https://no-no.uk/en/support'), locale: 'en', input: { amount: '49' }, env: { ...env, pure_link_db: db },
+    })).rejects.toThrow();
+  });
+
+  it('rejects custom amount above maximum (10001)', async () => {
+    const db = new SupportDb();
+    await expect(createEcpaySupportCheckout({
+      requestUrl: new URL('https://no-no.uk/en/support'), locale: 'en', input: { amount: '10001' }, env: { ...env, pure_link_db: db },
+    })).rejects.toThrow();
+  });
+
+  it('rejects non-integer amount (100.5)', async () => {
+    const db = new SupportDb();
+    await expect(createEcpaySupportCheckout({
+      requestUrl: new URL('https://no-no.uk/en/support'), locale: 'en', input: { amount: '100.5' }, env: { ...env, pure_link_db: db },
+    })).rejects.toThrow();
+  });
+
+  it('rejects non-numeric amount', async () => {
+    const db = new SupportDb();
+    await expect(createEcpaySupportCheckout({
+      requestUrl: new URL('https://no-no.uk/en/support'), locale: 'en', input: { amount: 'abc' }, env: { ...env, pure_link_db: db },
+    })).rejects.toThrow();
+  });
+});
+
 async function pendingCheckout(amount) {
   const db = new SupportDb();
   const checkout = await createEcpaySupportCheckout({ requestUrl: new URL('https://no-no.uk/en/support'), locale: 'en', input: { amount }, env: { ...env, pure_link_db: db } });
