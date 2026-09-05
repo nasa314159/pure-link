@@ -208,18 +208,20 @@ describe('interactive pages', () => {
     expect(refunds).toContain('Consumed credits are generally not refundable');
   });
 
-  it('exposes the configured Taiwan ECPay rail consistently without exposing it when disabled', () => {
+  it('exposes configured Taiwan payment methods without exposing their provider', () => {
     const englishDisabled = renderLegalPage('ai-credits', 'en');
     const englishEcpay = renderLegalPage('ai-credits', 'en', { ecpay: true });
     const chineseEcpay = renderLegalPage('ai-credits', 'zh-Hant', { ecpay: true });
     expect(englishDisabled).not.toContain('ECPay');
     expect(englishDisabled).not.toContain('legal-purchase');
-    expect(englishEcpay).toContain('Taiwan one-time payment — ECPay');
+    expect(englishEcpay).toContain('Credit card / Apple Pay / TWQR and more');
+    expect(englishEcpay).not.toContain('ECPay');
     expect(englishEcpay).toContain('Sign in to purchase AI formula credits');
-    expect(chineseEcpay).toContain('台灣一次性付款 — ECPay');
+    expect(chineseEcpay).toContain('信用卡 / Apple Pay / TWQR 等');
+    expect(chineseEcpay).not.toContain('ECPay');
     expect(chineseEcpay).toContain('登入購買 AI 公式額度');
-    expect(englishEcpay).not.toContain('台灣一次性付款');
-    expect(chineseEcpay).not.toContain('Taiwan one-time payment');
+    expect(englishEcpay).not.toContain('信用卡 / Apple Pay / TWQR 等');
+    expect(chineseEcpay).not.toContain('Credit card / Apple Pay / TWQR and more');
   });
 
   it('shows canonical packs and only enabled payment rails on the account page', () => {
@@ -238,10 +240,10 @@ describe('interactive pages', () => {
   it('keeps account billing copy localized when ECPay is enabled', () => {
     const english = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'en');
     const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'zh-Hant');
-    expect(english).toContain('Taiwan one-time payment — ECPay');
+    expect(english).toContain('Credit card / Apple Pay / TWQR and more');
     expect(english).not.toContain('台灣一次性付款');
-    expect(chinese).toContain('台灣一次性付款 — ECPay');
-    expect(chinese).not.toContain('Taiwan one-time payment');
+    expect(chinese).toContain('信用卡 / Apple Pay / TWQR 等');
+    expect(chinese).not.toContain('Credit card / Apple Pay / TWQR and more');
   });
 
   it('explains that a returned checkout is pending verified server confirmation', () => {

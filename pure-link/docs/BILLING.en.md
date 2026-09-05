@@ -47,6 +47,8 @@ For this production deployment, use `ECPAY_ENVIRONMENT=production`; it selects `
 
 Keep API keys, webhook secrets, and ECPay hashes as Worker secrets. Provider IDs may be ordinary environment variables. Browser requests send only a pack ID and selected enabled rail; server code determines all quantities, prices, and provider fields.
 
+TWQR is an ECPay All-in-One hosted payment method, not a separate PureLink rail. PureLink intentionally sends `ChoosePayment=ALL`, so ECPay presents every payment method activated for this merchant, including TWQR after its ECPay/O'Pay activation. Do not change this to `TWQR`, which would force a TWQR-only checkout and hide the existing hosted methods.
+
 ## Confirmation and refunds
 
 Credits are granted only after a verified provider callback: a signed Lemon Squeezy `order_created` webhook or a verified ECPay ReturnURL callback with `RtnCode=1` and `SimulatePaid!=1`. ECPay `ReturnURL` is always `https://no-no.uk/api/webhooks/ecpay`, the only ECPay fulfillment endpoint. ECPay posts browser results to `https://no-no.uk/api/payment-return/ecpay?locale=en` or `?locale=zh-Hant`; that endpoint ignores all POST fields and responds with a `303` to the matching localized pending account page. `ClientBackURL` is the canonical `https://no-no.uk/{locale}/account?purchase=pending` page for payment methods with different browser-return behavior. Browser returns never grant credits.

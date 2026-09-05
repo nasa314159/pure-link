@@ -47,6 +47,8 @@ ECPAY_HASH_IV=...
 
 API key、webhook secret 與 ECPay hash 必須使用 Worker secret。供應商 ID 可使用一般環境變數。瀏覽器只會傳送方案 ID 與已啟用的付款方式；價格、額度與供應商欄位皆由伺服器決定。
 
+TWQR 是 ECPay 全方位金流的導轉付款方式，不是另一條 PureLink 金流。PureLink 會固定傳送 `ChoosePayment=ALL`，因此 ECPay 會顯示此商家已開通的付款方式；完成 ECPay／歐付寶啟用後，包含 TWQR。請勿改為 `TWQR`，否則會變成僅限 TWQR 的結帳頁，隱藏既有的導轉付款方式。
+
 ## 確認付款與退款
 
 額度只能在已驗證的供應商通知後加入：Lemon Squeezy 已簽名的 `order_created` webhook，或 `RtnCode=1` 且 `SimulatePaid!=1` 的 ECPay ReturnURL。ECPay 的 `ReturnURL` 固定為 `https://no-no.uk/api/webhooks/ecpay`，是唯一可交付額度的 ECPay 端點。ECPay 會將瀏覽器結果 POST 到 `https://no-no.uk/api/payment-return/ecpay?locale=en` 或 `?locale=zh-Hant`；該端點會忽略全部 POST 欄位，並以 `303` 轉址至對應語言的待確認帳號頁。對於瀏覽器返回行為不同的付款方式，`ClientBackURL` 固定使用 `https://no-no.uk/{locale}/account?purchase=pending`。瀏覽器返回永遠不會加入額度。
