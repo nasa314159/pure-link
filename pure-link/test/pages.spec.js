@@ -283,6 +283,16 @@ describe('interactive pages', () => {
     expect(html).toContain('class="selected"');
   });
 
+  it('ECPay-only mode uses hidden provider input and script handles it with fallback selector', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    expect(html).toContain('type="hidden" name="provider" value="ecpay"');
+    expect(script).toContain('querySelector(\'input[name="provider"]:checked\')');
+    expect(html).toContain('aria-pressed="true"');
+    expect(script).toContain('setAttribute(\'aria-pressed\',');
+    expect(script).toContain('supportAmountControls.hidden = !ecpay');
+  });
+
   it('renders only escaped opt-in support attribution and a server-provided staircase history', () => {
     const html = renderSupportPage({
       netTwd: 300, contributionCount: 1,

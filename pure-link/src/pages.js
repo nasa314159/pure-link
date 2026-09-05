@@ -1168,7 +1168,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
     : providers.ecpay
       ? `<input type="hidden" name="provider" value="ecpay"><p class="field-help">${escapeHtml(m.support.ecpayMethod)}</p>`
       : `<input type="hidden" name="provider" value="lemon"><p class="field-help">${escapeHtml(m.support.lemonMethod)}</p>`;
-  const amountControls = providers.ecpay ? `<section id="support-amount-controls"><p class="field-help" id="support-ecpay-description">${escapeHtml(m.support.ecpayDescription)}</p><label class="field-label" for="support-amount">${escapeHtml(m.support.amount)}</label><div class="support-presets" aria-label="${escapeHtml(m.support.amountPresets)}">${[100, 300, 500, 1000].map((amount) => `<button type="button" data-support-amount="${amount}"${amount === 100 ? ' class="selected"' : ''}>NT$${amount}</button>`).join('')}</div><input id="support-amount" name="amount" type="number" min="50" max="10000" step="1" inputmode="numeric" value="100" required><p class="field-help">${escapeHtml(m.support.customAmount)}</p></section>` : '';
+  const amountControls = providers.ecpay ? `<section id="support-amount-controls"><p class="field-help" id="support-ecpay-description">${escapeHtml(m.support.ecpayDescription)}</p><label class="field-label" for="support-amount">${escapeHtml(m.support.amount)}</label><div class="support-presets" aria-label="${escapeHtml(m.support.amountPresets)}">${[100, 300, 500, 1000].map((amount) => `<button type="button" data-support-amount="${amount}" aria-pressed="${amount === 100 ? 'true' : 'false'}"${amount === 100 ? ' class="selected"' : ''}>NT$${amount}</button>`).join('')}</div><input id="support-amount" name="amount" type="number" min="50" max="10000" step="1" inputmode="numeric" value="100" required><p class="field-help">${escapeHtml(m.support.customAmount)}</p></section>` : '';
   const ecpayAttribution = providers.ecpay ? `<section id="support-ecpay-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" maxlength="200" rows="3"></textarea><p class="field-help">${escapeHtml(m.support.optionalMessageHelp)}</p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
   const lemonAttribution = providers.lemon ? `<section id="support-lemon-attribution"><label class="field-label" for="support-lemon-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-lemon-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicAttribution" value="true"><span>${escapeHtml(m.support.attribute)}</span></label></section>` : '';
   const checkout = checkoutConfigured
@@ -1192,7 +1192,8 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       const supportEcpayAttribution = document.getElementById('support-ecpay-attribution');
       const supportLemonAttribution = document.getElementById('support-lemon-attribution');
       const updateSupportMethod = () => {
-        const provider = supportForm.querySelector('input[name="provider"]:checked')?.value;
+        const providerInput = supportForm.querySelector('input[name="provider"]:checked') || supportForm.querySelector('input[name="provider"]');
+        const provider = providerInput?.value;
         const ecpay = provider === 'ecpay';
         if (supportAmountControls) supportAmountControls.hidden = !ecpay;
         if (supportInternationalAmount) supportInternationalAmount.hidden = ecpay;
@@ -1206,12 +1207,13 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
         const presetButtons = supportForm.querySelectorAll('[data-support-amount]');
         const currentValue = supportAmount.value;
         presetButtons.forEach((button) => {
-          if (button.dataset.supportAmount === currentValue) button.classList.add('selected');
-          else button.classList.remove('selected');
+          const isSelected = button.dataset.supportAmount === currentValue;
+          button.classList.toggle('selected', isSelected);
+          button.setAttribute('aria-pressed', String(isSelected));
         });
       };
       supportForm.querySelectorAll('[data-support-amount]').forEach((button) => button.addEventListener('click', () => { if (supportAmount) { supportAmount.value = button.dataset.supportAmount; updateSelectedPreset(); } }));
-      if (supportAmount) { supportAmount.addEventListener('input', () => { const presetButtons = supportForm.querySelectorAll('[data-support-amount]'); presetButtons.forEach((button) => button.classList.remove('selected')); }); }
+      if (supportAmount) { supportAmount.addEventListener('input', () => { const presetButtons = supportForm.querySelectorAll('[data-support-amount]'); presetButtons.forEach((button) => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); }); }); }
       updateSelectedPreset();
       updateSupportMethod();
       supportForm.addEventListener('submit', async (event) => {
