@@ -11,6 +11,7 @@ import { sendReportNotification } from './discord.js';
 import { createManagementToken, createSlug, hashManagementToken } from './security.js';
 import { BillingError, getCreditBalance, handleCreemWebhook } from './billing.js';
 import { handleEcpayBrowserReturn, handleEcpayCallback } from './ecpay.js';
+import { createEcpaySupportCheckout, getEcpaySupportTotals, handleEcpaySupportBrowserReturn, handleEcpaySupportCallback, isEcpaySupportCheckoutConfigured } from './ecpay-support.js';
 import { createLemonSupportCheckout, getSupportTotals, handleLemonSqueezyWebhook, isLemonSupportConfigured } from './lemon-squeezy.js';
 import { createCreditCheckout, enabledPaymentProviders, PaymentError } from './payments.js';
 import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
@@ -107,10 +108,22 @@ export async function routeRequest(request, env, context) {
   if (isPublicRead && path === 'support') {
     if (!localeRoute) return redirect(localizedPath(locale, path), 302);
     const nonce = createSlug() + createSlug();
-    const checkoutConfigured = isLemonSupportConfigured(env) && isPublicWriteProtectionConfigured(env);
+    const supportProviders = {
+      ecpay: isEcpaySupportCheckoutConfigured(env),
+      lemon: isLemonSupportConfigured(env),
+    };
+    const checkoutConfigured = (supportProviders.ecpay || supportProviders.lemon) && isPublicWriteProtectionConfigured(env);
+    const [lemonTotals, ecpayTotals] = await Promise.all([getSupportTotals(env.pure_link_db), getEcpaySupportTotals(env.pure_link_db)]);
     return publicReadResponse(request, html(renderSupportPage(
-      await getSupportTotals(env.pure_link_db), checkoutConfigured, requestUrl.searchParams.get('thanks') === '1', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '', env.GOOGLE_SITE_VERIFICATION || '',
-    ), {}, { scriptNonce: nonce, turnstile: checkoutConfigured }));
+      {
+        ...lemonTotals,
+        netTwd: ecpayTotals.netTwd,
+        contributionCount: Number(lemonTotals.contributionCount || 0) + Number(ecpayTotals.contributionCount || 0),
+        publicSupporters: [...ecpayTotals.publicSupporters, ...lemonTotals.publicSupporters],
+        history: ecpayTotals.history,
+      },
+      checkoutConfigured ? supportProviders : {}, requestUrl.searchParams.get('support') === 'pending' ? 'pending' : requestUrl.searchParams.get('thanks') === '1' ? 'thanks' : '', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '', env.GOOGLE_SITE_VERIFICATION || '',
+    ), {}, { scriptNonce: nonce, turnstile: checkoutConfigured, ecpayCheckout: supportProviders.ecpay }));
   }
   if (isPublicRead && path === 'start') {
     if (!localeRoute) return redirect(localizedPath(locale, 'start'), 302);
@@ -134,6 +147,8 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'POST' && path === 'api/webhooks/lemon-squeezy') return handleLemonSqueezyWebhook(request, env);
   if (request.method === 'POST' && path === 'api/webhooks/ecpay') return handleEcpayCallback(request, env);
   if (request.method === 'POST' && path === 'api/payment-return/ecpay') return handleEcpayBrowserReturn(requestUrl);
+  if (request.method === 'POST' && path === 'api/webhooks/ecpay-support') return handleEcpaySupportCallback(request, env);
+  if (request.method === 'POST' && path === 'api/payment-return/ecpay-support') return handleEcpaySupportBrowserReturn(requestUrl);
   if (request.method === 'GET' && path === 'account') {
     if (!localeRoute) return redirect(localizedPath(locale, 'account'), 302);
     const user = await getCurrentUser(request, env);
@@ -182,10 +197,13 @@ export async function routeRequest(request, env, context) {
       context,
     });
     if (protectionResponse) return protectionResponse;
-    return json(await createLemonSupportCheckout({
+    const provider = String(input.provider || '');
+    if (provider === 'ecpay') return json(await createEcpaySupportCheckout({ requestUrl, locale: resolveResponseLocale(request), input, env }));
+    if (provider === 'lemon') return json(await createLemonSupportCheckout({
       requestUrl, locale: resolveResponseLocale(request), env,
-      displayName: input.displayName, publicAttribution: input.publicAttribution,
+      displayName: input.displayName, publicAttribution: input.publicAttribution || input.publicName,
     }));
+    throw new PaymentError('supportUnavailable', 400);
   }
 
   if (request.method === 'POST' && (path === 'api/links' || path === 'api/create')) {

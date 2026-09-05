@@ -43,6 +43,14 @@ ECPAY_HASH_KEY=...
 ECPAY_HASH_IV=...
 ```
 
+Voluntary support through ECPay is separately fail-closed. It uses the same existing ECPay credentials, but requires its own ordinary Worker variable:
+
+```text
+ECPAY_SUPPORT_CHECKOUT_ENABLED=true
+```
+
+Keep `ECPAY_MERCHANT_ID`, `ECPAY_HASH_KEY`, and `ECPAY_HASH_IV` as Worker secrets; `ECPAY_CHECKOUT_ENABLED`, `ECPAY_SUPPORT_CHECKOUT_ENABLED`, `ECPAY_ENVIRONMENT`, and `PUBLIC_ORIGIN` are non-secret Worker variables. Enabling support does not enable AI-credit checkout, and enabling AI-credit checkout does not enable support.
+
 For this production deployment, use `ECPAY_ENVIRONMENT=production`; it selects `https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5`. `stage` selects the Test Mode endpoint `https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5`. `PUBLIC_ORIGIN=https://no-no.uk` is also required for the production checkout configuration.
 
 Keep API keys, webhook secrets, and ECPay hashes as Worker secrets. Provider IDs may be ordinary environment variables. Browser requests send only a pack ID and selected enabled rail; server code determines all quantities, prices, and provider fields.
@@ -71,6 +79,29 @@ Before setting `ECPAY_CHECKOUT_ENABLED=true` in production:
 - Follow the merchant's ECPay refund process and reconcile the account/order manually; this integration does not claim an automatic ECPay refund API.
 
 The verified server-side ECPay callback is authoritative for fulfillment. The browser return page only explains that PureLink is waiting for provider confirmation.
+
+## Voluntary support (ECPay NTD)
+
+Support is not an AI-credit product. It is an optional, one-time contribution for open-source development, hosting, maintenance, and service costs. It provides no credits, features, subscription, priority, target, investment, or other product benefit.
+
+The support page offers NT$100, NT$300, NT$500, and NT$1,000 suggestions and accepts a whole-number custom amount from NT$50 through NT$10,000. The Worker validates that range and stores the expected amount before creating the ECPay order; browser input never selects a credit quantity.
+
+Support has dedicated `ecpay_support_checkout_requests` and `ecpay_support_contributions` tables. They have no user, pack, credit, balance, or credit-granting trigger. ECPay support uses `ReturnURL=https://no-no.uk/api/webhooks/ecpay-support`; only its verified callback can insert a contribution. The callback verifies CheckMacValue, MerchantID, the known pending checkout, exact amount, `RtnCode=1`, `SimulatePaid=0`, and a unique ECPay trade number. Exact duplicate notifications acknowledge safely without creating a second contribution. The support browser POST goes to `/api/payment-return/ecpay-support?locale=...`, ignores all fields, and returns `303` to the localized `/support?support=pending` page. `ClientBackURL` also points to that canonical informational page.
+
+Public attribution is private by default. A supporter separately chooses whether to publish an optional name, optional message, and/or amount after verified payment. PureLink does not copy Google profile data, billing email, billing name, ECPay IDs, or other provider details into the public list. Names are limited to 60 characters, messages to 200 characters, HTML is escaped, and `@` is neutralized before rendering.
+
+The support page renders a server-generated NTD cumulative staircase from verified contributions only. ECPay support refunds are intentionally **not** initiated automatically by this Worker. The operator must first complete and verify the appropriate refund in ECPay or its merchant console, then append a matching `refund` row to `ecpay_support_reconciliations` (with the original `merchant_trade_no`, refunded NTD amount, and an internal note). The public net total and history subtract those reconciliations; this never affects AI credits. Do not record a refund solely from a browser return or an unverified customer claim.
+
+Lemon Squeezy's historical support tables and signed webhook path remain intact for international support records. They are not reused by the ECPay NTD ledger and are not automatically enabled by this change.
+
+### Support production QA
+
+- Store the existing ECPay MerchantID, HashKey, and HashIV only as Worker secrets; set `ECPAY_ENVIRONMENT=production`, `PUBLIC_ORIGIN=https://no-no.uk`, and `ECPAY_SUPPORT_CHECKOUT_ENABLED=true` as variables only after the migration is applied by an operator.
+- Check `/en/support` and `/zh-Hant/support`: private is the default; each attribution choice is independent; suggested and custom amounts are bounded; and the UI promises no benefit.
+- Create a low-value NT$100 support order. Confirm the signed ECPay fields use the support-specific ReturnURL, browser return URL, ClientBackURL, exact NTD amount, and `ChoosePayment=ALL`.
+- Complete a real payment only when deliberately authorized for QA. Confirm one verified callback creates one support contribution, the NTD total/history update, no AI-credit balance changes, and browser returns alone do nothing.
+- Replay the exact verified callback and verify it stays one contribution. Test an invalid MAC, wrong MerchantID, wrong amount, simulated callback, failed callback, and forged browser return; none may record support or affect credits.
+- For a refund, use the merchant-approved ECPay procedure first, verify its outcome, then record the manual reconciliation and confirm the support total/history decrease by the verified amount.
 
 ## Test Mode QA
 

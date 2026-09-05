@@ -257,12 +257,30 @@ describe('interactive pages', () => {
   });
 
   it('uses a Turnstile challenge for an enabled anonymous support checkout', () => {
-    const html = renderSupportPage({ netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, true, false, 'support-nonce', 'en', 'site-key');
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
     expect(html).toContain('data-action="support-checkout"');
     expect(html).toContain('data-sitekey="site-key"');
+    expect(html).toContain('data-support-amount="100"');
+    expect(html).toContain('min="50" max="10000"');
+    expect(html).toContain('name="publicName"');
+    expect(html).toContain('name="publicMessage"');
+    expect(html).toContain('name="publicAmount"');
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');
     expect(html).toContain('data.turnstileToken = window.turnstile?.getResponse() || \'\';');
     expect(() => new Function(extractScript(html))).not.toThrow();
+  });
+
+  it('renders only escaped opt-in support attribution and a server-provided staircase history', () => {
+    const html = renderSupportPage({
+      netTwd: 300, contributionCount: 1,
+      publicSupporters: [{ name: '<name>', message: 'thank you @\u200Beveryone', amount: 300 }],
+      history: [{ day: '2026-09-01', total: 500 }, { day: '2026-09-02', total: 300 }],
+    }, {}, 'pending', 'support-nonce', 'en');
+    expect(html).toContain('Returning in this browser does not record support.');
+    expect(html).toContain('&lt;name&gt;');
+    expect(html).not.toContain('<name>');
+    expect(html).toContain('<polyline points="0,8 300,8 300,43"');
+    expect(html).toContain('NT$300');
   });
 
   it('loads Turnstile as a regular deferred script', () => {
