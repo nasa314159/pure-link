@@ -420,6 +420,40 @@ describe('interactive pages', () => {
     expect(html).toContain(`id="${targetId}"`);
   });
 
+  it('expand button is hidden by default in server-rendered HTML', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'This is a very long message that should be collapsible since it has many characters and multiple lines of text', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    const buttonMatch = html.match(/<button[^>]*class="supporter-expand"[^>]*>/);
+    expect(buttonMatch).toBeTruthy();
+    expect(buttonMatch[0]).toContain('hidden');
+    expect(buttonMatch[0]).toContain('aria-expanded="false"');
+  });
+
+  it('expand button has correct aria-labels and data attributes for zh-Hant', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: '測試者', message: '這是一條很長的留言應該可以被折疊因為它有很多字元', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'zh-Hant');
+    expect(html).toContain('data-show-more="顯示更多"');
+    expect(html).toContain('data-show-less="收合"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('hidden');
+  });
+
+  it('click handler sets aria-expanded=true and Show less on first click', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'This is a very long message that should be collapsible since it has many characters and multiple lines of text', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    const script = extractScript(html);
+    const clickHandler = script.match(/const button = msg\.parentElement\?\.querySelector\('\.supporter-expand'\);[\s\S]*?button\.addEventListener\('click'[\s\S]*?\}\);/)?.[0] || '';
+    expect(clickHandler).toContain("aria-expanded', String(!isCollapsed)");
+    expect(clickHandler).toContain('isCollapsed ? button.dataset.showLess : button.dataset.showMore');
+    expect(clickHandler).toContain('classList.toggle(\'supporter-message-collapsed\', !isCollapsed)');
+  });
+
   it('loads Turnstile as a regular deferred script', () => {
     const html = renderHomePage('test-nonce', 'site-key');
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');

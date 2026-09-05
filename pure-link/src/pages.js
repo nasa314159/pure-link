@@ -1228,10 +1228,10 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
         }
         button.hidden = false;
         button.addEventListener('click', () => {
-          const expanded = msg.classList.contains('supporter-message-collapsed');
-          msg.classList.toggle('supporter-message-collapsed', !expanded);
-          button.setAttribute('aria-expanded', String(expanded));
-          button.textContent = expanded ? button.dataset.showMore : button.dataset.showLess;
+          const isCollapsed = msg.classList.contains('supporter-message-collapsed');
+          msg.classList.toggle('supporter-message-collapsed', !isCollapsed);
+          button.setAttribute('aria-expanded', String(!isCollapsed));
+          button.textContent = isCollapsed ? button.dataset.showLess : button.dataset.showMore;
         });
       });
       const DRAFT_KEY = 'purelink.supportDraft.v1';
@@ -1316,7 +1316,7 @@ function renderPublicSupporter(supporter, locale, messages = {}) {
   const collapsedId = `supporter-msg-${Math.random().toString(36).slice(2, 9)}`;
   const escapedMessage = escapeHtml(message);
   const messageContent = `<span id="${collapsedId}" class="supporter-message" style="white-space: pre-wrap; word-break: break-word;">${escapedMessage}</span>`;
-  const expandButton = messages.showMore ? `<button type="button" class="supporter-expand" aria-expanded="false" aria-controls="${collapsedId}" data-show-more="${escapeHtml(messages.showMore)}" data-show-less="${escapeHtml(messages.showLess)}">${escapeHtml(messages.showMore)}</button>` : '';
+  const expandButton = messages.showMore ? `<button type="button" class="supporter-expand" hidden aria-expanded="false" aria-controls="${collapsedId}" data-show-more="${escapeHtml(messages.showMore)}" data-show-less="${escapeHtml(messages.showLess)}">${escapeHtml(messages.showMore)}</button>` : '';
   return `<li>${escapedName}${name && message ? ' — ' : ''}${messageContent}${escapedAmount}${expandButton ? ` ${expandButton}` : ''}</li>`;
 }
 
