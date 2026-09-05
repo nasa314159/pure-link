@@ -1217,11 +1217,15 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       updateSelectedPreset();
       updateSupportMethod();
       document.querySelectorAll('.supporter-message').forEach((msg) => {
-        const wrapper = msg.parentElement;
-        const button = wrapper?.querySelector('.supporter-expand');
-        if (!button || !msg.scrollHeight || !msg.clientHeight) return;
-        if (msg.scrollHeight <= msg.clientHeight + 2) { button.hidden = true; return; }
+        const button = msg.parentElement?.querySelector('.supporter-expand');
+        if (!button) return;
         msg.classList.add('supporter-message-collapsed');
+        const isOverflowing = msg.scrollHeight > msg.clientHeight + 2;
+        if (!isOverflowing) {
+          msg.classList.remove('supporter-message-collapsed');
+          button.hidden = true;
+          return;
+        }
         button.hidden = false;
         button.addEventListener('click', () => {
           const expanded = msg.classList.contains('supporter-message-collapsed');
@@ -1270,7 +1274,6 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       supportForm.addEventListener('input', saveDraft);
       supportForm.addEventListener('change', saveDraft);
       supportForm.addEventListener('submit', async (event) => {
-        try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
         event.preventDefault(); supportButton.disabled = true; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
         try {
           const data = Object.fromEntries(new FormData(supportForm));
@@ -1310,12 +1313,9 @@ function renderPublicSupporter(supporter, locale, messages = {}) {
   const escapedName = name ? `<strong>${escapeHtml(name)}</strong>` : '';
   const escapedAmount = amount ? `${name || message ? ' · ' : ''}${escapeHtml(amount)}` : '';
   if (!message) return `<li>${escapedName}${escapedAmount}</li>`;
-  const LINE_HEIGHT_PX = 20;
-  const MAX_VISIBLE_LINES = 5;
-  const MAX_VISIBLE_HEIGHT = LINE_HEIGHT_PX * MAX_VISIBLE_LINES;
   const collapsedId = `supporter-msg-${Math.random().toString(36).slice(2, 9)}`;
   const escapedMessage = escapeHtml(message);
-  const messageContent = `<span class="supporter-message" style="white-space: pre-wrap; word-break: break-word;">${escapedMessage}</span>`;
+  const messageContent = `<span id="${collapsedId}" class="supporter-message" style="white-space: pre-wrap; word-break: break-word;">${escapedMessage}</span>`;
   const expandButton = messages.showMore ? `<button type="button" class="supporter-expand" aria-expanded="false" aria-controls="${collapsedId}" data-show-more="${escapeHtml(messages.showMore)}" data-show-less="${escapeHtml(messages.showLess)}">${escapeHtml(messages.showMore)}</button>` : '';
   return `<li>${escapedName}${name && message ? ' — ' : ''}${messageContent}${escapedAmount}${expandButton ? ` ${expandButton}` : ''}</li>`;
 }

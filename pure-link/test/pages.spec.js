@@ -401,6 +401,25 @@ describe('interactive pages', () => {
     expect(html).toContain('Show more');
   });
 
+  it('submit handler does NOT remove draft from sessionStorage', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    const submitHandler = script.match(/supportForm\.addEventListener\('submit'[\s\S]*?\}\);/)?.[0] || '';
+    expect(submitHandler).not.toContain('removeItem');
+    expect(submitHandler).toContain('event.preventDefault');
+  });
+
+  it('expand button aria-controls targets an existing message element ID', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'This is a very long message that should be collapsible since it has many characters and multiple lines of text', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    const expandMatch = html.match(/aria-controls="(supporter-msg-[^"]+)"/);
+    expect(expandMatch).toBeTruthy();
+    const targetId = expandMatch[1];
+    expect(html).toContain(`id="${targetId}"`);
+  });
+
   it('loads Turnstile as a regular deferred script', () => {
     const html = renderHomePage('test-nonce', 'site-key');
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');
