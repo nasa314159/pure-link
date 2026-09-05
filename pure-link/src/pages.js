@@ -1318,7 +1318,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
           supportMessage?.focus();
           return;
         }
-        supportButton.disabled = true; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
+        supportButton.disabled = true; delete supportStatus.dataset.error; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
         try {
           const data = Object.fromEntries(new FormData(supportForm));
           data.turnstileToken = window.turnstile?.getResponse() || '';

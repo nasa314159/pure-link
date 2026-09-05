@@ -144,6 +144,36 @@ describe('support message submit blocking', () => {
     expect(harness.submit()).toBe(true);
     expect(harness.status.textContent).toBe('公開留言不得超過 2000 個 Unicode 碼點。');
   });
+
+  it('clears stale data-error from a previous block when a follow-up submit is valid', async () => {
+    const harness = runSupportScript('en');
+    // 1) publicMessage is opted in.
+    harness.setPublicMessage(true);
+    // 2) message is over the limit.
+    harness.setMessage('a'.repeat(2001));
+    // 3) submit is blocked and the status flips to its error state.
+    expect(harness.submit()).toBe(true);
+    expect(harness.status.dataset.error).toBe('true');
+    expect(harness.status.textContent).toBe('Public messages must be 2000 Unicode code points or fewer.');
+    expect(harness.fetchCalls).toHaveLength(0);
+    // 4) user edits the message back to exactly the limit.
+    harness.setMessage('a'.repeat(2000));
+    // The message-counter UI must also be back to a clean normal state.
+    expect(harness.counter.textContent).toBe('2000 / 2000');
+    expect(harness.counter.classList.contains('is-over')).toBe(false);
+    expect(harness.counterError.hidden).toBe(true);
+    expect(harness.message.attributes['aria-invalid']).toBe('false');
+    // 5) submitting again must start a fresh checkout attempt and 6) actually
+    // fetch.
+    harness.submit();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(harness.fetchCalls.length).toBeGreaterThanOrEqual(1);
+    // 7) the stale error state from the previous block must be cleared so the
+    // opening message renders in the normal (non-error) style.
+    expect(harness.status.dataset.error).toBeUndefined();
+    expect(harness.status.textContent).toBe('Opening secure support checkout…');
+    expect(harness.status.attributes['data-error']).toBeUndefined();
+  });
 });
 
 describe('support draft restoration with counter recalculation', () => {
