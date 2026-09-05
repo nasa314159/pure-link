@@ -449,19 +449,19 @@ describe('interactive pages', () => {
     expect(html).toContain('hidden');
   });
 
-  it('click handler sets aria-expanded=true and Show less on first click', () => {
+  it('click handler toggles supporter-message-expanded and sets aria-expanded to the new state', () => {
     const html = renderSupportPage({
       netTwd: 100, contributionCount: 1,
       publicSupporters: [{ name: 'Tester', message: 'This is a very long message that should be collapsible since it has many characters and multiple lines of text', amount: 100 }],
     }, { ecpay: true }, '', 'support-nonce', 'en');
     const script = extractScript(html);
     const clickHandler = script.match(/const button = msg\.parentElement\?\.querySelector\('\.supporter-expand'\);[\s\S]*?button\.addEventListener\('click'[\s\S]*?\}\);/)?.[0] || '';
-    expect(clickHandler).toContain("aria-expanded', String(!isCollapsed)");
-    expect(clickHandler).toContain('isCollapsed ? button.dataset.showLess : button.dataset.showMore');
-    expect(clickHandler).toContain('classList.toggle(\'supporter-message-collapsed\', !isCollapsed)');
+    expect(clickHandler).toContain('classList.toggle(\'supporter-message-expanded\', !isExpanded)');
+    expect(clickHandler).toContain('setAttribute(\'aria-expanded\', String(!isExpanded))');
+    expect(clickHandler).toContain('isExpanded ? button.dataset.showMore : button.dataset.showLess');
   });
 
-  it('collapses long public messages to approximately four rendered lines', () => {
+  it('collapses long public messages to approximately four rendered lines via line-clamp', () => {
     const html = renderSupportPage({
       netTwd: 100, contributionCount: 1,
       publicSupporters: [{ name: 'Tester', message: 'A long supporter message that should overflow four rendered lines so the collapse threshold must shrink from the previous five-line value to four lines.', amount: 100 }],
@@ -469,17 +469,24 @@ describe('interactive pages', () => {
     const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
     expect(styleMatch).toBeTruthy();
     const css = styleMatch[1];
-    const collapsedRule = css.match(/\.supporter-message-collapsed\s*\{([^}]*)\}/);
-    expect(collapsedRule).toBeTruthy();
-    expect(collapsedRule[1]).toMatch(/max-height:\s*6\.2em/);
-    expect(collapsedRule[1]).toContain('overflow: hidden');
     const messageRule = css.match(/\.supporter-message\s*\{([^}]*)\}/);
     expect(messageRule).toBeTruthy();
     expect(messageRule[1]).toContain('line-height: 1.55');
-    expect(collapsedRule[1]).not.toMatch(/max-height:\s*6\.25rem/);
+    // -webkit-line-clamp is the Safari-supported way to cap rendered lines.
+    expect(messageRule[1]).toMatch(/-webkit-line-clamp:\s*4/);
+    expect(messageRule[1]).toMatch(/line-clamp:\s*4/);
+    expect(messageRule[1]).toContain('overflow: hidden');
+    // The expanded variant must explicitly remove the clamp and reveal overflow
+    // so the user can read the full message after clicking Show more.
+    const expandedRule = css.match(/\.supporter-message-expanded\s*\{([^}]*)\}/);
+    expect(expandedRule).toBeTruthy();
+    expect(expandedRule[1]).toMatch(/-webkit-line-clamp:\s*unset/);
+    expect(expandedRule[1]).toMatch(/line-clamp:\s*unset/);
+    expect(expandedRule[1]).toContain('overflow: visible');
+    expect(messageRule[1]).not.toMatch(/max-height/);
   });
 
-  it('supporter-message uses a display mode that lets max-height/overflow clip in real browsers', () => {
+  it('supporter-message uses display: -webkit-box and preserves wrapping behavior', () => {
     const html = renderSupportPage({
       netTwd: 100, contributionCount: 1,
       publicSupporters: [{ name: 'Tester', message: 'Any long supporter message that needs the collapse logic to engage.', amount: 100 }],
@@ -489,23 +496,41 @@ describe('interactive pages', () => {
     const css = styleMatch[1];
     const messageRule = css.match(/\.supporter-message\s*\{([^}]*)\}/);
     expect(messageRule).toBeTruthy();
-    // An inline (non-replaced) span does not form a height-constrained box in
-    // Safari and other engines, so max-height/overflow:hidden on the collapsed
-    // variant cannot clip reliably. Force the message into a display mode that
-    // produces a real box while still flowing inline with the surrounding
-    // name / amount / expand button.
-    expect(messageRule[1]).not.toMatch(/display:\s*inline\s*;/);
-    const displayMatch = messageRule[1].match(/display:\s*([a-z-]+)/);
-    expect(displayMatch).toBeTruthy();
-    expect(['inline-block', 'block', 'inline-flex', 'flex', 'grid', 'inline-grid']).toContain(displayMatch[1]);
-    // The collapsed rule still relies on max-height + overflow:hidden to clip.
-    const collapsedRule = css.match(/\.supporter-message-collapsed\s*\{([^}]*)\}/);
-    expect(collapsedRule).toBeTruthy();
-    expect(collapsedRule[1]).toMatch(/max-height:\s*6\.2em/);
-    expect(collapsedRule[1]).toContain('overflow: hidden');
+    // -webkit-box + -webkit-box-orient: vertical is the canonical Safari-
+    // supported layout for -webkit-line-clamp. An inline (non-replaced) span
+    // never produced a height-constrained box and could not be clipped.
+    expect(messageRule[1]).toContain('display: -webkit-box');
+    expect(messageRule[1]).toContain('-webkit-box-orient: vertical');
     // Pre-wrap + word-break must remain so newlines and long words still wrap.
     expect(messageRule[1]).toContain('white-space: pre-wrap');
     expect(messageRule[1]).toContain('word-break: break-word');
+  });
+
+  it('overflow detection lifts the clamp on the real element, then restores it', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'A long supporter message that the clamp must engage on.', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    const script = extractScript(html);
+    // Safari reports a clamped scrollHeight while -webkit-line-clamp is
+    // active, so the script must lift the clamp inline before measuring.
+    expect(script).toContain("msg.style.webkitLineClamp = 'unset'");
+    expect(script).toContain('const fullHeight = msg.scrollHeight');
+    expect(script).toContain("msg.style.removeProperty('-webkit-line-clamp')");
+    expect(script).toContain('const collapsedHeight = msg.clientHeight');
+    expect(script).toContain('fullHeight <= collapsedHeight + 1');
+  });
+
+  it('overflow detection uses no clone or offscreen measurement helper', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'A long supporter message that the clamp must engage on.', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    const script = extractScript(html);
+    expect(script).not.toContain('measureSupportMessageHeight');
+    expect(script).not.toMatch(/\bclone\b/i);
+    expect(script).not.toMatch(/createElement\('span'\)/);
+    expect(script).not.toMatch(/visibility\s*=\s*'hidden'/);
   });
 
   it('exposes a Unicode code-point counter and an over-limit error node near the message field', () => {

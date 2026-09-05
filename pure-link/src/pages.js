@@ -1230,19 +1230,23 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       document.querySelectorAll('.supporter-message').forEach((msg) => {
         const button = msg.parentElement?.querySelector('.supporter-expand');
         if (!button) return;
-        msg.classList.add('supporter-message-collapsed');
-        const isOverflowing = msg.scrollHeight > msg.clientHeight + 2;
-        if (!isOverflowing) {
-          msg.classList.remove('supporter-message-collapsed');
+        // Safari clamps scrollHeight to clientHeight while -webkit-line-clamp
+        // is active, so lift the clamp briefly to measure the full height,
+        // then restore it and compare against the clamped box height.
+        msg.style.webkitLineClamp = 'unset';
+        const fullHeight = msg.scrollHeight;
+        msg.style.removeProperty('-webkit-line-clamp');
+        const collapsedHeight = msg.clientHeight;
+        if (fullHeight <= collapsedHeight + 1) {
           button.hidden = true;
           return;
         }
         button.hidden = false;
         button.addEventListener('click', () => {
-          const isCollapsed = msg.classList.contains('supporter-message-collapsed');
-          msg.classList.toggle('supporter-message-collapsed', !isCollapsed);
-          button.setAttribute('aria-expanded', String(!isCollapsed));
-          button.textContent = isCollapsed ? button.dataset.showLess : button.dataset.showMore;
+          const isExpanded = msg.classList.contains('supporter-message-expanded');
+          msg.classList.toggle('supporter-message-expanded', !isExpanded);
+          button.setAttribute('aria-expanded', String(!isExpanded));
+          button.textContent = isExpanded ? button.dataset.showMore : button.dataset.showLess;
         });
       });
       const updateMessageCounter = () => {
@@ -1697,8 +1701,8 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .support-history p, .support-history small { margin: 0; color: var(--muted); }
     .support-history svg { width: 100%; height: 6rem; color: var(--green); }
     .supporters ul { display: grid; gap: .45rem; margin: 0; padding-left: 1.15rem; color: var(--muted); }
-    .supporter-message { display: inline-block; white-space: pre-wrap; word-break: break-word; line-height: 1.55; vertical-align: bottom; max-width: 100%; }
-    .supporter-message-collapsed { max-height: 6.2em; overflow: hidden; }
+    .supporter-message { display: -webkit-box; -webkit-box-orient: vertical; line-clamp: 4; -webkit-line-clamp: 4; overflow: hidden; white-space: pre-wrap; word-break: break-word; line-height: 1.55; max-width: 100%; }
+    .supporter-message-expanded { display: block; line-clamp: unset; -webkit-line-clamp: unset; overflow: visible; }
     .supporter-expand { width: auto; display: inline-block; padding: .2rem .5rem; margin: .25rem 0; border: 1px solid var(--line); border-radius: .4rem; background: white; color: var(--muted); font-size: .72rem; font-weight: 600; cursor: pointer; }
     .supporter-expand:hover { border-color: var(--green); color: var(--green); }
     .field-counter { margin: .35rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
