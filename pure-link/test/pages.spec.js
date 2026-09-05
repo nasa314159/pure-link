@@ -306,9 +306,15 @@ describe('interactive pages', () => {
     expect(html).toContain('NT$300');
   });
 
-  it('support textarea has maxlength of 2000 for Unicode code points', () => {
+  it('support textarea does not hard-limit paste but exposes a 2000-code-point counter', () => {
     const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
-    expect(html).toContain('maxlength="2000"');
+    expect(html).not.toContain('id="support-message" maxlength="2000"');
+    expect(html).not.toMatch(/<textarea[^>]*id="support-message"[^>]*maxlength=/);
+    expect(html).toContain('id="support-message-counter"');
+    expect(html).toContain('data-limit="2000"');
+    expect(html).toContain('id="support-message-counter-error"');
+    expect(html).toContain('"messageCounter":"{count} / {limit}"');
+    expect(html).toContain('"messageOverLimit":"Public messages must be 2000 Unicode code points or fewer."');
   });
 
   it('preserves newlines in multiline supporter messages with HTML escaping', () => {
@@ -397,7 +403,8 @@ describe('interactive pages', () => {
   it('ECPay-only hidden provider mode still works with new draft and collapse features', () => {
     const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
     expect(html).toContain('type="hidden" name="provider" value="ecpay"');
-    expect(html).toContain('maxlength="2000"');
+    expect(html).not.toMatch(/<textarea[^>]*id="support-message"[^>]*maxlength=/);
+    expect(html).toContain('data-limit="2000"');
     expect(html).toContain('Show more');
   });
 
@@ -452,6 +459,126 @@ describe('interactive pages', () => {
     expect(clickHandler).toContain("aria-expanded', String(!isCollapsed)");
     expect(clickHandler).toContain('isCollapsed ? button.dataset.showLess : button.dataset.showMore');
     expect(clickHandler).toContain('classList.toggle(\'supporter-message-collapsed\', !isCollapsed)');
+  });
+
+  it('collapses long public messages to approximately four rendered lines', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'A long supporter message that should overflow four rendered lines so the collapse threshold must shrink from the previous five-line value to four lines.', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+    expect(styleMatch).toBeTruthy();
+    const css = styleMatch[1];
+    const collapsedRule = css.match(/\.supporter-message-collapsed\s*\{([^}]*)\}/);
+    expect(collapsedRule).toBeTruthy();
+    expect(collapsedRule[1]).toMatch(/max-height:\s*6\.2em/);
+    expect(collapsedRule[1]).toContain('overflow: hidden');
+    const messageRule = css.match(/\.supporter-message\s*\{([^}]*)\}/);
+    expect(messageRule).toBeTruthy();
+    expect(messageRule[1]).toContain('line-height: 1.55');
+    expect(collapsedRule[1]).not.toMatch(/max-height:\s*6\.25rem/);
+  });
+
+  it('exposes a Unicode code-point counter and an over-limit error node near the message field', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    expect(html).toContain('id="support-message-counter"');
+    expect(html).toContain('data-limit="2000"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain('id="support-message-counter-error"');
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('aria-live="assertive"');
+    expect(html).toMatch(/aria-describedby="support-message-help support-message-counter support-message-counter-error"/);
+    expect(html).not.toMatch(/<textarea[^>]*id="support-message"[^>]*maxlength=/);
+  });
+
+  it('renders the counter element styling in both normal and over-limit states', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+    expect(styleMatch).toBeTruthy();
+    const css = styleMatch[1];
+    expect(css).toMatch(/\.field-counter\s*\{/);
+    expect(css).toMatch(/\.field-counter\.is-over\s*\{/);
+    expect(css).toMatch(/\.field-counter-error\s*\{/);
+  });
+
+  it('support script counts Unicode code points via Array.from and updates aria-invalid', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    expect(script).toContain('Array.from(String(value))');
+    expect(script).toContain('supportMessage.setAttribute(\'aria-invalid\'');
+    expect(script).toContain('isOverLimit(supportMessage.value, limit)');
+    expect(script).toContain('formatCounter(supportMessages, supportMessage.value, limit)');
+    expect(script).toContain('formatOverLimitMessage(supportMessages, supportMessage.value, limit)');
+    expect(script).toContain('classList.toggle(\'is-over\', over)');
+    expect(script).toContain('supportMessageCounter.dataset.state = over ? \'over\' : \'ok\'');
+  });
+
+  it('submit handler blocks client-side when publicMessage is opted in and message exceeds limit', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    const submitHandler = script.match(/supportForm\.addEventListener\('submit'[\s\S]*?\}\);/)?.[0] || '';
+    expect(submitHandler).toContain('publicMessageChecked = !!supportForm.querySelector(\'input[name="publicMessage"]:checked\')');
+    expect(submitHandler).toContain('messageLength = countCodePoints(supportMessage?.value || \'\')');
+    expect(submitHandler).toContain('publicMessageChecked && messageLength > MESSAGE_LIMIT');
+    expect(submitHandler).toContain('supportMessages.messageOverLimit');
+    expect(submitHandler).toContain('return;');
+  });
+
+  it('submit handler does not block client-side when publicMessage is not opted in (over-limit allowed)', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    const submitHandler = script.match(/supportForm\.addEventListener\('submit'[\s\S]*?\}\);/)?.[0] || '';
+    // The gate is `publicMessageChecked && messageLength > MESSAGE_LIMIT` — when
+    // publicMessage is unchecked, publicMessageChecked is false and the gate
+    // short-circuits, leaving the existing submit flow untouched.
+    const gateLine = submitHandler.match(/if\s*\(\s*publicMessageChecked\s*&&\s*messageLength\s*>\s*MESSAGE_LIMIT\s*\)/);
+    expect(gateLine).toBeTruthy();
+    // No unconditional over-limit check that would always block submission.
+    expect(submitHandler).not.toMatch(/if\s*\(\s*messageLength\s*>\s*MESSAGE_LIMIT\s*\)/);
+    expect(submitHandler).not.toMatch(/if\s*\(\s*countCodePoints[^)]*>\s*MESSAGE_LIMIT\s*\)/);
+  });
+
+  it('draft restore path recalculates the counter after restoring the textarea value', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    // updateMessageCounter must be invoked after loadDraft so that a restored
+    // over-limit draft shows the correct counter and error state.
+    const loadIdx = script.indexOf('loadDraft();');
+    const updateIdx = script.indexOf('updateMessageCounter();');
+    expect(loadIdx).toBeGreaterThanOrEqual(0);
+    expect(updateIdx).toBeGreaterThanOrEqual(0);
+    expect(updateIdx).toBeGreaterThan(loadIdx);
+    expect(script).toContain('supportMessage.addEventListener(\'input\', updateMessageCounter)');
+  });
+
+  it('draft save path stores the full message including over-limit text and never stores Turnstile or payment data', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    const startIdx = script.indexOf('const saveDraft = ');
+    expect(startIdx).toBeGreaterThanOrEqual(0);
+    const sliceEnd = script.indexOf('};', startIdx + 100);
+    expect(sliceEnd).toBeGreaterThan(startIdx);
+    const saveDraft = script.slice(startIdx, sliceEnd + 2);
+    expect(saveDraft).toContain('draft.message = messageInput.value');
+    expect(saveDraft).not.toContain('substring(');
+    expect(saveDraft).not.toContain('.slice(0, 2000)');
+    expect(saveDraft).not.toContain('.slice(0,2000)');
+    expect(saveDraft).not.toContain('draft.turnstile');
+    expect(saveDraft).not.toContain('draft.checkoutUrl');
+    expect(saveDraft).not.toContain('draft.provider');
+    expect(saveDraft).not.toContain('draft.action');
+    expect(saveDraft).not.toContain('draft.fields');
+  });
+
+  it('counter, over-limit error, and submit-block strings are localized for en and zh-Hant', () => {
+    const en = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const zh = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'zh-Hant', 'site-key');
+    expect(en).toContain('"messageCounter":"{count} / {limit}"');
+    expect(en).toContain('"messageCounterOver":"Exceeds the 2000 character limit by {count}."');
+    expect(en).toContain('"messageOverLimit":"Public messages must be 2000 Unicode code points or fewer."');
+    expect(zh).toContain('"messageCounter":"{count} / {limit}"');
+    expect(zh).toContain('"messageCounterOver":"已超過 2000 個字元上限 {count} 個字元。"');
+    expect(zh).toContain('"messageOverLimit":"公開留言不得超過 2000 個 Unicode 碼點。"');
   });
 
   it('loads Turnstile as a regular deferred script', () => {

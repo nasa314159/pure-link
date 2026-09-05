@@ -2,6 +2,7 @@ import { escapeHtml } from './http.js';
 import { listAiCreditPacks } from './credit-products.js';
 import { renderFormulaContent } from './formula.js';
 import { getMessages, localizedPath } from './i18n.js';
+import { MESSAGE_LIMIT, countCodePoints, isOverLimit, overBy, interpolate as interpolateMessage, formatCounter, formatOverLimitMessage } from './support-message.js';
 
 const PLATFORM_NOTICE = '透過 PureLink 分享的內容與外部網站由建立者提供，不代表 PureLink 的立場、推薦、背書或安全保證。';
 
@@ -1169,7 +1170,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       ? `<input type="hidden" name="provider" value="ecpay"><p class="field-help">${escapeHtml(m.support.ecpayMethod)}</p>`
       : `<input type="hidden" name="provider" value="lemon"><p class="field-help">${escapeHtml(m.support.lemonMethod)}</p>`;
   const amountControls = providers.ecpay ? `<section id="support-amount-controls"><p class="field-help" id="support-ecpay-description">${escapeHtml(m.support.ecpayDescription)}</p><label class="field-label" for="support-amount">${escapeHtml(m.support.amount)}</label><div class="support-presets" aria-label="${escapeHtml(m.support.amountPresets)}">${[100, 300, 500, 1000].map((amount) => `<button type="button" data-support-amount="${amount}" aria-pressed="${amount === 100 ? 'true' : 'false'}"${amount === 100 ? ' class="selected"' : ''}>NT$${amount}</button>`).join('')}</div><input id="support-amount" name="amount" type="number" min="50" max="10000" step="1" inputmode="numeric" value="100" required><p class="field-help">${escapeHtml(m.support.customAmount)}</p></section>` : '';
-  const ecpayAttribution = providers.ecpay ? `<section id="support-ecpay-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" maxlength="2000" rows="3"></textarea><p class="field-help">${escapeHtml(m.support.optionalMessageHelp)}</p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
+  const ecpayAttribution = providers.ecpay ? `<section id="support-ecpay-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" rows="3" aria-describedby="support-message-help support-message-counter support-message-counter-error"></textarea><p class="field-help" id="support-message-help">${escapeHtml(m.support.optionalMessageHelp)}</p><p class="field-counter" id="support-message-counter" data-limit="${MESSAGE_LIMIT}" aria-live="polite" aria-atomic="true"></p><p class="field-counter-error" id="support-message-counter-error" role="alert" aria-live="assertive" hidden></p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
   const lemonAttribution = providers.lemon ? `<section id="support-lemon-attribution"><label class="field-label" for="support-lemon-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-lemon-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicAttribution" value="true"><span>${escapeHtml(m.support.attribute)}</span></label></section>` : '';
   const checkout = checkoutConfigured
     ? `<form id="support-form">${providerChoices}${amountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${ecpayAttribution}${lemonAttribution}${turnstileWidget}<button class="create-button" id="support-button" type="submit">${escapeHtml(m.support.button)}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
@@ -1183,6 +1184,13 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
     body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
     script: checkoutConfigured ? `
       const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
+      const MESSAGE_LIMIT = ${MESSAGE_LIMIT};
+      const ${countCodePoints.name} = ${countCodePoints.toString()};
+      const ${isOverLimit.name} = ${isOverLimit.toString()};
+      const ${overBy.name} = ${overBy.toString()};
+      const ${interpolateMessage.name} = ${interpolateMessage.toString()};
+      const ${formatCounter.name} = ${formatCounter.toString()};
+      const ${formatOverLimitMessage.name} = ${formatOverLimitMessage.toString()};
       const supportForm = document.getElementById('support-form');
       const supportButton = document.getElementById('support-button');
       const supportStatus = document.getElementById('support-status');
@@ -1191,6 +1199,9 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       const supportAmount = document.getElementById('support-amount');
       const supportEcpayAttribution = document.getElementById('support-ecpay-attribution');
       const supportLemonAttribution = document.getElementById('support-lemon-attribution');
+      const supportMessage = document.getElementById('support-message');
+      const supportMessageCounter = document.getElementById('support-message-counter');
+      const supportMessageCounterError = document.getElementById('support-message-counter-error');
       const updateSupportMethod = () => {
         const providerInput = supportForm.querySelector('input[name="provider"]:checked') || supportForm.querySelector('input[name="provider"]');
         const provider = providerInput?.value;
@@ -1234,6 +1245,25 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
           button.textContent = isCollapsed ? button.dataset.showLess : button.dataset.showMore;
         });
       });
+      const updateMessageCounter = () => {
+        if (!supportMessage || !supportMessageCounter) return;
+        const length = countCodePoints(supportMessage.value);
+        const limit = MESSAGE_LIMIT;
+        supportMessageCounter.textContent = formatCounter(supportMessages, supportMessage.value, limit);
+        const over = isOverLimit(supportMessage.value, limit);
+        supportMessageCounter.dataset.state = over ? 'over' : 'ok';
+        supportMessageCounter.classList.toggle('is-over', over);
+        supportMessage.setAttribute('aria-invalid', String(over));
+        if (supportMessageCounterError) {
+          if (over) {
+            supportMessageCounterError.hidden = false;
+            supportMessageCounterError.textContent = formatOverLimitMessage(supportMessages, supportMessage.value, limit);
+          } else {
+            supportMessageCounterError.hidden = true;
+            supportMessageCounterError.textContent = '';
+          }
+        }
+      };
       const DRAFT_KEY = 'purelink.supportDraft.v1';
       const DRAFT_FIELDS = ['amount', 'displayName', 'message', 'publicName', 'publicMessage', 'publicAmount'];
       const loadDraft = () => {
@@ -1271,10 +1301,24 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       };
       const clearDraft = () => { try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } };
       loadDraft();
+      if (supportMessage) {
+        supportMessage.addEventListener('input', updateMessageCounter);
+        updateMessageCounter();
+      }
       supportForm.addEventListener('input', saveDraft);
       supportForm.addEventListener('change', saveDraft);
       supportForm.addEventListener('submit', async (event) => {
-        event.preventDefault(); supportButton.disabled = true; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
+        event.preventDefault();
+        const publicMessageChecked = !!supportForm.querySelector('input[name="publicMessage"]:checked');
+        const messageLength = countCodePoints(supportMessage?.value || '');
+        if (publicMessageChecked && messageLength > MESSAGE_LIMIT) {
+          supportStatus.hidden = false;
+          supportStatus.textContent = supportMessages.messageOverLimit;
+          supportStatus.dataset.error = 'true';
+          supportMessage?.focus();
+          return;
+        }
+        supportButton.disabled = true; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
         try {
           const data = Object.fromEntries(new FormData(supportForm));
           data.turnstileToken = window.turnstile?.getResponse() || '';
@@ -1653,10 +1697,13 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .support-history p, .support-history small { margin: 0; color: var(--muted); }
     .support-history svg { width: 100%; height: 6rem; color: var(--green); }
     .supporters ul { display: grid; gap: .45rem; margin: 0; padding-left: 1.15rem; color: var(--muted); }
-    .supporter-message { white-space: pre-wrap; word-break: break-word; }
-    .supporter-message-collapsed { max-height: 6.25rem; overflow: hidden; }
+    .supporter-message { white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+    .supporter-message-collapsed { max-height: 6.2em; overflow: hidden; }
     .supporter-expand { width: auto; display: inline-block; padding: .2rem .5rem; margin: .25rem 0; border: 1px solid var(--line); border-radius: .4rem; background: white; color: var(--muted); font-size: .72rem; font-weight: 600; cursor: pointer; }
     .supporter-expand:hover { border-color: var(--green); color: var(--green); }
+    .field-counter { margin: .35rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
+    .field-counter.is-over { color: #8f2f2a; font-weight: 700; }
+    .field-counter-error { margin: .35rem 0 0; color: #8f2f2a; font-size: .74rem; line-height: 1.45; font-weight: 700; }
     .billing-status { color: var(--green); font-size: .78rem; }
     .billing-status[data-error="true"] { color: #8f2f2a; }
     .account-links li { display: grid; grid-template-columns: 1fr auto auto; gap: .8rem; align-items: center; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; }
