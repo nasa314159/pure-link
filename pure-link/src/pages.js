@@ -1159,7 +1159,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
   const m = getMessages(locale);
   const providers = typeof checkoutProviders === 'boolean' ? { ecpay: checkoutProviders, lemon: false } : checkoutProviders;
   const checkoutConfigured = Boolean(providers?.ecpay || providers?.lemon);
-  const publicSupporters = (totals?.publicSupporters || []).map((supporter) => renderPublicSupporter(supporter, locale)).filter(Boolean);
+  const publicSupporters = (totals?.publicSupporters || []).map((supporter) => renderPublicSupporter(supporter, locale, m.support)).filter(Boolean);
   const turnstileWidget = checkoutConfigured && turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="support-checkout"></div></div>`
     : '';
@@ -1169,7 +1169,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       ? `<input type="hidden" name="provider" value="ecpay"><p class="field-help">${escapeHtml(m.support.ecpayMethod)}</p>`
       : `<input type="hidden" name="provider" value="lemon"><p class="field-help">${escapeHtml(m.support.lemonMethod)}</p>`;
   const amountControls = providers.ecpay ? `<section id="support-amount-controls"><p class="field-help" id="support-ecpay-description">${escapeHtml(m.support.ecpayDescription)}</p><label class="field-label" for="support-amount">${escapeHtml(m.support.amount)}</label><div class="support-presets" aria-label="${escapeHtml(m.support.amountPresets)}">${[100, 300, 500, 1000].map((amount) => `<button type="button" data-support-amount="${amount}" aria-pressed="${amount === 100 ? 'true' : 'false'}"${amount === 100 ? ' class="selected"' : ''}>NT$${amount}</button>`).join('')}</div><input id="support-amount" name="amount" type="number" min="50" max="10000" step="1" inputmode="numeric" value="100" required><p class="field-help">${escapeHtml(m.support.customAmount)}</p></section>` : '';
-  const ecpayAttribution = providers.ecpay ? `<section id="support-ecpay-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" maxlength="200" rows="3"></textarea><p class="field-help">${escapeHtml(m.support.optionalMessageHelp)}</p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
+  const ecpayAttribution = providers.ecpay ? `<section id="support-ecpay-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" maxlength="2000" rows="3"></textarea><p class="field-help">${escapeHtml(m.support.optionalMessageHelp)}</p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
   const lemonAttribution = providers.lemon ? `<section id="support-lemon-attribution"><label class="field-label" for="support-lemon-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-lemon-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicAttribution" value="true"><span>${escapeHtml(m.support.attribute)}</span></label></section>` : '';
   const checkout = checkoutConfigured
     ? `<form id="support-form">${providerChoices}${amountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${ecpayAttribution}${lemonAttribution}${turnstileWidget}<button class="create-button" id="support-button" type="submit">${escapeHtml(m.support.button)}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
@@ -1180,7 +1180,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
     : returnState === 'thanks' ? `<p class="auth-notice" role="status">${escapeHtml(m.support.thanks)}</p>` : '';
   return documentShell({
     title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale, googleSiteVerification,
-    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${m.support.contributions.replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
+    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
     script: checkoutConfigured ? `
       const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
       const supportForm = document.getElementById('support-form');
@@ -1216,7 +1216,61 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       if (supportAmount) { supportAmount.addEventListener('input', () => { const presetButtons = supportForm.querySelectorAll('[data-support-amount]'); presetButtons.forEach((button) => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); }); }); }
       updateSelectedPreset();
       updateSupportMethod();
+      document.querySelectorAll('.supporter-message').forEach((msg) => {
+        const wrapper = msg.parentElement;
+        const button = wrapper?.querySelector('.supporter-expand');
+        if (!button || !msg.scrollHeight || !msg.clientHeight) return;
+        if (msg.scrollHeight <= msg.clientHeight + 2) { button.hidden = true; return; }
+        msg.classList.add('supporter-message-collapsed');
+        button.hidden = false;
+        button.addEventListener('click', () => {
+          const expanded = msg.classList.contains('supporter-message-collapsed');
+          msg.classList.toggle('supporter-message-collapsed', !expanded);
+          button.setAttribute('aria-expanded', String(expanded));
+          button.textContent = expanded ? button.dataset.showMore : button.dataset.showLess;
+        });
+      });
+      const DRAFT_KEY = 'purelink.supportDraft.v1';
+      const DRAFT_FIELDS = ['amount', 'displayName', 'message', 'publicName', 'publicMessage', 'publicAmount'];
+      const loadDraft = () => {
+        try {
+          const raw = sessionStorage.getItem(DRAFT_KEY);
+          if (!raw) return;
+          const draft = JSON.parse(raw);
+          if (!draft || typeof draft !== 'object') return;
+          if (draft.amount && supportAmount) { supportAmount.value = draft.amount; updateSelectedPreset(); }
+          const displayNameInput = document.getElementById('support-display-name') || document.getElementById('support-lemon-display-name');
+          if (draft.displayName && displayNameInput) displayNameInput.value = draft.displayName;
+          const messageInput = document.getElementById('support-message');
+          if (draft.message && messageInput) messageInput.value = draft.message;
+          if (draft.publicName) { const cb = supportForm.querySelector('input[name="publicName"]'); if (cb) cb.checked = true; }
+          if (draft.publicMessage) { const cb = supportForm.querySelector('input[name="publicMessage"]'); if (cb) cb.checked = true; }
+          if (draft.publicAmount) { const cb = supportForm.querySelector('input[name="publicAmount"]'); if (cb) cb.checked = true; }
+        } catch { /* ignore corrupted draft */ }
+      };
+      const saveDraft = () => {
+        try {
+          const draft = {};
+          if (supportAmount?.value) draft.amount = supportAmount.value;
+          const displayNameInput = document.getElementById('support-display-name') || document.getElementById('support-lemon-display-name');
+          if (displayNameInput?.value) draft.displayName = displayNameInput.value;
+          const messageInput = document.getElementById('support-message');
+          if (messageInput?.value) draft.message = messageInput.value;
+          const publicNameCb = supportForm.querySelector('input[name="publicName"]');
+          if (publicNameCb?.checked) draft.publicName = true;
+          const publicMessageCb = supportForm.querySelector('input[name="publicMessage"]');
+          if (publicMessageCb?.checked) draft.publicMessage = true;
+          const publicAmountCb = supportForm.querySelector('input[name="publicAmount"]');
+          if (publicAmountCb?.checked) draft.publicAmount = true;
+          sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        } catch { /* ignore storage errors */ }
+      };
+      const clearDraft = () => { try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } };
+      loadDraft();
+      supportForm.addEventListener('input', saveDraft);
+      supportForm.addEventListener('change', saveDraft);
       supportForm.addEventListener('submit', async (event) => {
+        try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
         event.preventDefault(); supportButton.disabled = true; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
         try {
           const data = Object.fromEntries(new FormData(supportForm));
@@ -1246,14 +1300,24 @@ function formatTwd(amount, locale) {
   return new Intl.NumberFormat(locale === 'zh-Hant' ? 'zh-TW' : 'en-US', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(Math.max(0, Number(amount || 0)));
 }
 
-function renderPublicSupporter(supporter, locale) {
+function renderPublicSupporter(supporter, locale, messages = {}) {
   if (typeof supporter === 'string') return `<li>${escapeHtml(supporter)}</li>`;
   if (!supporter || typeof supporter !== 'object') return '';
   const name = String(supporter.name || '').trim();
   const message = String(supporter.message || '').trim();
   const amount = Number.isSafeInteger(Number(supporter.amount)) ? formatTwd(supporter.amount, locale) : '';
   if (!name && !message && !amount) return '';
-  return `<li>${name ? `<strong>${escapeHtml(name)}</strong>` : ''}${message ? `${name ? ' — ' : ''}${escapeHtml(message)}` : ''}${amount ? `${name || message ? ' · ' : ''}${escapeHtml(amount)}` : ''}</li>`;
+  const escapedName = name ? `<strong>${escapeHtml(name)}</strong>` : '';
+  const escapedAmount = amount ? `${name || message ? ' · ' : ''}${escapeHtml(amount)}` : '';
+  if (!message) return `<li>${escapedName}${escapedAmount}</li>`;
+  const LINE_HEIGHT_PX = 20;
+  const MAX_VISIBLE_LINES = 5;
+  const MAX_VISIBLE_HEIGHT = LINE_HEIGHT_PX * MAX_VISIBLE_LINES;
+  const collapsedId = `supporter-msg-${Math.random().toString(36).slice(2, 9)}`;
+  const escapedMessage = escapeHtml(message);
+  const messageContent = `<span class="supporter-message" style="white-space: pre-wrap; word-break: break-word;">${escapedMessage}</span>`;
+  const expandButton = messages.showMore ? `<button type="button" class="supporter-expand" aria-expanded="false" aria-controls="${collapsedId}" data-show-more="${escapeHtml(messages.showMore)}" data-show-less="${escapeHtml(messages.showLess)}">${escapeHtml(messages.showMore)}</button>` : '';
+  return `<li>${escapedName}${name && message ? ' — ' : ''}${messageContent}${escapedAmount}${expandButton ? ` ${expandButton}` : ''}</li>`;
 }
 
 function renderSupportHistory(history, messages, locale) {
@@ -1589,6 +1653,10 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .support-history p, .support-history small { margin: 0; color: var(--muted); }
     .support-history svg { width: 100%; height: 6rem; color: var(--green); }
     .supporters ul { display: grid; gap: .45rem; margin: 0; padding-left: 1.15rem; color: var(--muted); }
+    .supporter-message { white-space: pre-wrap; word-break: break-word; }
+    .supporter-message-collapsed { max-height: 6.25rem; overflow: hidden; }
+    .supporter-expand { width: auto; display: inline-block; padding: .2rem .5rem; margin: .25rem 0; border: 1px solid var(--line); border-radius: .4rem; background: white; color: var(--muted); font-size: .72rem; font-weight: 600; cursor: pointer; }
+    .supporter-expand:hover { border-color: var(--green); color: var(--green); }
     .billing-status { color: var(--green); font-size: .78rem; }
     .billing-status[data-error="true"] { color: #8f2f2a; }
     .account-links li { display: grid; grid-template-columns: 1fr auto auto; gap: .8rem; align-items: center; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; }

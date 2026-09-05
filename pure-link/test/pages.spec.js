@@ -306,6 +306,101 @@ describe('interactive pages', () => {
     expect(html).toContain('NT$300');
   });
 
+  it('support textarea has maxlength of 2000 for Unicode code points', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    expect(html).toContain('maxlength="2000"');
+  });
+
+  it('preserves newlines in multiline supporter messages with HTML escaping', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'line one\nline two\nline three', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    expect(html).toContain('line one');
+    expect(html).toContain('line two');
+    expect(html).toContain('line three');
+    expect(html).toContain('white-space: pre-wrap');
+    expect(html).not.toContain('<script>alert');
+    expect(html).not.toContain('onerror=');
+  });
+
+  it('renders supporter message collapse button with aria-expanded and localized labels', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'A very long message that should be collapsible since it has many characters and multiple lines of text to make the overflow detection work properly', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    expect(html).toContain('supporter-expand');
+    expect(html).toContain('aria-expanded');
+    expect(html).toContain('Show more');
+    expect(html).toContain('data-show-more="Show more"');
+    expect(html).toContain('data-show-less="Show less"');
+  });
+
+  it('renders Chinese supporter message collapse with localized labels', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: '測試者', message: '這是一條很長的留言應該可以被折疊因為它有很多字元', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'zh-Hant');
+    expect(html).toContain('顯示更多');
+    expect(html).toContain('data-show-more="顯示更多"');
+    expect(html).toContain('data-show-less="收合"');
+  });
+
+  it('uses singular "contribution" for count of 1 in English', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1, publicSupporters: [],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    expect(html).toContain('1 contribution</small>');
+    expect(html).not.toContain('1 contributions</small>');
+  });
+
+  it('uses plural "contributions" for count greater than 1 in English', () => {
+    const html = renderSupportPage({
+      netTwd: 300, contributionCount: 2, publicSupporters: [],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    expect(html).toContain('2 contributions</small>');
+  });
+
+  it('zh-Hant contribution copy uses NT$ consistently', () => {
+    const html = renderSupportPage({
+      netTwd: 500, contributionCount: 1, publicSupporters: [],
+    }, { ecpay: true }, '', 'support-nonce', 'zh-Hant');
+    expect(html).toContain('NT$500');
+  });
+
+  it('support script includes sessionStorage draft save/restore for allowed fields', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    expect(script).toContain('purelink.supportDraft.v1');
+    expect(script).toContain('loadDraft');
+    expect(script).toContain('saveDraft');
+    expect(script).toContain('sessionStorage.setItem');
+    expect(script).toContain('sessionStorage.getItem');
+    expect(script).toContain('draft.amount');
+    expect(script).toContain('draft.displayName');
+    expect(script).toContain('draft.message');
+    expect(script).toContain('draft.publicName');
+    expect(script).toContain('draft.publicMessage');
+    expect(script).toContain('draft.publicAmount');
+  });
+
+  it('support script does not persist Turnstile token or payment data in sessionStorage draft', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    const draftSaveSection = script.match(/const saveDraft[\s\S]*?setItem\(/)?.[0] || '';
+    expect(draftSaveSection).not.toContain('draft.turnstile');
+    expect(draftSaveSection).not.toContain('draft.provider');
+    expect(draftSaveSection).not.toContain('draft.checkoutUrl');
+    expect(script).toContain('DRAFT_FIELDS');
+  });
+
+  it('ECPay-only hidden provider mode still works with new draft and collapse features', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    expect(html).toContain('type="hidden" name="provider" value="ecpay"');
+    expect(html).toContain('maxlength="2000"');
+    expect(html).toContain('Show more');
+  });
+
   it('loads Turnstile as a regular deferred script', () => {
     const html = renderHomePage('test-nonce', 'site-key');
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');
