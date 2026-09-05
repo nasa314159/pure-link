@@ -88,7 +88,7 @@ Lemon 退款 webhook 使用供應商提供的累積 `total`、`refunded_amount`�
 
 支持使用專屬的 `ecpay_support_checkout_requests` 與 `ecpay_support_contributions` 資料表，沒有使用者、方案、額度、餘額欄位或加入額度的 trigger。ECPay 支持固定使用 `ReturnURL=https://no-no.uk/api/webhooks/ecpay-support`；只有已驗證的回呼能新增支持紀錄。回呼會驗證 CheckMacValue、MerchantID、已知的待處理訂單、精確金額、`RtnCode=1`、`SimulatePaid=0` 與唯一的 ECPay 交易號。完全相同的重複通知只會安全確認，不會新增第二筆支持。支持的瀏覽器 POST 會到 `/api/payment-return/ecpay-support?locale=...`，忽略所有欄位並以 `303` 導向對應語言的 `/support?support=pending`。`ClientBackURL` 同樣指向這個固定的資訊頁。
 
-公開署名預設為私人。支持者可分別選擇在付款驗證後公開選填名稱、選填留言與／或金額。PureLink 不會自動公開 Google 個人資料、帳單電子郵件、帳單姓名、ECPay ID 或其他供應商資料。名稱上限為 60 個字元，留言上限為 200 個字元，顯示時會 HTML 跳脫並中和 `@`。
+公開署名預設為私人。支持者可分別選擇在付款驗證後公開選填名稱、選填留言與／或金額。PureLink 不會自動公開 Google 個人資料、帳單電子郵件、帳單姓名、ECPay ID 或其他供應商資料。名稱上限為 60 個字元，帳本接受最多 2,000 個字元的留言；目前表單可維持較低的輸入上限，直到 UX 更新上線。顯示時會 HTML 跳脫並中和 `@`。D1 的 `CURRENT_TIMESTAMP` 帳本時間戳是權威 UTC 值；升級會原樣保留，不會轉換為台灣當地時間。
 
 支持頁從已驗證支持建立伺服器端 NTD 累積階梯圖。ECPay 支持退款刻意**不**由此 Worker 自動發起。營運人員必須先在 ECPay 或商家後台完成並驗證正確的退款，再新增相對應的 `ecpay_support_reconciliations` `refund` 紀錄（原始 `merchant_trade_no`、退款 NTD 金額與內部備註）。公開淨額與歷程會扣除該筆對帳，但永遠不影響 AI 額度。不能只因瀏覽器返回或未驗證的使用者聲明就記錄退款。
 
