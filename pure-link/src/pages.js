@@ -1155,23 +1155,54 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
   });
 }
 
-export function renderSupportPage(totals, checkoutConfigured = false, thanks = false, nonce = '', locale = 'zh-Hant', turnstileSiteKey = '', googleSiteVerification = '') {
+export function renderSupportPage(totals, checkoutProviders = {}, returnState = '', nonce = '', locale = 'zh-Hant', turnstileSiteKey = '', googleSiteVerification = '') {
   const m = getMessages(locale);
-  const publicSupporters = (totals?.publicSupporters || []).map(escapeHtml).filter(Boolean);
+  const providers = typeof checkoutProviders === 'boolean' ? { ecpay: checkoutProviders, lemon: false } : checkoutProviders;
+  const checkoutConfigured = Boolean(providers?.ecpay || providers?.lemon);
+  const publicSupporters = (totals?.publicSupporters || []).map((supporter) => renderPublicSupporter(supporter, locale)).filter(Boolean);
   const turnstileWidget = checkoutConfigured && turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="support-checkout"></div></div>`
     : '';
+  const providerChoices = providers.ecpay && providers.lemon
+    ? `<fieldset class="provider-choices"><legend>${escapeHtml(m.billing.providerChoice)}</legend><label><input type="radio" name="provider" value="ecpay" checked> ${escapeHtml(m.support.ecpayMethod)}</label><label><input type="radio" name="provider" value="lemon"> ${escapeHtml(m.support.lemonMethod)}</label></fieldset>`
+    : providers.ecpay
+      ? `<input type="hidden" name="provider" value="ecpay"><p class="field-help">${escapeHtml(m.support.ecpayMethod)}</p>`
+      : `<input type="hidden" name="provider" value="lemon"><p class="field-help">${escapeHtml(m.support.lemonMethod)}</p>`;
+  const amountControls = providers.ecpay ? `<section id="support-amount-controls"><label class="field-label" for="support-amount">${escapeHtml(m.support.amount)}</label><div class="support-presets" aria-label="${escapeHtml(m.support.amountPresets)}">${[100, 300, 500, 1000].map((amount) => `<button type="button" data-support-amount="${amount}">NT$${amount}</button>`).join('')}</div><input id="support-amount" name="amount" type="number" min="50" max="10000" step="1" inputmode="numeric" value="100" required><p class="field-help">${escapeHtml(m.support.customAmount)}</p></section>` : '';
+  const ecpayAttribution = providers.ecpay ? `<section id="support-ecpay-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" maxlength="200" rows="3"></textarea><p class="field-help">${escapeHtml(m.support.optionalMessageHelp)}</p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
+  const lemonAttribution = providers.lemon ? `<section id="support-lemon-attribution"><label class="field-label" for="support-lemon-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-lemon-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicAttribution" value="true"><span>${escapeHtml(m.support.attribute)}</span></label></section>` : '';
   const checkout = checkoutConfigured
-    ? `<form id="support-form"><label class="field-label" for="support-display-name">${m.support.optionalName}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${m.support.optionalNameHelp}</p><label class="check-row"><input id="support-public-attribution" type="checkbox" name="publicAttribution" value="true"><span><strong>${m.support.attribute}</strong></span></label>${turnstileWidget}<button class="create-button" id="support-button" type="submit">${m.support.button}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
+    ? `<form id="support-form">${providerChoices}${amountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${ecpayAttribution}${lemonAttribution}${turnstileWidget}<button class="create-button" id="support-button" type="submit">${escapeHtml(m.support.button)}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
     : `<p class="billing-status">${m.support.unavailable}</p>`;
+  const supportHistory = renderSupportHistory(totals?.history || [], m.support, locale);
+  const returnNotice = returnState === 'pending'
+    ? `<p class="auth-notice" role="status">${escapeHtml(m.support.pending)}</p>`
+    : returnState === 'thanks' ? `<p class="auth-notice" role="status">${escapeHtml(m.support.thanks)}</p>` : '';
   return documentShell({
     title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale, googleSiteVerification,
-    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${thanks ? `<p class="auth-notice" role="status">${m.support.thanks}</p>` : ''}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${m.support.totals}</span><strong>${formatUsd(totals?.netUsdMinor || 0, locale)}</strong><small>${m.support.contributions.replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${m.support.limitedTotals}</p>` : ''}</section>${publicSupporters.length ? `<p class="supporters"><strong>${m.support.supporters}</strong>: ${publicSupporters.join(', ')}</p>` : ''}<p class="notice">${m.support.boundary}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${m.support.aiCredits}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
+    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${m.support.contributions.replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
     script: checkoutConfigured ? `
       const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
       const supportForm = document.getElementById('support-form');
       const supportButton = document.getElementById('support-button');
       const supportStatus = document.getElementById('support-status');
+      const supportAmountControls = document.getElementById('support-amount-controls');
+      const supportInternationalAmount = document.getElementById('support-international-amount');
+      const supportAmount = document.getElementById('support-amount');
+      const supportEcpayAttribution = document.getElementById('support-ecpay-attribution');
+      const supportLemonAttribution = document.getElementById('support-lemon-attribution');
+      const updateSupportMethod = () => {
+        const provider = supportForm.querySelector('input[name="provider"]:checked')?.value;
+        const ecpay = provider === 'ecpay';
+        if (supportAmountControls) supportAmountControls.hidden = !ecpay;
+        if (supportInternationalAmount) supportInternationalAmount.hidden = ecpay;
+        if (supportAmount) supportAmount.required = ecpay;
+        if (supportEcpayAttribution) { supportEcpayAttribution.hidden = !ecpay; supportEcpayAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = !ecpay; }); }
+        if (supportLemonAttribution) { supportLemonAttribution.hidden = ecpay; supportLemonAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = ecpay; }); }
+      };
+      supportForm.querySelectorAll('input[name="provider"]').forEach((input) => input.addEventListener('change', updateSupportMethod));
+      supportForm.querySelectorAll('[data-support-amount]').forEach((button) => button.addEventListener('click', () => { if (supportAmount) supportAmount.value = button.dataset.supportAmount; }));
+      updateSupportMethod();
       supportForm.addEventListener('submit', async (event) => {
         event.preventDefault(); supportButton.disabled = true; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
         try {
@@ -1179,8 +1210,13 @@ export function renderSupportPage(totals, checkoutConfigured = false, thanks = f
           data.turnstileToken = window.turnstile?.getResponse() || '';
           const response = await fetch('/api/support/checkout', { method: 'POST', headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} }, body: JSON.stringify(data) });
           const payload = await response.json();
-          if (!response.ok || !payload.checkoutUrl) throw new Error(payload.error || supportMessages.failed);
-          location.assign(payload.checkoutUrl);
+          if (!response.ok) throw new Error(payload.error || supportMessages.failed);
+          if (payload.checkoutUrl) location.assign(payload.checkoutUrl);
+          else if (payload.action && payload.fields) {
+            const form = document.createElement('form'); form.method = 'post'; form.action = payload.action;
+            Object.entries(payload.fields).forEach(([name, value]) => { const field = document.createElement('input'); field.type = 'hidden'; field.name = name; field.value = value; form.append(field); });
+            document.body.append(form); form.submit();
+          } else throw new Error(supportMessages.failed);
         } catch (error) { window.turnstile?.reset(); supportStatus.textContent = error.message; supportStatus.dataset.error = 'true'; supportButton.disabled = false; }
       });
     ` : '',
@@ -1191,6 +1227,35 @@ export function renderSupportPage(totals, checkoutConfigured = false, thanks = f
 
 function formatUsd(minor, locale) {
   return new Intl.NumberFormat(locale === 'zh-Hant' ? 'zh-TW' : 'en-US', { style: 'currency', currency: 'USD' }).format(Math.max(0, Number(minor || 0)) / 100);
+}
+
+function formatTwd(amount, locale) {
+  return new Intl.NumberFormat(locale === 'zh-Hant' ? 'zh-TW' : 'en-US', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(Math.max(0, Number(amount || 0)));
+}
+
+function renderPublicSupporter(supporter, locale) {
+  if (typeof supporter === 'string') return `<li>${escapeHtml(supporter)}</li>`;
+  if (!supporter || typeof supporter !== 'object') return '';
+  const name = String(supporter.name || '').trim();
+  const message = String(supporter.message || '').trim();
+  const amount = Number.isSafeInteger(Number(supporter.amount)) ? formatTwd(supporter.amount, locale) : '';
+  if (!name && !message && !amount) return '';
+  return `<li>${name ? `<strong>${escapeHtml(name)}</strong>` : ''}${message ? `${name ? ' — ' : ''}${escapeHtml(message)}` : ''}${amount ? `${name || message ? ' · ' : ''}${escapeHtml(amount)}` : ''}</li>`;
+}
+
+function renderSupportHistory(history, messages, locale) {
+  const points = history.filter((point) => /^\d{4}-\d{2}-\d{2}$/.test(String(point?.day || '')) && Number.isFinite(Number(point?.total)));
+  if (!points.length) return `<section class="support-history"><strong>${escapeHtml(messages.history)}</strong><p>${escapeHtml(messages.emptyHistory)}</p></section>`;
+  const maximum = Math.max(...points.map((point) => Number(point.total)), 1);
+  const width = 300; const height = 96;
+  const coordinates = [];
+  points.forEach((point, index) => {
+    const x = Math.round((index / Math.max(1, points.length - 1)) * width);
+    const y = Math.round(height - (Number(point.total) / maximum) * (height - 8));
+    if (coordinates.length) coordinates.push(`${x},${coordinates.at(-1).split(',')[1]}`);
+    coordinates.push(`${x},${y}`);
+  });
+  return `<section class="support-history"><strong>${escapeHtml(messages.history)}</strong><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(messages.history)}"><polyline points="${coordinates.join(' ')}" fill="none" stroke="currentColor" stroke-width="3" vector-effect="non-scaling-stroke"/></svg><small>${escapeHtml(points.at(-1).day)} · ${escapeHtml(formatTwd(points.at(-1).total, locale))}</small></section>`;
 }
 
 export function renderNotFoundPage(locale = 'zh-Hant') {
@@ -1504,6 +1569,12 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .provider-choices button { margin: 0; }
     .support-totals { display: grid; gap: .25rem; padding: 1rem; border-radius: 1rem; background: #edf5f1; border: 1px solid #bdd7cb; }
     .support-totals strong { font-size: 1.5rem; }
+    .support-presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: .45rem; margin: .45rem 0; }
+    .support-presets button { margin: 0; padding: .55rem .3rem; border: 1px solid var(--line); border-radius: .6rem; background: white; color: var(--ink); }
+    .support-history, .supporters { display: grid; gap: .55rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; }
+    .support-history p, .support-history small { margin: 0; color: var(--muted); }
+    .support-history svg { width: 100%; height: 6rem; color: var(--green); }
+    .supporters ul { display: grid; gap: .45rem; margin: 0; padding-left: 1.15rem; color: var(--muted); }
     .billing-status { color: var(--green); font-size: .78rem; }
     .billing-status[data-error="true"] { color: #8f2f2a; }
     .account-links li { display: grid; grid-template-columns: 1fr auto auto; gap: .8rem; align-items: center; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; }

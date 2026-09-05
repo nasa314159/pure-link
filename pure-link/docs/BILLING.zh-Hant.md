@@ -43,6 +43,14 @@ ECPAY_HASH_KEY=...
 ECPAY_HASH_IV=...
 ```
 
+透過 ECPay 的自願支持採用獨立 fail-closed 開關，沿用既有 ECPay 憑證，但還需要另一個一般 Worker 變數：
+
+```text
+ECPAY_SUPPORT_CHECKOUT_ENABLED=true
+```
+
+`ECPAY_MERCHANT_ID`、`ECPAY_HASH_KEY` 與 `ECPAY_HASH_IV` 必須是 Worker secret；`ECPAY_CHECKOUT_ENABLED`、`ECPAY_SUPPORT_CHECKOUT_ENABLED`、`ECPAY_ENVIRONMENT` 與 `PUBLIC_ORIGIN` 是非機密 Worker 變數。啟用支持不會啟用 AI 額度結帳，啟用 AI 額度結帳也不會啟用支持。
+
 正式環境請使用 `ECPAY_ENVIRONMENT=production`，它會選擇 `https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5`；`stage` 會選擇 Test Mode 的 `https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5`。正式結帳設定也必須有 `PUBLIC_ORIGIN=https://no-no.uk`。
 
 API key、webhook secret 與 ECPay hash 必須使用 Worker secret。供應商 ID 可使用一般環境變數。瀏覽器只會傳送方案 ID 與已啟用的付款方式；價格、額度與供應商欄位皆由伺服器決定。
@@ -71,6 +79,29 @@ Lemon 退款 webhook 使用供應商提供的累積 `total`、`refunded_amount`�
 - 依 ECPay 商家退款流程人工處理並對帳；本整合不宣稱提供自動 ECPay 退款 API。
 
 已驗證的伺服器端 ECPay 回呼才是交付額度的權威來源。瀏覽器返回頁只會說明 PureLink 正等待供應商確認。
+
+## 自願支持（ECPay NTD）
+
+支持不是 AI 額度商品，而是用於開源開發、主機、維護與服務成本的可選一次性貢獻。它不提供額度、功能、訂閱、優先權、目標、投資或其他產品權益。
+
+支持頁提供 NT$100、NT$300、NT$500、NT$1,000 建議金額，並接受 NT$50 至 NT$10,000 的整數自訂金額。Worker 會在建立 ECPay 訂單前驗證範圍並保存預期金額；瀏覽器輸入永遠不能選擇額度數量。
+
+支持使用專屬的 `ecpay_support_checkout_requests` 與 `ecpay_support_contributions` 資料表，沒有使用者、方案、額度、餘額欄位或加入額度的 trigger。ECPay 支持固定使用 `ReturnURL=https://no-no.uk/api/webhooks/ecpay-support`；只有已驗證的回呼能新增支持紀錄。回呼會驗證 CheckMacValue、MerchantID、已知的待處理訂單、精確金額、`RtnCode=1`、`SimulatePaid=0` 與唯一的 ECPay 交易號。完全相同的重複通知只會安全確認，不會新增第二筆支持。支持的瀏覽器 POST 會到 `/api/payment-return/ecpay-support?locale=...`，忽略所有欄位並以 `303` 導向對應語言的 `/support?support=pending`。`ClientBackURL` 同樣指向這個固定的資訊頁。
+
+公開署名預設為私人。支持者可分別選擇在付款驗證後公開選填名稱、選填留言與／或金額。PureLink 不會自動公開 Google 個人資料、帳單電子郵件、帳單姓名、ECPay ID 或其他供應商資料。名稱上限為 60 個字元，留言上限為 200 個字元，顯示時會 HTML 跳脫並中和 `@`。
+
+支持頁從已驗證支持建立伺服器端 NTD 累積階梯圖。ECPay 支持退款刻意**不**由此 Worker 自動發起。營運人員必須先在 ECPay 或商家後台完成並驗證正確的退款，再新增相對應的 `ecpay_support_reconciliations` `refund` 紀錄（原始 `merchant_trade_no`、退款 NTD 金額與內部備註）。公開淨額與歷程會扣除該筆對帳，但永遠不影響 AI 額度。不能只因瀏覽器返回或未驗證的使用者聲明就記錄退款。
+
+Lemon Squeezy 的歷史支持資料表與已簽名 webhook 路徑會完整保留，以支援國際支持紀錄。本次變更不會重用它們作為 ECPay NTD 帳本，也不會自動啟用它們。
+
+### 支持正式環境 QA
+
+- 既有的 ECPay MerchantID、HashKey、HashIV 只能存為 Worker secret；只有在營運人員套用 migration 後，才把 `ECPAY_ENVIRONMENT=production`、`PUBLIC_ORIGIN=https://no-no.uk` 與 `ECPAY_SUPPORT_CHECKOUT_ENABLED=true` 設為一般變數。
+- 檢查 `/en/support` 與 `/zh-Hant/support`：預設私人、三種公開選項彼此獨立、建議與自訂金額均受限制，且介面清楚說明沒有任何產品權益。
+- 建立一筆低金額 NT$100 支持訂單。確認已簽名的 ECPay 欄位使用支持專屬 ReturnURL、瀏覽器返回 URL、ClientBackURL、精確 NTD 金額與 `ChoosePayment=ALL`。
+- 只有在明確授權的 QA 下完成真實付款。確認一筆已驗證回呼只建立一筆支持、NTD 總額／歷程更新、AI 額度餘額不變，且單獨瀏覽器返回不會改變任何資料。
+- 重送同一筆已驗證回呼，確認仍只有一筆支持。測試錯誤 MAC、錯誤 MerchantID、錯誤金額、模擬付款、失敗付款與偽造瀏覽器返回；它們都不得記錄支持或影響額度。
+- 退款時，先依商家核准的 ECPay 流程完成並驗證退款，再記錄人工對帳，確認支持總額／歷程只減少已驗證的金額。
 
 ## Test Mode QA
 
