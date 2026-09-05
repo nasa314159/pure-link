@@ -184,10 +184,11 @@ function emptyTotals() { return { netTwd: 0, contributionCount: 0, publicSupport
 function checked(value) { return value === true || String(value) === 'true' || String(value) === 'on'; }
 function normalizeText(value, maximum, multiline) {
   const source = String(value || '').replace(/\r\n?/g, '\n');
-  if (source.length > maximum) throw new PaymentError('supportAttributionInvalid', 400);
   const normalized = source.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
-  if (multiline) return normalized.trim() ? normalized : '';
-  return normalized.trim().replace(/\s+/g, ' ');
+  const result = multiline ? (normalized.trim() ? normalized : '') : normalized.trim().replace(/\s+/g, ' ');
+  // SQLite length(TEXT) counts Unicode code points, rather than UTF-16 units.
+  if (Array.from(result).length > maximum) throw new PaymentError('supportAttributionInvalid', 400);
+  return result;
 }
 function neutralizeMentions(value) { return value.replaceAll('@', '@\u200B'); }
 function validTradeNo(value, maximum = 20) { return new RegExp(`^[A-Za-z0-9]{1,${maximum}}$`).test(value); }

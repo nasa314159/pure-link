@@ -53,6 +53,17 @@ describe('ECPay voluntary support', () => {
     expect(() => normalizePublicAttribution({ message: 'x'.repeat(2001), publicMessage: true })).toThrow(/supportAttributionInvalid/);
   });
 
+  it('uses Unicode code points for public-message and display-name limits', () => {
+    const message = '😀'.repeat(2000);
+    const name = '😀'.repeat(60);
+    expect(message.length).toBe(4000);
+    expect(Array.from(message)).toHaveLength(2000);
+    expect(normalizePublicAttribution({ message, publicMessage: true })).toMatchObject({ publicMessage: 1, message });
+    expect(() => normalizePublicAttribution({ message: `${message}😀`, publicMessage: true })).toThrow(/supportAttributionInvalid/);
+    expect(normalizePublicAttribution({ displayName: name, publicName: true })).toMatchObject({ publicName: 1, displayName: name });
+    expect(() => normalizePublicAttribution({ displayName: `${name}😀`, publicName: true })).toThrow(/supportAttributionInvalid/);
+  });
+
   it('keeps private support text private without validating or storing it', () => {
     expect(normalizePublicAttribution({ displayName: 'private', message: 'x'.repeat(2001) })).toEqual({ publicName: 0, publicMessage: 0, publicAmount: 0, displayName: null, message: null });
   });
