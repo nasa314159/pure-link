@@ -52,8 +52,20 @@ describe('ECPay credit checkout', () => {
       expect(checkout.fields.ReturnURL).toBe('https://no-no.uk/api/webhooks/ecpay');
       expect(checkout.fields.OrderResultURL).toBe('https://no-no.uk/api/payment-return/ecpay?locale=zh-Hant');
       expect(checkout.fields.ClientBackURL).toBe('https://no-no.uk/zh-Hant/account?purchase=pending');
+      // ECPay's hosted All-in-One page exposes every method activated for the
+      // merchant, including TWQR. Do not replace this with TWQR-only checkout.
+      expect(checkout.fields.ChoosePayment).toBe('ALL');
       await expect(verifyCheckMacValue(checkout.fields, env)).resolves.toBe(true);
     }
+  });
+
+  it('keeps merchant-activated TWQR inside the signed All-in-One checkout', async () => {
+    const checkout = await createEcpayCheckout({
+      requestUrl: new URL('https://no-no.uk/en/account'), user: { id: 'user-1' }, packId: 'small', locale: 'en', env: { ...env, pure_link_db: new EcpayDb() },
+    });
+    expect(checkout.fields.ChoosePayment).toBe('ALL');
+    expect(checkout.fields.TotalAmount).toBe('150');
+    await expect(verifyCheckMacValue(checkout.fields, env)).resolves.toBe(true);
   });
 
   it('rejects invalid canonical pack IDs without writing a checkout', async () => {
