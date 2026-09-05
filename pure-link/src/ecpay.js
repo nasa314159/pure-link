@@ -7,10 +7,15 @@ export const ECPAY_PRODUCTION_ENDPOINT = 'https://payment.ecpay.com.tw/Cashier/A
 export const CANONICAL_PUBLIC_ORIGIN = 'https://no-no.uk';
 
 export function isEcpayCheckoutConfigured(env) {
+  return isEcpayConfigured(env) && env?.ECPAY_CHECKOUT_ENABLED === 'true';
+}
+
+// Keep the common ECPay credential/origin gate separate from each product
+// surface so enabling voluntary support never implicitly enables credit sales.
+export function isEcpayConfigured(env) {
   const environment = String(env?.ECPAY_ENVIRONMENT || '');
   const origin = configuredPublicOrigin(env);
-  return env?.ECPAY_CHECKOUT_ENABLED === 'true'
-    && /^[0-9]{1,10}$/.test(String(env?.ECPAY_MERCHANT_ID || ''))
+  return /^[0-9]{1,10}$/.test(String(env?.ECPAY_MERCHANT_ID || ''))
     && validSecret(env?.ECPAY_HASH_KEY)
     && validSecret(env?.ECPAY_HASH_IV)
     && ['stage', 'production'].includes(environment)
@@ -37,7 +42,7 @@ export async function createEcpayCheckout({ requestUrl, user, packId, locale, en
     }
   }
 
-  const origin = publicOrigin(requestUrl, env);
+  const origin = ecpayPublicOrigin(requestUrl, env);
   const resultLocale = locale === 'zh-Hant' ? 'zh-Hant' : 'en';
   const fields = {
     MerchantID: String(env.ECPAY_MERCHANT_ID),
@@ -141,11 +146,11 @@ export function ecpayTradeDate(date) {
 
 function ecpayUrlEncode(value) { return encodeURIComponent(value).replace(/%20/g, '+').replace(/%21/g, '!').replace(/%28/g, '(').replace(/%29/g, ')').replace(/%2A/g, '*').replace(/%2D/g, '-').replace(/%2E/g, '.').replace(/%5F/g, '_'); }
 export function ecpayEndpoint(env) { return String(env?.ECPAY_ENVIRONMENT) === 'production' ? ECPAY_PRODUCTION_ENDPOINT : ECPAY_STAGE_ENDPOINT; }
-function publicOrigin(requestUrl, env) { return configuredPublicOrigin(env) || requestUrl.origin; }
+export function ecpayPublicOrigin(requestUrl, env) { return configuredPublicOrigin(env) || requestUrl.origin; }
 function changes(result) { return Number(result?.meta?.changes ?? result?.changes ?? 0); }
 function constantTimeEqual(left, right) { if (left.length !== right.length) return false; let result = 0; for (let i = 0; i < left.length; i += 1) result |= left.charCodeAt(i) ^ right.charCodeAt(i); return result === 0; }
 function validSecret(value) { return typeof value === 'string' && value.length === 16; }
-function configuredPublicOrigin(env) {
+export function configuredPublicOrigin(env) {
   try {
     const url = new URL(String(env?.PUBLIC_ORIGIN || ''));
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || url.pathname !== '/') return '';

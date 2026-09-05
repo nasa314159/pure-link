@@ -16,6 +16,8 @@ LEMON_SQUEEZY_VARIANT_STANDARD_ID=replace-with-standard-variant-id
 LEMON_SQUEEZY_VARIANT_LARGE_ID=replace-with-large-variant-id
 LEMON_SQUEEZY_SUPPORT_VARIANT_ID=replace-with-pay-what-you-want-variant-id
 ECPAY_CHECKOUT_ENABLED=false
+# Support is independently fail-closed; enabling it never enables AI-credit checkout.
+ECPAY_SUPPORT_CHECKOUT_ENABLED=false
 # Use stage for local/Test Mode or production only after production QA.
 ECPAY_ENVIRONMENT=stage
 ECPAY_MERCHANT_ID=replace-with-ecpay-merchant-id

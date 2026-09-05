@@ -752,6 +752,9 @@ class MemoryStatement {
     if (this.sql.startsWith('SELECT COALESCE(SUM') && this.sql.includes('lemon_support_contributions')) {
       return { net_usd_minor: 0, contribution_count: 0, unconverted_count: 0 };
     }
+    if (this.sql.startsWith('SELECT COALESCE(SUM') && this.sql.includes('ecpay_support_contributions')) {
+      return { net_twd: 0, contribution_count: 0 };
+    }
     if (this.sql.startsWith('SELECT created_at FROM reports')) {
       const report = this.db.reports.find(r => r.id === this.values[0]);
       return report ? { created_at: report.created_at } : null;
@@ -761,6 +764,8 @@ class MemoryStatement {
 
   async all() {
     if (this.sql.startsWith('SELECT public_display_name FROM lemon_support_contributions')) return { results: [] };
+    if (this.sql.startsWith('SELECT contribution.public_name,') && this.sql.includes('ecpay_support_contributions')) return { results: [] };
+    if (this.sql.startsWith('SELECT day, SUM(amount)')) return { results: [] };
     if (this.sql.startsWith('SELECT slug, content_type')) {
       const ownerUserId = this.values[0];
       return {
