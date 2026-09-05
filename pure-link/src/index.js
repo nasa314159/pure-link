@@ -64,7 +64,7 @@ export async function routeRequest(request, env, context) {
     const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
     const googleAuthConfigured = isGoogleAuthConfigured(env);
     const user = googleAuthConfigured ? await getCurrentUser(request, env) : null;
-    return publicReadResponse(request, html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user, locale), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) }));
+    return publicReadResponse(request, html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user, locale, env.GOOGLE_SITE_VERIFICATION || ''), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) }));
   }
   if (request.method === 'GET' && originalPath === 'native/verify') {
     const nonce = createSlug() + createSlug();
@@ -102,19 +102,19 @@ export async function routeRequest(request, env, context) {
   }
   if (isPublicRead && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
     if (!localeRoute) return redirect(localizedPath(locale, path), 302);
-    return publicReadResponse(request, html(renderLegalPage(path, locale, enabledPaymentProviders(env))));
+    return publicReadResponse(request, html(renderLegalPage(path, locale, enabledPaymentProviders(env), env.GOOGLE_SITE_VERIFICATION || '')));
   }
   if (isPublicRead && path === 'support') {
     if (!localeRoute) return redirect(localizedPath(locale, path), 302);
     const nonce = createSlug() + createSlug();
     const checkoutConfigured = isLemonSupportConfigured(env) && isPublicWriteProtectionConfigured(env);
     return publicReadResponse(request, html(renderSupportPage(
-      await getSupportTotals(env.pure_link_db), checkoutConfigured, requestUrl.searchParams.get('thanks') === '1', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '',
+      await getSupportTotals(env.pure_link_db), checkoutConfigured, requestUrl.searchParams.get('thanks') === '1', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '', env.GOOGLE_SITE_VERIFICATION || '',
     ), {}, { scriptNonce: nonce, turnstile: checkoutConfigured }));
   }
   if (isPublicRead && path === 'start') {
     if (!localeRoute) return redirect(localizedPath(locale, 'start'), 302);
-    return publicReadResponse(request, html(renderStartPage(locale)));
+    return publicReadResponse(request, html(renderStartPage(locale, env.GOOGLE_SITE_VERIFICATION || '')));
   }
 
   if (isPublicRead && (path.startsWith('assets/') || ['favicon.svg', 'og.png'].includes(path))) {
@@ -496,8 +496,19 @@ function publicOrigin(requestUrl, env) {
 
 function renderSitemap(origin) {
   const paths = ['', 'privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy', 'support', 'start'];
-  const urls = ['zh-Hant', 'en'].flatMap((locale) => paths.map((path) => `  <url><loc>${origin}${localizedPath(locale, path)}</loc></url>`)).join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
+  const locales = ['en', 'zh-Hant'];
+  const urlEntries = paths.flatMap((path) => {
+    const alternatePath = path.replace(/^\/$/, '');
+    return locales.flatMap((locale) => {
+      const hreflangs = [
+        `      <xhtml:link rel="alternate" hreflang="en" href="${origin}${localizedPath('en', alternatePath)}"/>`,
+        `      <xhtml:link rel="alternate" hreflang="zh-Hant" href="${origin}${localizedPath('zh-Hant', alternatePath)}"/>`,
+        `      <xhtml:link rel="alternate" hreflang="x-default" href="${origin}${localizedPath('en', alternatePath)}"/>`,
+      ].join('\n');
+      return [`  <url>`, `    <loc>${origin}${localizedPath(locale, alternatePath)}</loc>`, `${hreflangs}`, `  </url>`].join('\n');
+    });
+  }).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urlEntries}\n</urlset>\n`;
 }
 
 function publicReadResponse(request, response) {

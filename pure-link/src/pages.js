@@ -106,7 +106,7 @@ function renderFormulaShortcutPalette(m) {
   return `<div class="formula-category-tabs" role="tablist" aria-label="${escapeHtml(m.page.shortcutCategories)}">${tabs}</div><div class="symbol-groups">${panels}</div>`;
 }
 
-export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '', user = null, locale = 'zh-Hant') {
+export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigured = false, authStatus = '', user = null, locale = 'zh-Hant', googleSiteVerification = '') {
   const m = getMessages(locale);
   const recoveryCopy = user
     ? { title: m.home.accountSaved, help: m.home.accountSavedHelp, backupTitle: m.home.backupCredential, backupHelp: m.home.backupCredentialHelp, copy: m.home.copyBackupManagement, download: m.home.downloadBackupRecovery }
@@ -152,6 +152,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
     robots: 'index, follow',
     canonicalPath: localizedHref(locale),
     locale,
+    googleSiteVerification,
     body: `
       ${accountEntry}
       <main class="home creator-home">
@@ -552,7 +553,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
   });
 }
 
-export function renderStartPage(locale = 'zh-Hant') {
+export function renderStartPage(locale = 'zh-Hant', googleSiteVerification = '') {
   const m = getMessages(locale);
   return documentShell({
     title: m.start.title,
@@ -560,6 +561,7 @@ export function renderStartPage(locale = 'zh-Hant') {
     robots: 'index, follow',
     canonicalPath: localizedHref(locale, 'start'),
     locale,
+    googleSiteVerification,
     body: `
       <main class="page start-page">
         <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
@@ -778,7 +780,7 @@ export function renderReportPage(slug, nonce, turnstileSiteKey = '', locale = 'z
   });
 }
 
-export function renderLegalPage(page, locale = 'zh-Hant', providers = {}) {
+export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, googleSiteVerification = '') {
   const pages = {
     privacy: {
       eyebrow: 'PRIVACY',
@@ -870,6 +872,7 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}) {
     robots: 'index, follow',
     canonicalPath: localizedHref(locale, page),
     locale,
+    googleSiteVerification,
     body: `
       <main class="page legal-page">
         <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
@@ -1152,7 +1155,7 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
   });
 }
 
-export function renderSupportPage(totals, checkoutConfigured = false, thanks = false, nonce = '', locale = 'zh-Hant', turnstileSiteKey = '') {
+export function renderSupportPage(totals, checkoutConfigured = false, thanks = false, nonce = '', locale = 'zh-Hant', turnstileSiteKey = '', googleSiteVerification = '') {
   const m = getMessages(locale);
   const publicSupporters = (totals?.publicSupporters || []).map(escapeHtml).filter(Boolean);
   const turnstileWidget = checkoutConfigured && turnstileSiteKey
@@ -1162,7 +1165,7 @@ export function renderSupportPage(totals, checkoutConfigured = false, thanks = f
     ? `<form id="support-form"><label class="field-label" for="support-display-name">${m.support.optionalName}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${m.support.optionalNameHelp}</p><label class="check-row"><input id="support-public-attribution" type="checkbox" name="publicAttribution" value="true"><span><strong>${m.support.attribute}</strong></span></label>${turnstileWidget}<button class="create-button" id="support-button" type="submit">${m.support.button}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
     : `<p class="billing-status">${m.support.unavailable}</p>`;
   return documentShell({
-    title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale,
+    title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale, googleSiteVerification,
     body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${thanks ? `<p class="auth-notice" role="status">${m.support.thanks}</p>` : ''}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${m.support.totals}</span><strong>${formatUsd(totals?.netUsdMinor || 0, locale)}</strong><small>${m.support.contributions.replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${m.support.limitedTotals}</p>` : ''}</section>${publicSupporters.length ? `<p class="supporters"><strong>${m.support.supporters}</strong>: ${publicSupporters.join(', ')}</p>` : ''}<p class="notice">${m.support.boundary}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${m.support.aiCredits}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
     script: checkoutConfigured ? `
       const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
@@ -1250,16 +1253,25 @@ export function renderNativeVerificationPage(nonce, turnstileSiteKey, locale = '
   });
 }
 
-function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [] }) {
+function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [], googleSiteVerification = '' }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
   const scripts = [externalScript, ...externalScripts].filter(Boolean);
   const canonicalUrl = canonicalPath ? `https://no-no.uk${canonicalPath}` : '';
-  const canonicalMarkup = canonicalUrl ? `<link rel="canonical" href="${escapeHtml(canonicalUrl)}">` : '';
+  const isIndexable = canonicalUrl && !robots.includes('noindex');
+  const canonicalMarkup = isIndexable ? `<link rel="canonical" href="${escapeHtml(canonicalUrl)}">` : '';
   const alternatePath = canonicalPath.replace(/^\/(?:zh-Hant|en)(?:\/|$)/, '/').replace(/^\/$/, '');
-  const hreflangMarkup = canonicalUrl && !robots.includes('noindex') ? ['zh-Hant', 'en'].map((candidate) => `<link rel="alternate" hreflang="${candidate}" href="https://no-no.uk${localizedHref(candidate, alternatePath)}">`).join('') + `<link rel="alternate" hreflang="x-default" href="https://no-no.uk${localizedHref('en', alternatePath)}">` : '';
+  const hreflangMarkup = isIndexable ? ['zh-Hant', 'en'].map((candidate) => `<link rel="alternate" hreflang="${candidate}" href="https://no-no.uk${localizedHref(candidate, alternatePath)}">`).join('') + `<link rel="alternate" hreflang="x-default" href="https://no-no.uk${localizedHref('en', alternatePath)}">` : '';
   const externalScriptMarkup = scripts.map((source) => source.startsWith('https://challenges.cloudflare.com/')
     ? `<script src="${escapeHtml(source)}" async defer></script>`
     : `<script type="module" src="${escapeHtml(source)}"></script>`).join('');
+  const verificationMarkup = googleSiteVerification ? `<meta name="google-site-verification" content="${escapeHtml(googleSiteVerification)}">` : '';
+  const jsonLd = isIndexable ? `<script type="application/ld+json">${JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: 'PureLink',
+    url: 'https://no-no.uk',
+    description: 'Privacy-friendly URL shortener and formula sharing. No ads, no cross-site tracking, and no account needed to share content.'
+  })}</script>` : '';
   return `<!doctype html>
 <html lang="${escapeHtml(locale)}">
 <head>
@@ -1267,6 +1279,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="${escapeHtml(description)}">
   <meta name="robots" content="${escapeHtml(robots)}">
+  ${verificationMarkup}
   <meta name="theme-color" content="#e9f3eb">
   <meta property="og:site_name" content="PureLink">
   <meta property="og:type" content="website">
@@ -1280,6 +1293,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
   <meta name="twitter:title" content="${escapeHtml(title)}">
   <meta name="twitter:description" content="${escapeHtml(description)}">
   <meta name="twitter:image" content="https://no-no.uk/og.png?v=1">
+  ${jsonLd}
   <title>${escapeHtml(title)}</title>
   ${canonicalMarkup}
   ${hreflangMarkup}
