@@ -261,13 +261,36 @@ describe('interactive pages', () => {
     expect(html).toContain('data-action="support-checkout"');
     expect(html).toContain('data-sitekey="site-key"');
     expect(html).toContain('data-support-amount="100"');
+    expect(html).toContain('data-support-amount="300"');
+    expect(html).toContain('data-support-amount="500"');
+    expect(html).toContain('data-support-amount="1000"');
+    expect(html).toContain('class="selected"');
     expect(html).toContain('min="50" max="10000"');
     expect(html).toContain('name="publicName"');
     expect(html).toContain('name="publicMessage"');
     expect(html).toContain('name="publicAmount"');
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');
     expect(html).toContain('data.turnstileToken = window.turnstile?.getResponse() || \'\';');
+    expect(html).toContain('Choose a support amount. Payment is completed securely through ECPay.');
+    expect(html).toContain('id="support-ecpay-description"');
     expect(() => new Function(extractScript(html))).not.toThrow();
+  });
+
+  it('renders Chinese support page with correct ECPay copy', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'zh-Hant', 'site-key');
+    expect(html).toContain('選擇支持金額，付款將透過綠界安全結帳。');
+    expect(html).toContain('data-support-amount="100"');
+    expect(html).toContain('class="selected"');
+  });
+
+  it('ECPay-only mode uses hidden provider input and script handles it with fallback selector', () => {
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
+    const script = extractScript(html);
+    expect(html).toContain('type="hidden" name="provider" value="ecpay"');
+    expect(script).toContain('querySelector(\'input[name="provider"]:checked\')');
+    expect(html).toContain('aria-pressed="true"');
+    expect(script).toContain('setAttribute(\'aria-pressed\',');
+    expect(script).toContain('supportAmountControls.hidden = !ecpay');
   });
 
   it('renders only escaped opt-in support attribution and a server-provided staircase history', () => {
