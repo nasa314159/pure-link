@@ -15,7 +15,7 @@ npx --no-install wrangler deploy --env=""
 **重要提醒**：
 
 - **遷移不會自動套用**：D1 資料庫遷移需要手動執行，不會在部署時自動套用
-- ** rutin deployment 時請勿變更 secrets**：例行部署不應變更生產環境的 secret 設定
+- **例行部署時請勿變更 secrets**：例行部署不應變更生產環境的 secret 設定
 - **遇到未預期的遠端設定差異時，先調查再接受**：如果 `wrangler deploy` 顯示預期外的設定變更，請先確認原因再繼續
 
 ## B. 生產 smoke-test 檢查清單
@@ -52,36 +52,45 @@ npx --no-install wrangler deploy --env=""
 
 PureLink 使用 Cloudflare D1 資料庫。遷移管理方式：
 
-**查看現有遷移**：
+**查看遷移檔案**：
 
 ```bash
 cd pure-link
 ls migrations/
 ```
 
-目前有 11 個遷移檔案（0000 到 0010）。
-
-**在本地環境套用遷移**（如有需要）：
+**查看已套用的遷移（本地）**：
 
 ```bash
-npx wrangler d1 migrations apply pure-link-staging --local
-npx wrangler d1 migrations apply pure-link-production --local
+npx --no-install wrangler d1 migrations list pure-link-staging --local
+npx --no-install wrangler d1 migrations list pure-link-production --local
 ```
 
-**在生產環境套用遷移**（需謹慎）：
+**套用到本地環境**（如有需要）：
 
 ```bash
-# 先在 staging 測試
-npx wrangler d1 migrations apply pure-link-staging
-# 確認無誤後再套用到生產
-npx wrangler d1 migrations apply pure-link-production
+npx --no-install wrangler d1 migrations apply pure-link-staging --local
+npx --no-install wrangler d1 migrations apply pure-link-production --local
+```
+
+**套用到正式環境（需謹慎）**：
+
+```bash
+# 先列出並檢查 staging 目前狀態
+npx --no-install wrangler d1 migrations list pure-link-staging --remote
+# 確認後再套用到 staging
+npx --no-install wrangler d1 migrations apply pure-link-staging --remote
+
+# 確認無誤後，再對 production 做相同流程
+npx --no-install wrangler d1 migrations list pure-link-production --remote
+npx --no-install wrangler d1 migrations apply pure-link-production --remote
 ```
 
 **重要原則**：
 
 - 生產遷移是**手動**執行的
 - **永遠不要**随意執行或編輯已套用的遷移檔案
-- 如果必須復原，請諮詢有經驗的團隊成員
+- 如果必須復原，請先仔細評估影響，復原方式取決於具體情況
 
 ## E. Secrets/設定安全
 
@@ -121,16 +130,21 @@ npx wrangler secret put SECRET_NAME
 **1. 先調查，不要急於復原**
 
 ```bash
-# 查看目前的部署版本
-npx wrangler deployments list
+# 查看部署歷程記錄
+npx --no-install wrangler deployments list
+
+# 查看版本歷程記錄
+npx --no-install wrangler versions list
 ```
 
 **2. 如果需要復原到上一個穩定版本**
 
 ```bash
-# 復原到前一個部署（使用 deployment ID）
-npx wrangler rollback [deployment-id]
+# 使用版本 ID 復原（例如 version ID）
+npx --no-install wrangler rollback <VERSION_ID>
 ```
+
+復原會立即建立一個新部署，使用所選版本。復原後請立即執行 smoke-test 檢查清單確認問題已解決。
 
 **3. 檢查 Cloudflare Dashboard**
 
