@@ -479,6 +479,35 @@ describe('interactive pages', () => {
     expect(collapsedRule[1]).not.toMatch(/max-height:\s*6\.25rem/);
   });
 
+  it('supporter-message uses a display mode that lets max-height/overflow clip in real browsers', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'Any long supporter message that needs the collapse logic to engage.', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+    expect(styleMatch).toBeTruthy();
+    const css = styleMatch[1];
+    const messageRule = css.match(/\.supporter-message\s*\{([^}]*)\}/);
+    expect(messageRule).toBeTruthy();
+    // An inline (non-replaced) span does not form a height-constrained box in
+    // Safari and other engines, so max-height/overflow:hidden on the collapsed
+    // variant cannot clip reliably. Force the message into a display mode that
+    // produces a real box while still flowing inline with the surrounding
+    // name / amount / expand button.
+    expect(messageRule[1]).not.toMatch(/display:\s*inline\s*;/);
+    const displayMatch = messageRule[1].match(/display:\s*([a-z-]+)/);
+    expect(displayMatch).toBeTruthy();
+    expect(['inline-block', 'block', 'inline-flex', 'flex', 'grid', 'inline-grid']).toContain(displayMatch[1]);
+    // The collapsed rule still relies on max-height + overflow:hidden to clip.
+    const collapsedRule = css.match(/\.supporter-message-collapsed\s*\{([^}]*)\}/);
+    expect(collapsedRule).toBeTruthy();
+    expect(collapsedRule[1]).toMatch(/max-height:\s*6\.2em/);
+    expect(collapsedRule[1]).toContain('overflow: hidden');
+    // Pre-wrap + word-break must remain so newlines and long words still wrap.
+    expect(messageRule[1]).toContain('white-space: pre-wrap');
+    expect(messageRule[1]).toContain('word-break: break-word');
+  });
+
   it('exposes a Unicode code-point counter and an over-limit error node near the message field', () => {
     const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
     expect(html).toContain('id="support-message-counter"');

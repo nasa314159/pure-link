@@ -1697,7 +1697,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .support-history p, .support-history small { margin: 0; color: var(--muted); }
     .support-history svg { width: 100%; height: 6rem; color: var(--green); }
     .supporters ul { display: grid; gap: .45rem; margin: 0; padding-left: 1.15rem; color: var(--muted); }
-    .supporter-message { white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+    .supporter-message { display: inline-block; white-space: pre-wrap; word-break: break-word; line-height: 1.55; vertical-align: bottom; max-width: 100%; }
     .supporter-message-collapsed { max-height: 6.2em; overflow: hidden; }
     .supporter-expand { width: auto; display: inline-block; padding: .2rem .5rem; margin: .25rem 0; border: 1px solid var(--line); border-radius: .4rem; background: white; color: var(--muted); font-size: .72rem; font-weight: 600; cursor: pointer; }
     .supporter-expand:hover { border-color: var(--green); color: var(--green); }
