@@ -23,3 +23,5 @@ ECPAY_HASH_KEY=replace-with-ecpay-hash-key
 ECPAY_HASH_IV=replace-with-ecpay-hash-iv
 # Historical Creem compatibility only. Do not enable for new checkouts.
 CREEM_LIVE_CHECKOUT_ENABLED=false
+# Discord webhook for report notifications. Leave empty or use a safe test URL.
+DISCORD_REPORT_WEBHOOK_URL=
