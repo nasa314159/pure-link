@@ -214,14 +214,14 @@ describe('interactive pages', () => {
     const chineseEcpay = renderLegalPage('ai-credits', 'zh-Hant', { ecpay: true });
     expect(englishDisabled).not.toContain('ECPay');
     expect(englishDisabled).not.toContain('legal-purchase');
-    expect(englishEcpay).toContain('Credit card / Apple Pay / ATM / convenience store / mobile payment');
+    expect(englishEcpay).toContain('Credit card / Apple Pay / TWQR and more');
     expect(englishEcpay).not.toContain('ECPay');
     expect(englishEcpay).toContain('Sign in to purchase AI formula credits');
-    expect(chineseEcpay).toContain('信用卡 / Apple Pay / ATM / 超商 / 行動支付');
+    expect(chineseEcpay).toContain('信用卡 / Apple Pay / TWQR 等');
     expect(chineseEcpay).not.toContain('ECPay');
     expect(chineseEcpay).toContain('登入購買 AI 公式額度');
-    expect(englishEcpay).not.toContain('信用卡 / Apple Pay / ATM / 超商 / 行動支付');
-    expect(chineseEcpay).not.toContain('Credit card / Apple Pay / ATM / convenience store / mobile payment');
+    expect(englishEcpay).not.toContain('信用卡 / Apple Pay / TWQR 等');
+    expect(chineseEcpay).not.toContain('Credit card / Apple Pay / TWQR and more');
   });
 
   it('shows canonical packs and only enabled payment rails on the account page', () => {
@@ -240,10 +240,10 @@ describe('interactive pages', () => {
   it('keeps account billing copy localized when ECPay is enabled', () => {
     const english = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'en');
     const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'zh-Hant');
-    expect(english).toContain('Credit card / Apple Pay / ATM / convenience store / mobile payment');
+    expect(english).toContain('Credit card / Apple Pay / TWQR and more');
     expect(english).not.toContain('台灣一次性付款');
-    expect(chinese).toContain('信用卡 / Apple Pay / ATM / 超商 / 行動支付');
-    expect(chinese).not.toContain('Credit card / Apple Pay / ATM / convenience store / mobile payment');
+    expect(chinese).toContain('信用卡 / Apple Pay / TWQR 等');
+    expect(chinese).not.toContain('Credit card / Apple Pay / TWQR and more');
   });
 
   it('explains that a returned checkout is pending verified server confirmation', () => {
