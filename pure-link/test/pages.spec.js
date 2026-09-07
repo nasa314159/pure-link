@@ -46,6 +46,105 @@ describe('interactive pages', () => {
     expect(() => new Function(script)).not.toThrow();
   });
 
+  it('persists a creation draft in sessionStorage under a versioned key', () => {
+    const script = extractScript(renderHomePage('test-nonce'));
+    expect(script).toContain("const CREATE_DRAFT_KEY = 'purelink.createDraft.v1'");
+    expect(script).toContain('sessionStorage.getItem(CREATE_DRAFT_KEY)');
+    expect(script).toContain('sessionStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify(draft))');
+    expect(script).toContain('sessionStorage.removeItem(CREATE_DRAFT_KEY)');
+    expect(script).not.toContain('localStorage.setItem(CREATE_DRAFT_KEY');
+    expect(script).toContain("const CREATE_DRAFT_TEXT_FIELDS = ['content', 'signature', 'slug', 'trackingRemove', 'trackingKeep', 'formulaAiDescription']");
+    expect(script).toContain("const CREATE_DRAFT_CHECKBOXES = ['cleanTracking', 'isAffiliate']");
+    expect(script).toContain('draft.contentType');
+    expect(script).toContain('input[name="theme"]:checked');
+  });
+
+  it('saves and restores only whitelisted draft fields, failing safely on corrupt storage', () => {
+    const script = extractScript(renderHomePage('test-nonce'));
+    const block = script.match(/const CREATE_DRAFT_KEY = 'purelink\.createDraft\.v1';[\s\S]*?function restoreCreateDraft\(draft\) \{[\s\S]*?\n      \}/);
+    expect(block).toBeTruthy();
+    const factory = new Function('sessionStorage', 'document', 'form', 'content', 'contentType', 'selectType', 'updateCount', 'updateSuggestion',
+      `${block[0]}\nreturn { readCreateDraft, saveCreateDraft, clearCreateDraft, restoreCreateDraft };`);
+
+    const storage = new Map();
+    const elements = {
+      content: { value: 'https://example.com/watch?v=x' },
+      signature: { value: ' signatures' },
+      slug: { value: 'my-slug_1' },
+      trackingRemove: { value: 'utm_source' },
+      trackingKeep: { value: 'q' },
+      formulaAiDescription: { value: 'a formula about circles' },
+    };
+    const documentStub = { getElementById: (id) => elements[id] || null };
+    const formStub = {
+      querySelector: (selector) => {
+        if (selector === 'input[name="theme"]:checked') return { value: 'mist' };
+        if (selector === 'input[name="cleanTracking"]') return { checked: true };
+        if (selector === 'input[name="isAffiliate"]') return { checked: false };
+        if (selector === 'input[name="theme"][value="mist"]') return { checked: false, wasChecked: false };
+        return null;
+      },
+    };
+    const contentTypeStub = { value: 'formula' };
+    const api = factory({ getItem: (k) => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)), removeItem: (k) => storage.delete(k) }, documentStub, formStub, elements.content, contentTypeStub, () => {}, () => {}, () => {});
+
+    api.saveCreateDraft();
+    const saved = JSON.parse(storage.get('purelink.createDraft.v1'));
+    expect(Object.keys(saved).sort()).toEqual(['cleanTracking', 'content', 'contentType', 'formulaAiDescription', 'isAffiliate', 'signature', 'slug', 'theme', 'trackingKeep', 'trackingRemove'].sort());
+    expect(saved).toMatchObject({ contentType: 'formula', theme: 'mist', content: 'https://example.com/watch?v=x', cleanTracking: true, isAffiliate: false, slug: 'my-slug_1' });
+
+    storage.set('purelink.createDraft.v1', '{not json');
+    expect(api.readCreateDraft()).toBeNull();
+    storage.set('purelink.createDraft.v1', '["not","an","object"]');
+    expect(api.readCreateDraft()).toBeNull();
+    storage.set('purelink.createDraft.v1', '42');
+    expect(api.readCreateDraft()).toBeNull();
+
+    storage.set('purelink.createDraft.v1', JSON.stringify({
+      contentType: 'card', theme: 'night', content: 'card text', signature: 'sig', slug: 'k1',
+      trackingRemove: 'fbclid', trackingKeep: 'id', cleanTracking: true, isAffiliate: true, formulaAiDescription: 'd',
+      managementToken: 'secret-token', managementUrl: 'https://no-no.uk/manage/x', url: 'https://no-no.uk/k1', turnstileToken: 'tok', user: 'attacker',
+    }));
+    const restored = api.readCreateDraft();
+    expect(restored).toEqual({ contentType: 'card', theme: 'night', content: 'card text', signature: 'sig', slug: 'k1', trackingRemove: 'fbclid', trackingKeep: 'id', cleanTracking: true, isAffiliate: true, formulaAiDescription: 'd' });
+    expect(JSON.stringify(restored)).not.toContain('secret-token');
+
+    const calls = [];
+    const selectSpy = (type) => calls.push(type);
+    const api2 = factory({ getItem: () => null, setItem: () => {}, removeItem: () => {} }, documentStub, formStub, elements.content, { value: 'url' }, selectSpy, () => {}, () => {});
+    for (const type of ['url', 'formula', 'card']) {
+      api2.restoreCreateDraft({ contentType: type, theme: null, content: 'draft body', signature: '', slug: '', trackingRemove: '', trackingKeep: '', cleanTracking: false, isAffiliate: false, formulaAiDescription: '' });
+    }
+    expect(calls).toEqual(['formula', 'card']);
+    expect(elements.content.value).toBe('draft body');
+
+    expect(api.clearCreateDraft()).toBeUndefined();
+    expect(storage.has('purelink.createDraft.v1')).toBe(false);
+  });
+
+  it('restores the draft during initialization through the existing mode-switching code', () => {
+    const script = extractScript(renderHomePage('test-nonce'));
+    expect(script).toContain('const draft = readCreateDraft();');
+    expect(script).toContain('if (draft) restoreCreateDraft(draft);');
+    expect(script).toMatch(/selectType\('url'\);[\s\S]*?const draft = readCreateDraft\(\);/);
+    expect(script).toMatch(/function restoreCreateDraft\(draft\) \{\n        if \(draft\.contentType && draft\.contentType !== 'url'\) selectType\(draft\.contentType\);/);
+    expect(script).toMatch(/if \(shortcutInput\) \{[\s\S]*?content\.focus\(\);\n      \} else \{\n        const draft = readCreateDraft\(\);/);
+  });
+
+  it('clears the draft only after successful creation and never on failure', () => {
+    const script = extractScript(renderHomePage('test-nonce'));
+    const successIndex = script.indexOf('latestResult = result;');
+    const clearIndex = script.indexOf('clearCreateDraft();');
+    const catchIndex = script.indexOf('} catch (error) {');
+    expect(successIndex).toBeGreaterThan(-1);
+    expect(clearIndex).toBeGreaterThan(successIndex);
+    expect(clearIndex).toBeLessThan(catchIndex);
+    const catchBody = script.slice(catchIndex, script.indexOf('} finally {', catchIndex));
+    expect(catchBody).not.toContain('clearCreateDraft');
+    expect(script).toContain("localStorage.setItem('purelink:management:' + result.slug, result.managementToken)");
+    expect(script.match(/const CREATE_DRAFT_KEY[\s\S]*?function restoreCreateDraft/)[0]).not.toContain('management');
+  });
+
   it('offers an optional brand mark for formula and card PNG exports', () => {
     const formula = renderFormulaPage({ slug: 'math', content: 'x²' });
     const card = renderCardPage({ slug: 'kind', content: 'hello', theme: 'paper' });
@@ -57,6 +156,91 @@ describe('interactive pages', () => {
     expect(card).toContain('data-share-link');
     expect(formula).toContain('<meta name="robots" content="noindex, nofollow, noarchive">');
     expect(card).toContain('<meta name="robots" content="noindex, nofollow, noarchive">');
+  });
+
+  it('renders Traditional Chinese action labels on the zh-Hant shared formula page', () => {
+    const html = renderFormulaPage({ slug: 'math', content: 'x² + y² = z²' }, 'zh-Hant');
+    expect(html).toContain('PNG 加入「PURELINK · FORMULA」');
+    expect(html).toContain('可隨時取消；分享內容本身不受影響。');
+    expect(html).toContain('data-copy-content>複製原始內容</button>');
+    expect(html).toContain('>下載 PNG</button>');
+    expect(html).toContain('data-copy-link>複製連結</button>');
+    expect(html).toContain('data-share-link>分享</button>');
+    expect(html).toContain('<summary>查看原始輸入（LaTeX／Unicode）</summary>');
+    expect(html).toContain('>回報這個 PureLink</a>');
+  });
+
+  it('renders English action labels on the en shared formula page', () => {
+    const html = renderFormulaPage({ slug: 'math', content: 'x² + y² = z²' }, 'en');
+    expect(html).toContain('Add “PURELINK · FORMULA” to PNG');
+    expect(html).toContain('You can turn this off at any time; the shared content is unchanged.');
+    expect(html).toContain('data-copy-content>Copy source</button>');
+    expect(html).toContain('>Download PNG</button>');
+    expect(html).toContain('data-copy-link>Copy link</button>');
+    expect(html).toContain('data-share-link>Share</button>');
+    expect(html).toContain('<summary>Show original input (LaTeX / Unicode)</summary>');
+    expect(html).toContain('>Report this PureLink</a>');
+  });
+
+  it('renders Traditional Chinese action labels on the zh-Hant shared card page', () => {
+    const html = renderCardPage({ slug: 'kind', content: 'hello card', theme: 'paper' }, 'zh-Hant');
+    expect(html).toContain('PNG 加入「PURELINK · CARD」');
+    expect(html).toContain('data-copy-content>複製文字</button>');
+    expect(html).toContain('>下載 PNG</button>');
+    expect(html).toContain('data-copy-link>複製連結</button>');
+    expect(html).toContain('data-share-link>分享</button>');
+    expect(html).toContain('>回報這個 PureLink</a>');
+  });
+
+  it('renders English action labels on the en shared card page', () => {
+    const html = renderCardPage({ slug: 'kind', content: 'hello card', theme: 'paper' }, 'en');
+    expect(html).toContain('Add “PURELINK · CARD” to PNG');
+    expect(html).toContain('data-copy-content>Copy text</button>');
+    expect(html).toContain('>Download PNG</button>');
+    expect(html).toContain('data-copy-link>Copy link</button>');
+    expect(html).toContain('data-share-link>Share</button>');
+    expect(html).toContain('>Report this PureLink</a>');
+  });
+
+  it('keeps user-supplied shared content identical across locales', () => {
+    const content = 'x² + 今天的公式 = 好玩的數學 <script>alert(1)</script>';
+    const signature = '簽名作者';
+    const escaped = (value) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+    for (const locale of ['zh-Hant', 'en']) {
+      const html = renderCardPage({ slug: 'kind', content, theme: 'paper', signature }, locale);
+      expect(html).toContain(`<p class="shared-content card-copy">${escaped(content)}</p>`);
+      expect(html).toContain(`— ${escaped(signature)}`);
+      const formula = renderFormulaPage({ slug: 'math', content }, locale);
+      expect(formula).toContain(`<textarea id="raw-content" hidden>${escaped(content)}</textarea>`);
+      expect(formula).toContain(`<pre class="formula-source">${escaped(content)}</pre>`);
+    }
+  });
+
+  it('keeps shared-content routes unprefixed and switches locale via the /locale endpoint', () => {
+    const pages = [
+      ['formula', (locale) => renderFormulaPage({ slug: 'math', content: 'x²' }, locale), '/math'],
+      ['card', (locale) => renderCardPage({ slug: 'kind', content: 'hello', theme: 'paper' }, locale), '/kind'],
+    ];
+    for (const locale of ['zh-Hant', 'en']) {
+      for (const [name, render, returnTo] of pages) {
+        const html = render(locale);
+        expect(html).not.toMatch(new RegExp(`href="/(zh-Hant|en)/${returnTo.slice(1)}"`));
+        expect(html).not.toMatch(/\/(zh-Hant|en)\/(math|kind)(?![\w-])/);
+        const switcher = html.match(/<nav class="language-switcher"[\s\S]*?<\/nav>/)[0];
+        expect(switcher, name).toContain('<form method="post" action="/locale">');
+        expect(switcher, name).toContain(`name="locale" value="${locale}"`);
+        expect(switcher, name).toContain(`name="returnTo" value="${returnTo}"`);
+        expect(switcher, name).not.toContain('href="/');
+      }
+    }
+  });
+
+  it('gives client content-actions localized copy for both locales', () => {
+    const clientMessages = (html) => JSON.parse(html.match(/<script id="purelink-client-messages" type="application\/json">([\s\S]*?)<\/script>/)[1]).content;
+    const zh = clientMessages(renderFormulaPage({ slug: 'math', content: 'x²' }, 'zh-Hant'));
+    const en = clientMessages(renderFormulaPage({ slug: 'math', content: 'x²' }, 'en'));
+    expect(zh).toEqual({ copied: '已複製', cannotCopy: '無法複製', copiedLink: '已複製連結', cannotShare: '無法分享', working: '正在製作…', saved: '已儲存', failed: '製作失敗' });
+    expect(en).toEqual({ copied: 'Copied', cannotCopy: 'Could not copy', copiedLink: 'Copied link', cannotShare: 'Could not share', working: 'Preparing…', saved: 'Saved', failed: 'Could not create PNG' });
   });
 
   it('publishes descriptive homepage SEO and social preview metadata', () => {
