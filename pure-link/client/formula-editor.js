@@ -1,22 +1,25 @@
 import katex from 'katex';
 import { normalizeFormulaExpression } from '../src/formula.js';
 
-const input = document.getElementById('content');
-const preview = document.getElementById('formula-live-preview');
-const emptyState = document.getElementById('formula-preview-empty');
-const rendered = document.getElementById('formula-preview-rendered');
-const customLabel = document.getElementById('custom-formula-label');
-const customLatex = document.getElementById('custom-formula-latex');
-const customList = document.getElementById('custom-formula-list');
-const customStatus = document.getElementById('custom-formula-status');
-const customAdd = document.getElementById('add-custom-formula');
-const aiDescription = document.getElementById('formula-ai-description');
-const aiGenerate = document.getElementById('generate-formula-ai');
-const aiStatus = document.getElementById('formula-ai-status');
-const aiResult = document.getElementById('formula-ai-result');
-const aiPreview = document.getElementById('formula-ai-preview');
-const aiSource = document.getElementById('formula-ai-source');
-const aiUse = document.getElementById('use-formula-ai');
+// These element handles exist on every page that loads this bundle; the
+// ai* handles only exist for signed-in creators and are guarded by
+// initializeFormulaAi before any of their members are touched.
+const input = /** @type {HTMLTextAreaElement} */ (document.getElementById('content'));
+const preview = /** @type {HTMLElement} */ (document.getElementById('formula-live-preview'));
+const emptyState = /** @type {HTMLElement} */ (document.getElementById('formula-preview-empty'));
+const rendered = /** @type {HTMLElement} */ (document.getElementById('formula-preview-rendered'));
+const customLabel = /** @type {HTMLInputElement} */ (document.getElementById('custom-formula-label'));
+const customLatex = /** @type {HTMLInputElement} */ (document.getElementById('custom-formula-latex'));
+const customList = /** @type {HTMLElement} */ (document.getElementById('custom-formula-list'));
+const customStatus = /** @type {HTMLElement} */ (document.getElementById('custom-formula-status'));
+const customAdd = /** @type {HTMLButtonElement} */ (document.getElementById('add-custom-formula'));
+const aiDescription = /** @type {HTMLTextAreaElement} */ (document.getElementById('formula-ai-description'));
+const aiGenerate = /** @type {HTMLButtonElement} */ (document.getElementById('generate-formula-ai'));
+const aiStatus = /** @type {HTMLElement} */ (document.getElementById('formula-ai-status'));
+const aiResult = /** @type {HTMLElement} */ (document.getElementById('formula-ai-result'));
+const aiPreview = /** @type {HTMLElement} */ (document.getElementById('formula-ai-preview'));
+const aiSource = /** @type {HTMLElement} */ (document.getElementById('formula-ai-source'));
+const aiUse = /** @type {HTMLButtonElement} */ (document.getElementById('use-formula-ai'));
 const customStorageKey = 'purelink:formula-shortcuts:v1';
 const customShortcutLimit = 24;
 let generatedLatex = '';
@@ -25,10 +28,10 @@ const messages = readMessages();
 if (input && preview && rendered) {
   input.addEventListener('input', renderPreview);
   document.addEventListener('purelink:typechange', renderPreview);
-  document.querySelectorAll('[data-formula-insert]').forEach((button) => {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-formula-insert]')).forEach((button) => {
     button.addEventListener('click', () => insertAtSelection(button.dataset.formulaInsert || '', Number(button.dataset.cursorBack || 0)));
   });
-  const categoryTabs = [...document.querySelectorAll('[data-formula-category]')];
+  const categoryTabs = [.../** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-formula-category]'))];
   categoryTabs.forEach((tab, index) => {
     tab.addEventListener('click', () => selectCategory(tab.dataset.formulaCategory));
     tab.addEventListener('keydown', (event) => {
@@ -119,9 +122,10 @@ function initializeCustomShortcuts() {
   });
 
   customList.addEventListener('click', (event) => {
-    const insertButton = event.target.closest('[data-custom-formula-insert]');
+    const target = /** @type {HTMLElement | null} */ (event.target);
+    const insertButton = /** @type {HTMLElement | null} */ (target?.closest('[data-custom-formula-insert]'));
     if (insertButton) return insertAtSelection(insertButton.dataset.customFormulaInsert || '', 0);
-    const removeButton = event.target.closest('[data-custom-formula-remove]');
+    const removeButton = /** @type {HTMLElement | null} */ (target?.closest('[data-custom-formula-remove]'));
     if (!removeButton) return;
     shortcuts = shortcuts.filter((shortcut) => shortcut.id !== removeButton.dataset.customFormulaRemove);
     if (!writeCustomShortcuts(shortcuts)) return;
@@ -182,12 +186,12 @@ function setCustomStatus(message, isError = true) {
 }
 
 function selectCategory(category) {
-  document.querySelectorAll('[data-formula-category]').forEach((tab) => {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-formula-category]')).forEach((tab) => {
     const selected = tab.dataset.formulaCategory === category;
     tab.setAttribute('aria-selected', String(selected));
     tab.tabIndex = selected ? 0 : -1;
   });
-  document.querySelectorAll('[data-formula-panel]').forEach((panel) => {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('[data-formula-panel]')).forEach((panel) => {
     panel.hidden = panel.dataset.formulaPanel !== category;
   });
 }
@@ -203,7 +207,7 @@ function insertAtSelection(value, cursorBack) {
 }
 
 function renderPreview() {
-  const isFormula = document.getElementById('content-type')?.value === 'formula';
+  const isFormula = /** @type {HTMLInputElement | null} */ (document.getElementById('content-type'))?.value === 'formula';
   preview.hidden = !isFormula;
   if (!isFormula) return;
 
