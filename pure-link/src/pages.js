@@ -24,9 +24,16 @@ function creditPackSummary(locale) {
 
 function languageSwitcher(locale, page = '') {
   const messages = getMessages(locale);
+  const sharedContent = String(page).startsWith('/');
   const choices = ['zh-Hant', 'en'].map((choice) => {
-    const destination = String(page).startsWith('/') ? page : localizedHref(choice, page);
-    return `<a href="${escapeHtml(destination)}"${choice === locale ? ' aria-current="true"' : ''}>${escapeHtml(getMessages(choice).localeName)}</a>`;
+    // Shared-content URLs (/slug, /slug+) have no locale-prefixed variant by
+    // design, so the switcher must post to /locale (cookie + returnTo) instead
+    // of linking to a prefixed route; otherwise both choices would render the
+    // same URL and the switcher could never leave the default locale.
+    if (sharedContent) {
+      return `<form method="post" action="/locale"><input type="hidden" name="locale" value="${choice}"><input type="hidden" name="returnTo" value="${escapeHtml(page)}"><button type="submit"${choice === locale ? ' aria-current="true"' : ''}>${escapeHtml(getMessages(choice).localeName)}</button></form>`;
+    }
+    return `<a href="${escapeHtml(localizedHref(choice, page))}"${choice === locale ? ' aria-current="true"' : ''}>${escapeHtml(getMessages(choice).localeName)}</a>`;
   }).join('');
   return `<nav class="language-switcher" aria-label="${escapeHtml(messages.nav.language)}">${choices}</nav>`;
 }
@@ -438,6 +445,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
             throw new Error(result.error || messages.createFailed);
           }
           latestResult = result;
+          clearCreateDraft();
           const recovery = result.ownerLinked === true ? recoveryMessages.account : recoveryMessages.anonymous;
           document.getElementById('recovery-title').textContent = recovery.title;
           document.getElementById('recovery-help').textContent = recovery.help;
@@ -530,6 +538,55 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         content.focus();
       });
 
+      // Tab-local creation draft (sessionStorage only, like the support draft).
+      // Only user-authored form fields are persisted; results, management
+      // credentials, and tokens are never written. Cleared on successful
+      // creation; validation or network failures keep the draft.
+      const CREATE_DRAFT_KEY = 'purelink.createDraft.v1';
+      const CREATE_DRAFT_TEXT_FIELDS = ['content', 'signature', 'slug', 'trackingRemove', 'trackingKeep', 'formulaAiDescription'];
+      const CREATE_DRAFT_CHECKBOXES = ['cleanTracking', 'isAffiliate'];
+      function readCreateDraft() {
+        try {
+          const draft = JSON.parse(sessionStorage.getItem(CREATE_DRAFT_KEY) || 'null');
+          if (!draft || typeof draft !== 'object' || Array.isArray(draft)) return null;
+          const clean = {
+            contentType: ['url', 'formula', 'card'].includes(draft.contentType) ? draft.contentType : null,
+            theme: ['paper', 'mist', 'night'].includes(draft.theme) ? draft.theme : null,
+            cleanTracking: draft.cleanTracking === true,
+            isAffiliate: draft.isAffiliate === true,
+          };
+          for (const field of CREATE_DRAFT_TEXT_FIELDS) clean[field] = typeof draft[field] === 'string' ? draft[field] : '';
+          return clean;
+        } catch { return null; }
+      }
+      function saveCreateDraft() {
+        try {
+          const draft = { contentType: contentType.value, theme: form.querySelector('input[name="theme"]:checked')?.value || '' };
+          for (const field of CREATE_DRAFT_TEXT_FIELDS) { const element = document.getElementById(field); if (element) draft[field] = element.value; }
+          for (const name of CREATE_DRAFT_CHECKBOXES) { const element = form.querySelector('input[name="' + name + '"]'); if (element) draft[name] = element.checked; }
+          sessionStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify(draft));
+        } catch {}
+      }
+      function clearCreateDraft() {
+        try { sessionStorage.removeItem(CREATE_DRAFT_KEY); } catch {}
+      }
+      function restoreCreateDraft(draft) {
+        if (draft.contentType && draft.contentType !== 'url') selectType(draft.contentType);
+        for (const field of CREATE_DRAFT_TEXT_FIELDS) { const element = document.getElementById(field); if (element && draft[field]) element.value = draft[field]; }
+        if (draft.cleanTracking || draft.isAffiliate) {
+          for (const name of CREATE_DRAFT_CHECKBOXES) { const element = form.querySelector('input[name="' + name + '"]'); if (element) element.checked = draft[name] === true; }
+        }
+        if (draft.theme) {
+          const themeRadio = form.querySelector('input[name="theme"][value="' + draft.theme + '"]');
+          if (themeRadio) themeRadio.checked = true;
+        }
+        if (draft.content) { updateCount(); updateSuggestion(); }
+      }
+      document.querySelectorAll('.type-tab').forEach((tab) => tab.addEventListener('click', saveCreateDraft));
+      suggestion.addEventListener('click', saveCreateDraft);
+      form.addEventListener('input', saveCreateDraft);
+      form.addEventListener('change', saveCreateDraft);
+
       const shortcutInput = new URLSearchParams(location.hash.slice(1)).get('url');
       const openFormulaAi = location.hash === '#formula-ai';
       selectType('url');
@@ -539,11 +596,15 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         updateSuggestion();
         history.replaceState(null, '', location.pathname + location.search);
         content.focus();
-      } else if (openFormulaAi) {
-        selectType('formula');
-        const formulaAi = document.getElementById('formula-ai');
-        if (formulaAi) formulaAi.open = true;
-        document.getElementById('formula-ai-description')?.focus();
+      } else {
+        const draft = readCreateDraft();
+        if (draft) restoreCreateDraft(draft);
+        if (openFormulaAi) {
+          selectType('formula');
+          const formulaAi = document.getElementById('formula-ai');
+          if (formulaAi) formulaAi.open = true;
+          document.getElementById('formula-ai-description')?.focus();
+        }
       }
     `,
     nonce,
