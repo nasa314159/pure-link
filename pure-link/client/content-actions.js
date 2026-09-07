@@ -1,9 +1,11 @@
 import { toPng } from 'html-to-image';
 
-const rawContent = document.getElementById('raw-content');
-const captureTarget = document.getElementById('share-export');
-const brandToggle = document.querySelector('[data-export-brand-toggle]');
-const exportBrand = document.querySelector('[data-export-brand]');
+// Every element here is part of the shared Formula/Card page markup that this
+// bundle is loaded with; handlers attach through optional chaining as a guard.
+const rawContent = /** @type {HTMLTextAreaElement} */ (document.getElementById('raw-content'));
+const captureTarget = /** @type {HTMLElement} */ (document.getElementById('share-export'));
+const brandToggle = /** @type {HTMLInputElement} */ (document.querySelector('[data-export-brand-toggle]'));
+const exportBrand = /** @type {HTMLElement} */ (document.querySelector('[data-export-brand]'));
 const messages = readMessages();
 
 brandToggle?.addEventListener('change', () => {
@@ -11,7 +13,7 @@ brandToggle?.addEventListener('change', () => {
 });
 
 document.querySelector('[data-copy-content]')?.addEventListener('click', async (event) => {
-  const button = event.currentTarget;
+  const button = /** @type {HTMLButtonElement} */ (event.currentTarget);
   try {
     await navigator.clipboard.writeText(rawContent.value);
     setTemporaryLabel(button, messages.copied);
@@ -21,7 +23,7 @@ document.querySelector('[data-copy-content]')?.addEventListener('click', async (
 });
 
 document.querySelector('[data-copy-link]')?.addEventListener('click', async (event) => {
-  const button = event.currentTarget;
+  const button = /** @type {HTMLButtonElement} */ (event.currentTarget);
   try {
     await copyText(location.href);
     setTemporaryLabel(button, messages.copiedLink);
@@ -31,7 +33,7 @@ document.querySelector('[data-copy-link]')?.addEventListener('click', async (eve
 });
 
 document.querySelector('[data-share-link]')?.addEventListener('click', async (event) => {
-  const button = event.currentTarget;
+  const button = /** @type {HTMLButtonElement} */ (event.currentTarget);
   if (!navigator.share) {
     try {
       await copyText(location.href);
@@ -45,7 +47,7 @@ document.querySelector('[data-share-link]')?.addEventListener('click', async (ev
   try {
     await navigator.share({
       title: document.title,
-      text: document.querySelector('meta[name="description"]')?.content || 'PureLink',
+      text: /** @type {HTMLMetaElement | null} */ (document.querySelector('meta[name="description"]'))?.content || 'PureLink',
       url: location.href,
     });
   } catch (error) {
@@ -54,7 +56,7 @@ document.querySelector('[data-share-link]')?.addEventListener('click', async (ev
 });
 
 document.querySelector('[data-download-png]')?.addEventListener('click', async (event) => {
-  const button = event.currentTarget;
+  const button = /** @type {HTMLButtonElement} */ (event.currentTarget);
   const originalLabel = button.textContent;
   button.dataset.exportState = 'working';
   button.disabled = true;
