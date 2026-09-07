@@ -1182,7 +1182,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
   return documentShell({
     title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale, googleSiteVerification,
     body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
-    script: checkoutConfigured ? `
+    script: `
       const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
       const MESSAGE_LIMIT = ${MESSAGE_LIMIT};
       const ${countCodePoints.name} = ${countCodePoints.toString()};
@@ -1203,6 +1203,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       const supportMessageCounter = document.getElementById('support-message-counter');
       const supportMessageCounterError = document.getElementById('support-message-counter-error');
       const updateSupportMethod = () => {
+        if (!supportForm) return;
         const providerInput = supportForm.querySelector('input[name="provider"]:checked') || supportForm.querySelector('input[name="provider"]');
         const provider = providerInput?.value;
         const ecpay = provider === 'ecpay';
@@ -1212,9 +1213,9 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
         if (supportEcpayAttribution) { supportEcpayAttribution.hidden = !ecpay; supportEcpayAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = !ecpay; }); }
         if (supportLemonAttribution) { supportLemonAttribution.hidden = ecpay; supportLemonAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = ecpay; }); }
       };
-      supportForm.querySelectorAll('input[name="provider"]').forEach((input) => input.addEventListener('change', updateSupportMethod));
+      if (supportForm) supportForm.querySelectorAll('input[name="provider"]').forEach((input) => input.addEventListener('change', updateSupportMethod));
       const updateSelectedPreset = () => {
-        if (!supportAmount) return;
+        if (!supportForm || !supportAmount) return;
         const presetButtons = supportForm.querySelectorAll('[data-support-amount]');
         const currentValue = supportAmount.value;
         presetButtons.forEach((button) => {
@@ -1223,8 +1224,8 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
           button.setAttribute('aria-pressed', String(isSelected));
         });
       };
-      supportForm.querySelectorAll('[data-support-amount]').forEach((button) => button.addEventListener('click', () => { if (supportAmount) { supportAmount.value = button.dataset.supportAmount; updateSelectedPreset(); } }));
-      if (supportAmount) { supportAmount.addEventListener('input', () => { const presetButtons = supportForm.querySelectorAll('[data-support-amount]'); presetButtons.forEach((button) => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); }); }); }
+      if (supportForm) supportForm.querySelectorAll('[data-support-amount]').forEach((button) => button.addEventListener('click', () => { if (supportAmount) { supportAmount.value = button.dataset.supportAmount; updateSelectedPreset(); } }));
+      if (supportForm && supportAmount) { supportAmount.addEventListener('input', () => { const presetButtons = supportForm.querySelectorAll('[data-support-amount]'); presetButtons.forEach((button) => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); }); }); }
       updateSelectedPreset();
       updateSupportMethod();
       document.querySelectorAll('.supporter-message').forEach((msg) => {
@@ -1309,9 +1310,10 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
         supportMessage.addEventListener('input', updateMessageCounter);
         updateMessageCounter();
       }
-      supportForm.addEventListener('input', saveDraft);
-      supportForm.addEventListener('change', saveDraft);
-      supportForm.addEventListener('submit', async (event) => {
+      if (supportForm) {
+        supportForm.addEventListener('input', saveDraft);
+        supportForm.addEventListener('change', saveDraft);
+        supportForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const publicMessageChecked = !!supportForm.querySelector('input[name="publicMessage"]:checked');
         const messageLength = countCodePoints(supportMessage?.value || '');
@@ -1336,8 +1338,9 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
             document.body.append(form); form.submit();
           } else throw new Error(supportMessages.failed);
         } catch (error) { window.turnstile?.reset(); supportStatus.textContent = error.message; supportStatus.dataset.error = 'true'; supportButton.disabled = false; }
-      });
-    ` : '',
+        });
+      }
+    `,
     nonce,
     externalScript: turnstileSiteKey ? 'https://challenges.cloudflare.com/turnstile/v0/api.js' : '',
   });

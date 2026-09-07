@@ -449,6 +449,21 @@ describe('interactive pages', () => {
     expect(html).toContain('hidden');
   });
 
+  it('emits the supporter-message script and guards form wiring when checkout is unavailable', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'A long supporter message that must stay collapsible even when checkout is unavailable.', amount: 100 }],
+    }, {}, '', 'support-nonce', 'en');
+    expect(html).toContain('Support checkout is not available yet.');
+    expect(html).not.toContain('id="support-form"');
+    expect(html).toContain('data-show-more="Show more"');
+    const script = extractScript(html);
+    expect(script).toContain("document.querySelectorAll('.supporter-message').forEach");
+    expect(script).toContain('if (!supportForm) return;');
+    expect(script).toContain('if (supportForm) supportForm.querySelectorAll');
+    expect(script).toContain('if (supportForm) {');
+  });
+
   it('click handler toggles supporter-message-expanded and sets aria-expanded to the new state', () => {
     const html = renderSupportPage({
       netTwd: 100, contributionCount: 1,
