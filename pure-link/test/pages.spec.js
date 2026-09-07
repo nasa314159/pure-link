@@ -732,6 +732,37 @@ describe('interactive pages', () => {
     expect(script).not.toMatch(/visibility\s*=\s*'hidden'/);
   });
 
+  it('registers a ResizeObserver on supporter messages and re-evaluates collapsed overflow on width change', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'A long supporter message that the clamp must engage on.', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    const script = extractScript(html);
+    expect(script).toContain("if (typeof ResizeObserver !== 'function') return;");
+    expect(script).toMatch(/let lastWidth = msg\.clientWidth;\n        const resizeObserver = new ResizeObserver\(\(\) => \{\n          if \(msg\.clientWidth === lastWidth\) return;\n          lastWidth = msg\.clientWidth;\n          evaluateSupporterOverflow\(\);\n        \}\);\n        resizeObserver\.observe\(msg\);/);
+    // The observer callback reuses the same overflow evaluation; no polling.
+    const loop = script.match(/document\.querySelectorAll\('\.supporter-message'\)\.forEach[\s\S]*?resizeObserver\.observe\(msg\);\n      \}\);/)[0];
+    expect(loop).not.toContain('setInterval');
+    expect(loop).not.toContain('MutationObserver');
+    expect(loop).not.toContain('cloneNode');
+  });
+
+  it('expanded supporter messages stay expanded on resize and collapsing re-evaluates the button', () => {
+    const html = renderSupportPage({
+      netTwd: 100, contributionCount: 1,
+      publicSupporters: [{ name: 'Tester', message: 'A long supporter message that the clamp must engage on.', amount: 100 }],
+    }, { ecpay: true }, '', 'support-nonce', 'en');
+    const script = extractScript(html);
+    // While expanded, the evaluation is a no-op: Show less stays visible and the
+    // message is never auto-collapsed by a resize.
+    expect(script).toMatch(/const evaluateSupporterOverflow = \(\) => \{\n          \/\/ Expanded messages keep Show less visible; a resize never auto-collapses them\.\n          if \(msg\.classList\.contains\('supporter-message-expanded'\)\) return;/);
+    // After the user collapses again, the button is re-checked against the
+    // current width and hidden when the message now fits.
+    expect(script).toContain('if (isExpanded) evaluateSupporterOverflow();');
+    expect(script).toContain('button.hidden = fullHeight <= collapsedHeight + 1;');
+    expect(script).toMatch(/if \(button\.hidden\) \{\n            button\.setAttribute\('aria-expanded', 'false'\);\n            button\.textContent = button\.dataset\.showMore;\n          \}/);
+  });
+
   it('exposes a Unicode code-point counter and an over-limit error node near the message field', () => {
     const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupporters: [] }, { ecpay: true }, '', 'support-nonce', 'en', 'site-key');
     expect(html).toContain('id="support-message-counter"');
