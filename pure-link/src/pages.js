@@ -1292,24 +1292,43 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       document.querySelectorAll('.supporter-message').forEach((msg) => {
         const button = msg.parentElement?.querySelector('.supporter-expand');
         if (!button) return;
-        // Safari clamps scrollHeight to clientHeight while -webkit-line-clamp
-        // is active, so lift the clamp briefly to measure the full height,
-        // then restore it and compare against the clamped box height.
-        msg.style.webkitLineClamp = 'unset';
-        const fullHeight = msg.scrollHeight;
-        msg.style.removeProperty('-webkit-line-clamp');
-        const collapsedHeight = msg.clientHeight;
-        if (fullHeight <= collapsedHeight + 1) {
-          button.hidden = true;
-          return;
-        }
-        button.hidden = false;
+        const evaluateSupporterOverflow = () => {
+          // Expanded messages keep Show less visible; a resize never auto-collapses them.
+          if (msg.classList.contains('supporter-message-expanded')) return;
+          // Safari clamps scrollHeight to clientHeight while -webkit-line-clamp
+          // is active, so lift the clamp briefly to measure the full height,
+          // then restore it and compare against the clamped box height.
+          msg.style.webkitLineClamp = 'unset';
+          const fullHeight = msg.scrollHeight;
+          msg.style.removeProperty('-webkit-line-clamp');
+          const collapsedHeight = msg.clientHeight;
+          button.hidden = fullHeight <= collapsedHeight + 1;
+          if (button.hidden) {
+            button.setAttribute('aria-expanded', 'false');
+            button.textContent = button.dataset.showMore;
+          }
+        };
+        evaluateSupporterOverflow();
         button.addEventListener('click', () => {
           const isExpanded = msg.classList.contains('supporter-message-expanded');
           msg.classList.toggle('supporter-message-expanded', !isExpanded);
           button.setAttribute('aria-expanded', String(!isExpanded));
           button.textContent = isExpanded ? button.dataset.showMore : button.dataset.showLess;
+          // After collapsing, re-check whether the collapsed text still overflows.
+          if (isExpanded) evaluateSupporterOverflow();
         });
+        // Re-evaluate when the rendered message width changes (viewport, panel,
+        // or container). Gating on width avoids reacting to the expand/collapse
+        // height change, and the clamp lift is always restored before the
+        // callback returns, so the observed box never settles at a new size.
+        if (typeof ResizeObserver !== 'function') return;
+        let lastWidth = msg.clientWidth;
+        const resizeObserver = new ResizeObserver(() => {
+          if (msg.clientWidth === lastWidth) return;
+          lastWidth = msg.clientWidth;
+          evaluateSupporterOverflow();
+        });
+        resizeObserver.observe(msg);
       });
       const updateMessageCounter = () => {
         if (!supportMessage || !supportMessageCounter) return;
