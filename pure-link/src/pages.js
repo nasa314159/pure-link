@@ -1182,7 +1182,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
   return documentShell({
     title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale, googleSiteVerification,
     body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
-    script: checkoutConfigured ? `
+    script: `
       const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
       const MESSAGE_LIMIT = ${MESSAGE_LIMIT};
       const ${countCodePoints.name} = ${countCodePoints.toString()};
@@ -1203,6 +1203,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       const supportMessageCounter = document.getElementById('support-message-counter');
       const supportMessageCounterError = document.getElementById('support-message-counter-error');
       const updateSupportMethod = () => {
+        if (!supportForm) return;
         const providerInput = supportForm.querySelector('input[name="provider"]:checked') || supportForm.querySelector('input[name="provider"]');
         const provider = providerInput?.value;
         const ecpay = provider === 'ecpay';
@@ -1212,9 +1213,9 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
         if (supportEcpayAttribution) { supportEcpayAttribution.hidden = !ecpay; supportEcpayAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = !ecpay; }); }
         if (supportLemonAttribution) { supportLemonAttribution.hidden = ecpay; supportLemonAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = ecpay; }); }
       };
-      supportForm.querySelectorAll('input[name="provider"]').forEach((input) => input.addEventListener('change', updateSupportMethod));
+      if (supportForm) supportForm.querySelectorAll('input[name="provider"]').forEach((input) => input.addEventListener('change', updateSupportMethod));
       const updateSelectedPreset = () => {
-        if (!supportAmount) return;
+        if (!supportForm || !supportAmount) return;
         const presetButtons = supportForm.querySelectorAll('[data-support-amount]');
         const currentValue = supportAmount.value;
         presetButtons.forEach((button) => {
@@ -1223,26 +1224,30 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
           button.setAttribute('aria-pressed', String(isSelected));
         });
       };
-      supportForm.querySelectorAll('[data-support-amount]').forEach((button) => button.addEventListener('click', () => { if (supportAmount) { supportAmount.value = button.dataset.supportAmount; updateSelectedPreset(); } }));
-      if (supportAmount) { supportAmount.addEventListener('input', () => { const presetButtons = supportForm.querySelectorAll('[data-support-amount]'); presetButtons.forEach((button) => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); }); }); }
+      if (supportForm) supportForm.querySelectorAll('[data-support-amount]').forEach((button) => button.addEventListener('click', () => { if (supportAmount) { supportAmount.value = button.dataset.supportAmount; updateSelectedPreset(); } }));
+      if (supportForm && supportAmount) { supportAmount.addEventListener('input', () => { const presetButtons = supportForm.querySelectorAll('[data-support-amount]'); presetButtons.forEach((button) => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); }); }); }
       updateSelectedPreset();
       updateSupportMethod();
       document.querySelectorAll('.supporter-message').forEach((msg) => {
         const button = msg.parentElement?.querySelector('.supporter-expand');
         if (!button) return;
-        msg.classList.add('supporter-message-collapsed');
-        const isOverflowing = msg.scrollHeight > msg.clientHeight + 2;
-        if (!isOverflowing) {
-          msg.classList.remove('supporter-message-collapsed');
+        // Safari clamps scrollHeight to clientHeight while -webkit-line-clamp
+        // is active, so lift the clamp briefly to measure the full height,
+        // then restore it and compare against the clamped box height.
+        msg.style.webkitLineClamp = 'unset';
+        const fullHeight = msg.scrollHeight;
+        msg.style.removeProperty('-webkit-line-clamp');
+        const collapsedHeight = msg.clientHeight;
+        if (fullHeight <= collapsedHeight + 1) {
           button.hidden = true;
           return;
         }
         button.hidden = false;
         button.addEventListener('click', () => {
-          const isCollapsed = msg.classList.contains('supporter-message-collapsed');
-          msg.classList.toggle('supporter-message-collapsed', !isCollapsed);
-          button.setAttribute('aria-expanded', String(!isCollapsed));
-          button.textContent = isCollapsed ? button.dataset.showLess : button.dataset.showMore;
+          const isExpanded = msg.classList.contains('supporter-message-expanded');
+          msg.classList.toggle('supporter-message-expanded', !isExpanded);
+          button.setAttribute('aria-expanded', String(!isExpanded));
+          button.textContent = isExpanded ? button.dataset.showMore : button.dataset.showLess;
         });
       });
       const updateMessageCounter = () => {
@@ -1305,9 +1310,10 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
         supportMessage.addEventListener('input', updateMessageCounter);
         updateMessageCounter();
       }
-      supportForm.addEventListener('input', saveDraft);
-      supportForm.addEventListener('change', saveDraft);
-      supportForm.addEventListener('submit', async (event) => {
+      if (supportForm) {
+        supportForm.addEventListener('input', saveDraft);
+        supportForm.addEventListener('change', saveDraft);
+        supportForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const publicMessageChecked = !!supportForm.querySelector('input[name="publicMessage"]:checked');
         const messageLength = countCodePoints(supportMessage?.value || '');
@@ -1332,8 +1338,9 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
             document.body.append(form); form.submit();
           } else throw new Error(supportMessages.failed);
         } catch (error) { window.turnstile?.reset(); supportStatus.textContent = error.message; supportStatus.dataset.error = 'true'; supportButton.disabled = false; }
-      });
-    ` : '',
+        });
+      }
+    `,
     nonce,
     externalScript: turnstileSiteKey ? 'https://challenges.cloudflare.com/turnstile/v0/api.js' : '',
   });
@@ -1697,8 +1704,8 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .support-history p, .support-history small { margin: 0; color: var(--muted); }
     .support-history svg { width: 100%; height: 6rem; color: var(--green); }
     .supporters ul { display: grid; gap: .45rem; margin: 0; padding-left: 1.15rem; color: var(--muted); }
-    .supporter-message { white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
-    .supporter-message-collapsed { max-height: 6.2em; overflow: hidden; }
+    .supporter-message { display: -webkit-box; -webkit-box-orient: vertical; line-clamp: 4; -webkit-line-clamp: 4; overflow: hidden; white-space: pre-wrap; word-break: break-word; line-height: 1.55; max-width: 100%; }
+    .supporter-message-expanded { display: block; line-clamp: unset; -webkit-line-clamp: unset; overflow: visible; }
     .supporter-expand { width: auto; display: inline-block; padding: .2rem .5rem; margin: .25rem 0; border: 1px solid var(--line); border-radius: .4rem; background: white; color: var(--muted); font-size: .72rem; font-weight: 600; cursor: pointer; }
     .supporter-expand:hover { border-color: var(--green); color: var(--green); }
     .field-counter { margin: .35rem 0 0; color: var(--muted); font-size: .74rem; line-height: 1.45; }
