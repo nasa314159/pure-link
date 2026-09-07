@@ -80,6 +80,42 @@ describe('PureLink worker', () => {
     expect(ordinary.headers.get('location')).toBeNull();
   });
 
+  it('accepts the real-Safari opaque-Origin locale switch on shared pages', async () => {
+    env.PUBLIC_ORIGIN = 'https://pure.test';
+    // Real Safari sends an opaque Origin for same-origin form POSTs after
+    // privacy-restricted navigations; the shared-page 繁體中文 switch must
+    // still work via browser-controlled Fetch Metadata.
+    const safari = await worker.fetch(new Request('https://pure.test/locale', {
+      method: 'POST',
+      headers: { origin: 'null', 'sec-fetch-site': 'same-origin', 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'locale=zh-Hant&returnTo=%2Flocale-proof',
+      redirect: 'manual',
+    }), env);
+    expect(safari.status).toBe(303);
+    expect(safari.headers.get('location')).toBe('/locale-proof');
+    expect(safari.headers.get('set-cookie')).toContain('purelink_locale=zh-Hant');
+    expect(safari.headers.get('set-cookie')).toContain('HttpOnly');
+
+    // Opaque Origin without browser-controlled same-origin metadata stays rejected.
+    const opaqueUnproven = await worker.fetch(new Request('https://pure.test/locale', {
+      method: 'POST',
+      headers: { origin: 'null', 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'locale=zh-Hant&returnTo=%2F',
+      redirect: 'manual',
+    }), env);
+    expect(opaqueUnproven.status).toBe(403);
+    expect(await opaqueUnproven.json()).toEqual({ error: 'Invalid request origin.' });
+
+    // An explicit foreign Origin is always rejected, metadata notwithstanding.
+    const foreign = await worker.fetch(new Request('https://pure.test/locale', {
+      method: 'POST',
+      headers: { origin: 'https://attacker.example', 'sec-fetch-site': 'same-origin', 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'locale=zh-Hant&returnTo=%2F',
+      redirect: 'manual',
+    }), env);
+    expect(foreign.status).toBe(403);
+  });
+
   it('serves privacy, terms, transparency, AI credit, and refund disclosures', async () => {
     for (const path of ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy']) {
       const response = await worker.fetch(new Request(`https://pure.test/en/${path}`), env);
@@ -214,13 +250,21 @@ describe('PureLink worker', () => {
     expect(env.pure_link_db.sessions.size).toBe(1);
   });
 
-  it('does not apply the logout opaque-Origin exception to locale changes', async () => {
-    const response = await worker.fetch(new Request('https://pure.test/locale', {
+  it('applies the form-post opaque-Origin exception to locale changes only with same-origin metadata', async () => {
+    const safari = await worker.fetch(new Request('https://pure.test/locale', {
       method: 'POST',
       headers: { origin: 'null', 'sec-fetch-site': 'same-origin', 'content-type': 'application/x-www-form-urlencoded' },
       body: 'locale=en&returnTo=%2Fen%2F', redirect: 'manual',
     }), env);
-    expect(response.status).toBe(403);
+    expect(safari.status).toBe(303);
+    expect(safari.headers.get('location')).toBe('/en/');
+
+    const unproven = await worker.fetch(new Request('https://pure.test/locale', {
+      method: 'POST',
+      headers: { origin: 'null', 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'locale=en&returnTo=%2Fen%2F', redirect: 'manual',
+    }), env);
+    expect(unproven.status).toBe(403);
   });
 
   it('keeps browser payment returns informational and does not grant credits', async () => {

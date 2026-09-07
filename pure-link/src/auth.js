@@ -136,12 +136,13 @@ export function requireSameOrigin(request, env) {
   return origin === getPublicOrigin(new URL(request.url), env);
 }
 
-export function requireSameOriginForLogout(request, env) {
+export function requireSameOriginForFormPost(request, env) {
   const origin = request.headers.get('origin');
   if (origin === getPublicOrigin(new URL(request.url), env)) return true;
-  // Some privacy-preserving browser contexts send an opaque or omitted Origin
-  // for a same-origin form POST. Accept only the browser-controlled Fetch
-  // Metadata signal in that case; an explicit foreign Origin always rejects.
+  // Some privacy-preserving browser contexts (real Safari navigations) send an
+  // opaque or omitted Origin for a same-origin form POST. Accept only the
+  // browser-controlled Fetch Metadata signal in that case; an explicit foreign
+  // Origin always rejects.
   if (origin && origin !== 'null') return false;
   return request.headers.get('sec-fetch-site') === 'same-origin';
 }
