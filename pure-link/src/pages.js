@@ -657,6 +657,26 @@ export function renderStartPage(locale = 'zh-Hant', googleSiteVerification = '')
   });
 }
 
+// Returned to social link-preview crawlers for /slug URL shares. It must never
+// contain the destination URL, hostname, title, description, image, or any
+// affiliate metadata — only generic PureLink-owned metadata.
+export function renderSocialPreviewPage(locale = 'zh-Hant') {
+  const m = getMessages(locale);
+  return documentShell({
+    title: 'PureLink',
+    description: m.page.socialPreviewDescription,
+    robots: 'noindex, nofollow, noarchive',
+    locale,
+    body: `
+      <main class="home">
+        <p class="eyebrow">PURELINK</p>
+        <h1>PureLink</h1>
+        <p class="lede">${escapeHtml(m.page.socialPreviewDescription)}</p>
+      </main>
+    `,
+  });
+}
+
 export function renderUrlPreview(link, locale = 'zh-Hant') {
   const m = getMessages(locale);
   const destination = new URL(link.content);
