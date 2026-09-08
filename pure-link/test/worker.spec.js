@@ -80,6 +80,70 @@ describe('PureLink worker', () => {
     expect(ordinary.headers.get('location')).toBeNull();
   });
 
+  it('serves generic PureLink metadata to social preview crawlers instead of redirecting', async () => {
+    await createLink(env, { contentType: 'url', content: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', slug: 'social-proof' });
+
+    // Human navigation keeps the exact existing redirect.
+    const human = await worker.fetch(new Request('https://pure.test/social-proof', {
+      headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Version/17.4 Safari/605.1.15' },
+      redirect: 'manual',
+    }), env);
+    expect(human.status).toBe(302);
+    expect(human.headers.get('location')).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+    // Meta / Threads preview fetchers get a small generic PureLink page.
+    const meta = await worker.fetch(new Request('https://pure.test/social-proof', {
+      headers: { 'user-agent': 'meta-externalagent/1.1 (+https://developers.facebook.com/docs/sharing/webmasters/crawler)' },
+    }), env);
+    expect(meta.status).toBe(200);
+    const metaHtml = await meta.text();
+    expect(metaHtml).toContain('<title>PureLink</title>');
+    expect(metaHtml).toContain('property="og:title" content="PureLink"');
+    expect(metaHtml).toContain('name="twitter:card"');
+    expect(metaHtml).toMatch(/name="robots" content="noindex, nofollow, noarchive"/);
+
+    // Another common social preview fetcher gets the same generic page.
+    const discord = await worker.fetch(new Request('https://pure.test/social-proof', {
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)' },
+    }), env);
+    expect(discord.status).toBe(200);
+    const discordHtml = await discord.text();
+    expect(discordHtml).toContain('property="og:title" content="PureLink"');
+
+    // No destination leakage anywhere in the crawler HTML.
+    for (const html of [metaHtml, discordHtml]) {
+      const lowered = html.toLowerCase();
+      expect(lowered).not.toContain('youtube');
+      expect(lowered).not.toContain('dqw4w9wgxcq');
+      expect(lowered).not.toContain('www.youtube.com');
+      expect(lowered).not.toContain('og:url');
+      expect(lowered).not.toContain('rel="canonical"');
+      expect(lowered).not.toContain('affiliate');
+    }
+
+    // Search crawlers and unknown agents keep the existing redirect.
+    for (const userAgent of [
+      'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+      'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0) Chrome/100',
+      'curl/8.4.0',
+    ]) {
+      const response = await worker.fetch(new Request('https://pure.test/social-proof', {
+        headers: { 'user-agent': userAgent },
+        redirect: 'manual',
+      }), env);
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    }
+
+    // /slug+ remains the explicit human preview page, even for crawlers.
+    const crawlerPreview = await worker.fetch(new Request('https://pure.test/social-proof+', {
+      headers: { 'user-agent': 'meta-externalagent/1.1' },
+    }), env);
+    expect(crawlerPreview.status).toBe(200);
+    const previewHtml = await crawlerPreview.text();
+    expect(previewHtml).toContain('youtube.com');
+  });
+
   it('accepts the real-Safari opaque-Origin locale switch on shared pages', async () => {
     env.PUBLIC_ORIGIN = 'https://pure.test';
     // Real Safari sends an opaque Origin for same-origin form POSTs after

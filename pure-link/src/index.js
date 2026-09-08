@@ -3,12 +3,12 @@ import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requi
 import { consumeAuthenticatedCheckoutRateLimit, enforceWriteProtection, isPublicWriteProtectionConfigured } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text, xml } from './http.js';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderStartPage, renderSupportPage, renderUrlPreview } from './pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderSocialPreviewPage, renderStartPage, renderSupportPage, renderUrlPreview } from './pages.js';
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { sendReportNotification } from './discord.js';
-import { createManagementToken, createSlug, hashManagementToken } from './security.js';
+import { createManagementToken, createSlug, hashManagementToken, isSocialPreviewCrawler } from './security.js';
 import { BillingError, getCreditBalance, handleCreemWebhook } from './billing.js';
 import { handleEcpayBrowserReturn, handleEcpayCallback } from './ecpay.js';
 import { createEcpaySupportCheckout, getEcpaySupportTotals, handleEcpaySupportBrowserReturn, handleEcpaySupportCallback, isEcpaySupportCheckoutConfigured } from './ecpay-support.js';
@@ -269,6 +269,11 @@ export async function routeRequest(request, env, context) {
   if (!isAvailable(link)) return html(renderNotFoundPage(locale), { status: 404 });
 
   if (link.content_type === 'url') {
+    // Social preview crawlers follow 302 redirects while rendering preview
+    // cards, which would surface the destination URL, host, and preview image
+    // before any human clicks. Give them generic PureLink-owned metadata only.
+    // The explicit human preview page /slug+ keeps its existing behavior.
+    if (!isPreview && isSocialPreviewCrawler(request)) return html(renderSocialPreviewPage(locale));
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: isPreview ? 'preview' : 'open', contentType: 'url' });
     return isPreview ? html(renderUrlPreview(link, locale)) : redirect(link.content, 302);
   }
@@ -278,7 +283,8 @@ export async function routeRequest(request, env, context) {
   }
   if (link.content_type === 'card') {
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'card' });
-    return html(renderCardPage(link, locale));
+    const nonce = createSlug() + createSlug();
+    return html(renderCardPage(link, locale, nonce), {}, { scriptNonce: nonce });
   }
   return html(renderNotFoundPage(locale), { status: 404 });
 }

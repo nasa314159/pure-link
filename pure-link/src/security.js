@@ -34,6 +34,15 @@ export function constantTimeEqual(left, right) {
   return difference === 0;
 }
 
+// Link-preview fetchers used by social platforms. Matched as lowercase
+// substrings of the User-Agent; deliberately excludes search crawlers
+// (Googlebot, Bingbot, DuckDuckBot, …), which keep normal redirect behavior.
+const SOCIAL_PREVIEW_UA_PATTERN = /facebookexternalhit|meta-externalagent|meta-externaltest|facebookcatalog|discordbot|slackbot|telegrambot|twitterbot|linkedinbot|whatsapp/i;
+
+export function isSocialPreviewCrawler(request) {
+  return SOCIAL_PREVIEW_UA_PATTERN.test(request.headers.get('user-agent') || '');
+}
+
 function bytesToBase64Url(bytes) {
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);

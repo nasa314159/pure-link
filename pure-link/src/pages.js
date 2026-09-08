@@ -657,6 +657,26 @@ export function renderStartPage(locale = 'zh-Hant', googleSiteVerification = '')
   });
 }
 
+// Returned to social link-preview crawlers for /slug URL shares. It must never
+// contain the destination URL, hostname, title, description, image, or any
+// affiliate metadata — only generic PureLink-owned metadata.
+export function renderSocialPreviewPage(locale = 'zh-Hant') {
+  const m = getMessages(locale);
+  return documentShell({
+    title: 'PureLink',
+    description: m.page.socialPreviewDescription,
+    robots: 'noindex, nofollow, noarchive',
+    locale,
+    body: `
+      <main class="home">
+        <p class="eyebrow">PURELINK</p>
+        <h1>PureLink</h1>
+        <p class="lede">${escapeHtml(m.page.socialPreviewDescription)}</p>
+      </main>
+    `,
+  });
+}
+
 export function renderUrlPreview(link, locale = 'zh-Hant') {
   const m = getMessages(locale);
   const destination = new URL(link.content);
@@ -726,25 +746,28 @@ export function renderFormulaPage(link, locale = 'zh-Hant') {
   });
 }
 
-export function renderCardPage(link, locale = 'zh-Hant') {
+export function renderCardPage(link, locale = 'zh-Hant', nonce = '') {
   const m = getMessages(locale);
   const signature = link.signature ? `<p class="signature">— ${escapeHtml(link.signature)}</p>` : '';
+  const cardContentId = `card-content-${Math.random().toString(36).slice(2, 9)}`;
   return documentShell({
     title: `${m.page.cardTitle} — PureLink`,
     description: m.page.cardDescription,
     robots: 'noindex, nofollow, noarchive',
     canonicalPath: `/${link.slug}`,
     locale,
+    nonce,
     body: `
       <main class="page card-page theme-${escapeHtml(link.theme || 'paper')}">
         <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
         <article class="panel content-panel card-panel">
           <div class="share-export card-export" id="share-export">
             <p class="eyebrow" data-export-brand>PURELINK · A SMALL CARD</p>
-            <p class="shared-content card-copy">${escapeHtml(link.content)}</p>
+            <p class="shared-content card-copy" id="${cardContentId}">${escapeHtml(link.content)}</p>
             ${signature}
           </div>
           <label class="export-brand-option"><input type="checkbox" data-export-brand-toggle checked><span><strong>${m.content.addBrandCard}</strong><small>${m.content.brandHelp}</small></span></label>
+          <button class="card-expand" type="button" hidden aria-expanded="false" aria-controls="${cardContentId}" data-show-more="${escapeHtml(m.support.showMore)}" data-show-less="${escapeHtml(m.support.showLess)}">${escapeHtml(m.support.showMore)}</button>
           <div class="content-actions">
             <button class="secondary-button" type="button" data-copy-content>${m.page.copyText}</button>
             <button class="secondary-button" type="button" data-download-png data-filename="purelink-${escapeHtml(link.slug)}-card.png">${m.content.downloadPng}</button>
@@ -757,6 +780,49 @@ export function renderCardPage(link, locale = 'zh-Hant') {
           ${languageSwitcher(locale, `/${link.slug}`)}
         </article>
       </main>
+    `,
+    script: `
+      // Mirrors the supporter-message collapse: 6-line clamp on long card
+      // content, localized Show more / Show less, and ResizeObserver-based
+      // re-evaluation while collapsed.
+      document.querySelectorAll('.card-copy').forEach((msg) => {
+        const button = msg.closest('.card-panel')?.querySelector('.card-expand');
+        if (!button) return;
+        const evaluateCardOverflow = () => {
+          // Expanded messages keep Show less visible; a resize never auto-collapses them.
+          if (msg.classList.contains('card-copy-expanded')) return;
+          msg.style.webkitLineClamp = 'unset';
+          const fullHeight = msg.scrollHeight;
+          msg.style.removeProperty('-webkit-line-clamp');
+          const collapsedHeight = msg.clientHeight;
+          button.hidden = fullHeight <= collapsedHeight + 1;
+          if (button.hidden) {
+            button.setAttribute('aria-expanded', 'false');
+            button.textContent = button.dataset.showMore;
+          }
+        };
+        evaluateCardOverflow();
+        button.addEventListener('click', () => {
+          const isExpanded = msg.classList.contains('card-copy-expanded');
+          msg.classList.toggle('card-copy-expanded', !isExpanded);
+          button.setAttribute('aria-expanded', String(!isExpanded));
+          button.textContent = isExpanded ? button.dataset.showMore : button.dataset.showLess;
+          // After collapsing, re-check whether the collapsed text still overflows.
+          if (isExpanded) evaluateCardOverflow();
+        });
+        // Re-evaluate when the rendered message width changes (viewport, panel,
+        // or container). Gating on width avoids reacting to the expand/collapse
+        // height change, and the clamp lift is always restored before the
+        // callback returns, so the observed box never settles at a new size.
+        if (typeof ResizeObserver !== 'function') return;
+        let lastWidth = msg.clientWidth;
+        const resizeObserver = new ResizeObserver(() => {
+          if (msg.clientWidth === lastWidth) return;
+          lastWidth = msg.clientWidth;
+          evaluateCardOverflow();
+        });
+        resizeObserver.observe(msg);
+      });
     `,
     externalScript: '/assets/content-actions.js',
   });
@@ -1743,7 +1809,10 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .export-brand-option input { margin-top: .15rem; accent-color: var(--green); }
     .export-brand-option span { display: grid; gap: .2rem; }
     .export-brand-option small { color: var(--muted); line-height: 1.45; }
-    .card-copy { font-family: ui-serif, "New York", Georgia, serif; font-size: clamp(1.35rem, 4vw, 2.2rem); line-height: 1.7; }
+    .card-copy { font-family: ui-serif, "New York", Georgia, serif; font-size: clamp(1.35rem, 4vw, 2.2rem); line-height: 1.7; display: -webkit-box; -webkit-box-orient: vertical; line-clamp: 6; -webkit-line-clamp: 6; overflow: hidden; white-space: pre-wrap; word-break: break-word; max-width: 100%; }
+    .card-copy-expanded, .card-export-reveal { display: block; line-clamp: unset; -webkit-line-clamp: unset; overflow: visible; }
+    .card-expand { width: auto; display: inline-block; padding: .2rem .5rem; margin: .25rem 0; border: 1px solid var(--line); border-radius: .4rem; background: white; color: var(--muted); font-size: .72rem; font-weight: 600; cursor: pointer; }
+    .card-expand:hover { border-color: var(--green); color: var(--green); }
     .signature { margin: 1.5rem 0 0; color: var(--muted); text-align: right; }
     .notice { margin: 2.5rem 0 0; color: var(--muted); font-size: .78rem; line-height: 1.6; }
     .report-link { display: inline-block; margin-top: 1rem; color: var(--muted); font-size: .75rem; }
