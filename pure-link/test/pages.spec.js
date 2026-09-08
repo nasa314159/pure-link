@@ -202,13 +202,85 @@ describe('interactive pages', () => {
     expect(html).toContain('>Report this PureLink</a>');
   });
 
+  it('clamps long card content to six lines with a hidden-by-default localized Show more button', () => {
+    const html = renderCardPage({ slug: 'kind', content: 'hello card', theme: 'paper' }, 'en', 'test-nonce');
+    const button = html.match(/<button class="card-expand"[^>]*>/)[0];
+    expect(button).toContain('hidden');
+    expect(button).toContain('aria-expanded="false"');
+    const controlsId = button.match(/aria-controls="([^"]+)"/)[1];
+    expect(html).toContain(`class="shared-content card-copy" id="${controlsId}"`);
+    const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+    const cardCopyRule = css.match(/\.card-copy \{([^}]*)\}/)[1];
+    expect(cardCopyRule).toMatch(/line-clamp:\s*6/);
+    expect(cardCopyRule).toMatch(/-webkit-line-clamp:\s*6/);
+    expect(cardCopyRule).toContain('overflow: hidden');
+    expect(cardCopyRule).toContain('white-space: pre-wrap');
+    expect(cardCopyRule).toContain('word-break: break-word');
+    const expandedRule = css.match(/\.card-copy-expanded, \.card-export-reveal \{([^}]*)\}/)[1];
+    expect(expandedRule).toContain('line-clamp: unset');
+    expect(expandedRule).toContain('-webkit-line-clamp: unset');
+    expect(expandedRule).toContain('overflow: visible');
+    // Supporter messages keep their own 4-line clamp.
+    expect(css).toMatch(/\.supporter-message \{[^}]*-webkit-line-clamp:\s*4/);
+  });
+
+  it('localizes the card Show more / Show less button for both locales', () => {
+    const zh = renderCardPage({ slug: 'kind', content: 'hello card', theme: 'paper' }, 'zh-Hant', 'test-nonce');
+    const en = renderCardPage({ slug: 'kind', content: 'hello card', theme: 'paper' }, 'en', 'test-nonce');
+    expect(zh).toContain('data-show-more="顯示更多" data-show-less="收合"');
+    expect(zh).toMatch(/<button class="card-expand"[^>]*>顯示更多<\/button>/);
+    expect(en).toContain('data-show-more="Show more" data-show-less="Show less"');
+    expect(en).toMatch(/<button class="card-expand"[^>]*>Show more<\/button>/);
+  });
+
+  it('gives the card collapse ResizeObserver behavior mirroring the supporter implementation', () => {
+    const html = renderCardPage({ slug: 'kind', content: 'hello card', theme: 'paper' }, 'en', 'test-nonce');
+    const script = extractScript(html);
+    expect(script).toContain('const evaluateCardOverflow = () => {');
+    // Expanded content is never auto-collapsed by a resize.
+    expect(script).toMatch(/if \(msg\.classList\.contains\('card-copy-expanded'\)\) return;/);
+    // Re-evaluation is width-gated and reuses the same overflow evaluation.
+    expect(script).toMatch(/let lastWidth = msg\.clientWidth;\n        const resizeObserver = new ResizeObserver\(\(\) => \{\n          if \(msg\.clientWidth === lastWidth\) return;\n          lastWidth = msg\.clientWidth;\n          evaluateCardOverflow\(\);\n        \}\);\n        resizeObserver\.observe\(msg\);/);
+    // Collapsing after a resize re-checks whether the button is still needed.
+    expect(script).toContain('if (isExpanded) evaluateCardOverflow();');
+    expect(script).toContain("msg.classList.toggle('card-copy-expanded', !isExpanded)");
+    expect(script).toContain("button.setAttribute('aria-expanded', String(!isExpanded))");
+    expect(script).toContain('button.textContent = isExpanded ? button.dataset.showMore : button.dataset.showLess');
+    expect(script).toContain('button.hidden = fullHeight <= collapsedHeight + 1;');
+    // Graceful fallback without ResizeObserver keeps initial-load behavior.
+    expect(script).toContain("if (typeof ResizeObserver !== 'function') return;");
+    // No polling, mutation observers, or clone measurement.
+    expect(script).not.toContain('setInterval');
+    expect(script).not.toContain('MutationObserver');
+    expect(script).not.toContain('cloneNode');
+  });
+
+  it('keeps card content and signature escape-equivalent with the collapse markup in place', () => {
+    const content = '第一行\n<script>alert(1)</script> & "quotes" 完';
+    const signature = '簽名作者';
+    const escaped = (value) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+    for (const locale of ['zh-Hant', 'en']) {
+      const html = renderCardPage({ slug: 'kind', content, theme: 'paper', signature }, locale, 'test-nonce');
+      expect(html).toContain(`class="shared-content card-copy" id="card-content-`);
+      expect(html).toContain(`">${escaped(content)}</p>`);
+      expect(html).toContain(`— ${escaped(signature)}</p>`);
+      expect(html).toContain(`<textarea id="raw-content" hidden>${escaped(content)}</textarea>`);
+    }
+    // Formula shared pages stay untouched by the card collapse controls.
+    const formula = renderFormulaPage({ slug: 'math', content: 'x²' }, 'en');
+    expect(formula).not.toMatch(/<button class="card-expand"/);
+    expect(formula).not.toMatch(/class="[^"]*card-copy/);
+    expect(formula).not.toContain('data-show-more');
+  });
+
   it('keeps user-supplied shared content identical across locales', () => {
     const content = 'x² + 今天的公式 = 好玩的數學 <script>alert(1)</script>';
     const signature = '簽名作者';
     const escaped = (value) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     for (const locale of ['zh-Hant', 'en']) {
-      const html = renderCardPage({ slug: 'kind', content, theme: 'paper', signature }, locale);
-      expect(html).toContain(`<p class="shared-content card-copy">${escaped(content)}</p>`);
+      const html = renderCardPage({ slug: 'kind', content, theme: 'paper', signature }, locale, 'test-nonce');
+      expect(html).toContain(`class="shared-content card-copy" id="card-content-`);
+      expect(html).toContain(`">${escaped(content)}</p>`);
       expect(html).toContain(`— ${escaped(signature)}`);
       const formula = renderFormulaPage({ slug: 'math', content }, locale);
       expect(formula).toContain(`<textarea id="raw-content" hidden>${escaped(content)}</textarea>`);

@@ -61,6 +61,11 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
   button.dataset.exportState = 'working';
   button.disabled = true;
   button.textContent = messages.working;
+  // A collapsed Card shared page clamps its content to six lines; the PNG
+  // export must always capture the full card, so lift the clamp for the
+  // capture and restore it afterwards.
+  const clampedCardCopies = [...document.querySelectorAll('.card-copy')];
+  clampedCardCopies.forEach((cardCopy) => cardCopy.classList.add('card-export-reveal'));
 
   try {
     await document.fonts.ready;
@@ -80,6 +85,7 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
     button.dataset.exportState = 'error';
     button.textContent = messages.failed;
   } finally {
+    clampedCardCopies.forEach((cardCopy) => cardCopy.classList.remove('card-export-reveal'));
     setTimeout(() => {
       button.textContent = originalLabel;
       button.disabled = false;

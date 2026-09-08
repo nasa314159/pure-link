@@ -278,7 +278,8 @@ export async function routeRequest(request, env, context) {
   }
   if (link.content_type === 'card') {
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'card' });
-    return html(renderCardPage(link, locale));
+    const nonce = createSlug() + createSlug();
+    return html(renderCardPage(link, locale, nonce), {}, { scriptNonce: nonce });
   }
   return html(renderNotFoundPage(locale), { status: 404 });
 }
