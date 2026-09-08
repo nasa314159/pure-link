@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderStartPage, renderSupportPage } from '../src/pages.js';
 
 describe('interactive pages', () => {
@@ -286,6 +287,50 @@ describe('interactive pages', () => {
       expect(formula).toContain(`<textarea id="raw-content" hidden>${escaped(content)}</textarea>`);
       expect(formula).toContain(`<pre class="formula-source">${escaped(content)}</pre>`);
     }
+  });
+
+  it('wraps shared formula output in a fit-to-width scaler without changing the source', () => {
+    const content = 'x² + y² = z²';
+    const html = renderFormulaPage({ slug: 'math', content }, 'en');
+    expect(html).toMatch(/<div class="shared-content formula-rendered"><div class="formula-scale" data-formula-scale><span class="katex-display">/);
+    // Original source content stays untouched wherever it is shown.
+    expect(html).toContain('<pre class="formula-source">x² + y² = z²</pre>');
+    expect(html).toContain('<textarea id="raw-content" hidden>x² + y² = z²</textarea>');
+    const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
+    const scaleRule = css.match(/\.formula-scale \{([^}]*)\}/)[1];
+    expect(scaleRule).toContain('--formula-scale: 100%');
+    expect(scaleRule).toContain('font-size: var(--formula-scale, 100%)');
+    expect(scaleRule).toContain('overflow-x: auto');
+    // Overflowing centered math must stay reachable by horizontal scrolling.
+    expect(css).toMatch(/\.formula-scale \.katex-display > \.katex \{[^}]*display: inline-block/);
+  });
+
+  it('scales shared formulas down to a readability floor with scroll fallback, without affecting cards', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    expect(contentActions).toContain('const FORMULA_MIN_SCALE = 0.7');
+    expect(contentActions).toMatch(/Math\.max\(FORMULA_MIN_SCALE, Math\.min\(1, availableWidth \/ naturalWidth\)\)/);
+    // Measurement uses the rendered formula, not viewport heuristics.
+    expect(contentActions).toContain('formulaScale.scrollWidth');
+    expect(contentActions).toContain('formulaScale.clientWidth');
+    expect(contentActions).toMatch(/const formulaResizeObserver = new ResizeObserver/);
+    expect(contentActions).toContain('formulaResizeObserver.observe(formulaScale)');
+    expect(contentActions).not.toContain('setInterval');
+    expect(contentActions).not.toContain('MutationObserver');
+    // PNG capture restores the unscaled, non-scrolling rendering first and re-fits after.
+    const exportIndex = contentActions.indexOf("querySelector('[data-download-png]')");
+    const captureIndex = contentActions.indexOf('toPng(captureTarget');
+    const restoreIndex = contentActions.indexOf("setProperty('--formula-scale', '100%')", exportIndex);
+    const overflowResetIndex = contentActions.indexOf("setProperty('overflow', 'visible')", exportIndex);
+    const reFitIndex = contentActions.indexOf('fitFormulaToWidth();', contentActions.indexOf("removeProperty('overflow')", exportIndex));
+    expect(restoreIndex).toBeGreaterThan(-1);
+    expect(overflowResetIndex).toBeGreaterThan(restoreIndex);
+    expect(overflowResetIndex).toBeLessThan(captureIndex);
+    expect(reFitIndex).toBeGreaterThan(captureIndex);
+    // Card shared pages carry no formula scaler markup; the shared-page
+    // behavior lives in the bundle's [data-formula-scale] guard.
+    const card = renderCardPage({ slug: 'kind', content: 'hello', theme: 'paper' }, 'en', 'test-nonce');
+    expect(card).not.toContain('data-formula-scale');
+    expect(card).not.toContain('class="formula-scale"');
   });
 
   it('keeps shared-content routes unprefixed and switches locale via the /locale endpoint', () => {
