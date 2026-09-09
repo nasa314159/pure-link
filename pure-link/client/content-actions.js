@@ -12,41 +12,57 @@ brandToggle?.addEventListener('change', () => {
   exportBrand.hidden = !brandToggle.checked;
 });
 
-// Shared Formula pages fit their rendered KaTeX to the available panel width.
-// KaTeX layout is em-based, so multiplying the wrapper font-size (via a plain
-// percentage custom property) scales the whole formula proportionally without
-// touching the KaTeX source. Wide formulas shrink down to the readability
-// floor; anything still wider falls back to the wrapper's overflow-x
-// scrolling instead of shrinking further.
-const formulaScale = /** @type {HTMLElement | null} */ (document.querySelector('[data-formula-scale]'));
+// Shared Formula pages fit the rendered KaTeX to the available panel width.
+// The KaTeX render is kept untouched at its natural 100% size and is scaled
+// as one visual box with a CSS transform, because changing the wrapper
+// font-size misaligns KaTeX's em-based internals in Safari. The outer
+// wrapper owns available width and scrolling, the middle wrapper is sized to
+// the scaled visual box so no blank gap or overlap remains, and the inner
+// wrapper holds the untouched render. Formulas still wider at the readability
+// floor fall back to horizontal scrolling instead of shrinking further.
+const formulaFit = /** @type {HTMLElement | null} */ (document.querySelector('[data-formula-scale]'));
+const formulaStretch = /** @type {HTMLElement | null} */ (formulaFit?.querySelector('.formula-stretch') ?? null);
+const formulaBox = /** @type {HTMLElement | null} */ (formulaFit?.querySelector('.formula-box') ?? null);
 const FORMULA_MIN_SCALE = 0.7;
-let formulaScaleLastWidth = formulaScale?.clientWidth ?? 0;
+let formulaLastWidth = formulaFit?.clientWidth ?? 0;
 
 function fitFormulaToWidth() {
-  if (!formulaScale) return;
-  // Measure the natural (unscaled) width, then scale down proportionally.
-  formulaScale.style.setProperty('--formula-scale', '100%');
-  const naturalWidth = formulaScale.scrollWidth;
-  const availableWidth = formulaScale.clientWidth;
-  if (naturalWidth <= availableWidth) return;
+  if (!formulaFit || !formulaStretch || !formulaBox) return;
+  // Transforms never affect layout boxes, so the untouched render can be
+  // measured at its natural size whatever the current scale is.
+  const naturalWidth = formulaBox.offsetWidth;
+  const naturalHeight = formulaBox.offsetHeight;
+  const availableWidth = formulaFit.clientWidth;
+  if (naturalWidth <= availableWidth) {
+    // Fits: keep the formula at its original size and layout.
+    formulaBox.style.removeProperty('transform');
+    formulaStretch.style.width = `${naturalWidth}px`;
+    formulaStretch.style.height = `${naturalHeight}px`;
+    return;
+  }
   const scale = Math.max(FORMULA_MIN_SCALE, Math.min(1, availableWidth / naturalWidth));
-  formulaScale.style.setProperty('--formula-scale', `${Math.floor(scale * 1000) / 10}%`);
+  formulaBox.style.transform = `scale(${scale})`;
+  // Compensate the middle wrapper for the transformed box so the outer
+  // wrapper's layout height matches the visual height and its scrollable
+  // width matches the scaled visual width.
+  formulaStretch.style.width = `${Math.ceil(scale * naturalWidth)}px`;
+  formulaStretch.style.height = `${Math.ceil(scale * naturalHeight)}px`;
 }
 
-if (formulaScale) {
+if (formulaFit && formulaStretch && formulaBox) {
   fitFormulaToWidth();
-  formulaScaleLastWidth = formulaScale.clientWidth;
+  formulaLastWidth = formulaFit.clientWidth;
   // Web fonts change KaTeX metrics after layout, so re-fit once they settle.
   document.fonts?.ready?.then(fitFormulaToWidth);
   if (typeof ResizeObserver === 'function') {
     const formulaResizeObserver = new ResizeObserver(() => {
-      // Scaling changes the formula height, never the observed box width;
+      // Scaling changes the compensated height, never the observed width;
       // only genuine container-width changes (viewport, scrollbar) re-fit.
-      if (formulaScale.clientWidth === formulaScaleLastWidth) return;
-      formulaScaleLastWidth = formulaScale.clientWidth;
+      if (formulaFit.clientWidth === formulaLastWidth) return;
+      formulaLastWidth = formulaFit.clientWidth;
       fitFormulaToWidth();
     });
-    formulaResizeObserver.observe(formulaScale);
+    formulaResizeObserver.observe(formulaFit);
   }
 }
 
@@ -104,16 +120,13 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
   // capture and restore it afterwards.
   const clampedCardCopies = [...document.querySelectorAll('.card-copy')];
   clampedCardCopies.forEach((cardCopy) => cardCopy.classList.add('card-export-reveal'));
-  // Formula pages shrink wide formulas responsively; the PNG export must keep
-  // its original output exactly. html-to-image sizes the capture from the
-  // live element's client box and copies each node's computed style, so the
-  // live rendering is fully restored to the unscaled, non-scrolling layout
-  // (the pre-scaling rendering) for the capture and re-fit afterwards.
+  // Formula pages shrink wide formulas responsively for display only; the PNG
+  // export must keep its known-good output exactly. html-to-image sizes the
+  // capture from the live element's client box and copies each node's
+  // computed style, so all transform/layout compensation is removed for the
+  // capture (restoring the original natural rendering) and re-fit afterwards.
   const scaledFormulas = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('[data-formula-scale]')]);
-  scaledFormulas.forEach((formula) => {
-    formula.style.setProperty('--formula-scale', '100%');
-    formula.style.setProperty('overflow', 'visible');
-  });
+  scaledFormulas.forEach(resetFormulaDisplay);
 
   try {
     await document.fonts.ready;
@@ -134,10 +147,7 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
     button.textContent = messages.failed;
   } finally {
     clampedCardCopies.forEach((cardCopy) => cardCopy.classList.remove('card-export-reveal'));
-    scaledFormulas.forEach((formula) => {
-      formula.style.removeProperty('--formula-scale');
-      formula.style.removeProperty('overflow');
-    });
+    scaledFormulas.forEach(resetFormulaDisplay);
     fitFormulaToWidth();
     setTimeout(() => {
       button.textContent = originalLabel;
@@ -150,6 +160,15 @@ function setTemporaryLabel(button, label) {
   const originalLabel = button.textContent;
   button.textContent = label;
   setTimeout(() => { button.textContent = originalLabel; }, 1600);
+}
+
+function resetFormulaDisplay(fit) {
+  fit.querySelectorAll('.formula-stretch, .formula-box').forEach((element) => {
+    const node = /** @type {HTMLElement} */ (element);
+    node.style.removeProperty('transform');
+    node.style.removeProperty('width');
+    node.style.removeProperty('height');
+  });
 }
 
 async function copyText(value) {
