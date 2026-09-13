@@ -13,51 +13,43 @@ brandToggle?.addEventListener('change', () => {
 });
 
 // Shared Formula pages fit the rendered KaTeX to the available panel width.
-// The KaTeX render is kept untouched at its natural 100% size and is scaled
-// as one visual box with a CSS transform, because changing the wrapper
-// font-size misaligns KaTeX's em-based internals in Safari. The outer
-// wrapper owns available width and scrolling, the middle wrapper is sized to
-// the scaled visual box so no blank gap or overlap remains, and the inner
-// wrapper holds the untouched render. Formulas still wider at the readability
-// floor fall back to horizontal scrolling instead of shrinking further.
+// The KaTeX render is kept untouched at its natural 100% size and is shrunk
+// with the layout-participating CSS zoom property on the rendered box, so the
+// outer wrapper needs no manual size compensation. offsetWidth/clientWidth
+// report the box in its own coordinate space and exclude the zoom effect, so
+// the natural width stays measurable while zoomed. Formulas still wider at
+// the readability floor fall back to horizontal scrolling instead of
+// shrinking further.
 const formulaFit = /** @type {HTMLElement | null} */ (document.querySelector('[data-formula-scale]'));
-const formulaStretch = /** @type {HTMLElement | null} */ (formulaFit?.querySelector('.formula-stretch') ?? null);
 const formulaBox = /** @type {HTMLElement | null} */ (formulaFit?.querySelector('.formula-box') ?? null);
 const FORMULA_MIN_SCALE = 0.7;
 let formulaLastWidth = formulaFit?.clientWidth ?? 0;
 
 function fitFormulaToWidth() {
-  if (!formulaFit || !formulaStretch || !formulaBox) return;
-  // Transforms never affect layout boxes, so the untouched render can be
-  // measured at its natural size whatever the current scale is.
+  if (!formulaFit || !formulaBox) return;
   const naturalWidth = formulaBox.offsetWidth;
-  const naturalHeight = formulaBox.offsetHeight;
   const availableWidth = formulaFit.clientWidth;
   if (naturalWidth <= availableWidth) {
     // Fits: keep the formula at its original size and layout.
-    formulaBox.style.removeProperty('transform');
-    formulaStretch.style.width = `${naturalWidth}px`;
-    formulaStretch.style.height = `${naturalHeight}px`;
+    formulaBox.style.removeProperty('zoom');
     return;
   }
   const scale = Math.max(FORMULA_MIN_SCALE, Math.min(1, availableWidth / naturalWidth));
-  formulaBox.style.transform = `scale(${scale})`;
-  // Compensate the middle wrapper for the transformed box so the outer
-  // wrapper's layout height matches the visual height and its scrollable
-  // width matches the scaled visual width.
-  formulaStretch.style.width = `${Math.ceil(scale * naturalWidth)}px`;
-  formulaStretch.style.height = `${Math.ceil(scale * naturalHeight)}px`;
+  // Floor to three decimals so rounding can never leave a 1px overflow
+  // scrollbar when the formula fits.
+  formulaBox.style.zoom = String(Math.floor(scale * 1000) / 1000);
 }
 
-if (formulaFit && formulaStretch && formulaBox) {
+if (formulaFit && formulaBox) {
   fitFormulaToWidth();
   formulaLastWidth = formulaFit.clientWidth;
   // Web fonts change KaTeX metrics after layout, so re-fit once they settle.
   document.fonts?.ready?.then(fitFormulaToWidth);
   if (typeof ResizeObserver === 'function') {
     const formulaResizeObserver = new ResizeObserver(() => {
-      // Scaling changes the compensated height, never the observed width;
-      // only genuine container-width changes (viewport, scrollbar) re-fit.
+      // Zooming changes the box's layout contribution, never the observed
+      // width; only genuine container-width changes (viewport, scrollbar)
+      // re-fit.
       if (formulaFit.clientWidth === formulaLastWidth) return;
       formulaLastWidth = formulaFit.clientWidth;
       fitFormulaToWidth();
@@ -123,8 +115,8 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
   // Formula pages shrink wide formulas responsively for display only; the PNG
   // export must keep its known-good output exactly. html-to-image sizes the
   // capture from the live element's client box and copies each node's
-  // computed style, so all transform/layout compensation is removed for the
-  // capture (restoring the original natural rendering) and re-fit afterwards.
+  // computed style, so the zoom is removed for the capture (restoring the
+  // original natural rendering) and re-fit afterwards.
   const scaledFormulas = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('[data-formula-scale]')]);
   scaledFormulas.forEach(resetFormulaDisplay);
 
@@ -163,11 +155,8 @@ function setTemporaryLabel(button, label) {
 }
 
 function resetFormulaDisplay(fit) {
-  fit.querySelectorAll('.formula-stretch, .formula-box').forEach((element) => {
-    const node = /** @type {HTMLElement} */ (element);
-    node.style.removeProperty('transform');
-    node.style.removeProperty('width');
-    node.style.removeProperty('height');
+  fit.querySelectorAll('.formula-box').forEach((element) => {
+    /** @type {HTMLElement} */ (element).style.removeProperty('zoom');
   });
 }
 
