@@ -722,7 +722,7 @@ export function renderFormulaPage(link, locale = 'zh-Hant') {
         <article class="panel content-panel">
           <div class="share-export formula-export" id="share-export">
             <p class="eyebrow" data-export-brand>PURELINK · FORMULA</p>
-            <div class="shared-content formula-rendered"><div class="formula-fit" data-formula-scale><div class="formula-stretch"><div class="formula-box">${renderFormulaContent(link.content)}</div></div></div></div>
+            <div class="shared-content formula-rendered"><div class="formula-fit" data-formula-scale><div class="formula-box">${renderFormulaContent(link.content)}</div></div></div>
           </div>
           <label class="export-brand-option"><input type="checkbox" data-export-brand-toggle checked><span><strong>${m.content.addBrandFormula}</strong><small>${m.content.brandHelp}</small></span></label>
           <div class="content-actions">
@@ -1799,8 +1799,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .shared-content { margin: 2rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
     .formula-rendered { font-size: clamp(1.05rem, 3vw, 1.45rem); line-height: 1.8; text-align: center; }
     .formula-fit { overflow-x: auto; overflow-y: hidden; }
-    .formula-stretch { margin-inline: auto; }
-    .formula-box { width: max-content; display: flow-root; transform-origin: top left; }
+    .formula-box { width: max-content; margin-inline: auto; }
     .formula-source { margin: .75rem 0 0; padding: 1.25rem; border-radius: 1.25rem; background: #edf2ef; font-size: .88rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
     .source-details { margin-top: 1.5rem; color: var(--muted); }
     .source-details summary { cursor: pointer; font-weight: 650; }

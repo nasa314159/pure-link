@@ -289,48 +289,48 @@ describe('interactive pages', () => {
     }
   });
 
-  it('wraps shared formula output in transform-scaling wrappers without changing the source', () => {
+  it('wraps shared formula output in a zoom-scaling box without changing the source', () => {
     const content = 'x² + y² = z²';
     const html = renderFormulaPage({ slug: 'math', content }, 'en');
-    expect(html).toMatch(/<div class="shared-content formula-rendered"><div class="formula-fit" data-formula-scale><div class="formula-stretch"><div class="formula-box"><span class="katex-display">/);
+    expect(html).toMatch(/<div class="shared-content formula-rendered"><div class="formula-fit" data-formula-scale><div class="formula-box"><span class="katex-display">/);
     // Original source content stays untouched wherever it is shown.
     expect(html).toContain('<pre class="formula-source">x² + y² = z²</pre>');
     expect(html).toContain('<textarea id="raw-content" hidden>x² + y² = z²</textarea>');
     const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
     // The outer wrapper owns overflow; the inner wrapper holds the untouched
-    // render, scaled as one visual box around its top-left corner.
+    // render and is scaled through the layout-participating zoom property.
     expect(css.match(/\.formula-fit \{([^}]*)\}/)[1]).toContain('overflow-x: auto');
     const boxRule = css.match(/\.formula-box \{([^}]*)\}/)[1];
     expect(boxRule).toContain('width: max-content');
-    expect(boxRule).toContain('transform-origin: top left');
-    // KaTeX keeps its natural internal size: no font-size scaling of the
-    // render and no overrides of KaTeX's own rules.
+    expect(boxRule).toContain('margin-inline: auto');
+    // KaTeX keeps its natural internal size: no font-size scaling, no
+    // transform wrapper compensation, no overrides of KaTeX's own rules.
     expect(css).not.toContain('--formula-scale');
+    expect(css).not.toContain('transform');
+    expect(css).not.toContain('formula-stretch');
     expect(css).not.toContain('.formula-box .katex');
     expect(css).not.toContain('.formula-fit .katex');
   });
 
-  it('scales the rendered formula as one box to a readability floor with scroll fallback, without affecting cards', () => {
+  it('zooms the rendered formula to a readability floor with scroll fallback, without affecting cards', () => {
     const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
     expect(contentActions).toContain('const FORMULA_MIN_SCALE = 0.7');
     expect(contentActions).toMatch(/Math\.max\(FORMULA_MIN_SCALE, Math\.min\(1, availableWidth \/ naturalWidth\)\)/);
-    // Natural size is measured on the untouched render; transforms never
-    // affect layout boxes.
+    // offsetWidth/clientWidth report the box in its own coordinate space and
+    // exclude the zoom effect, so the natural width stays measurable while
+    // zoomed.
     expect(contentActions).toContain('formulaBox.offsetWidth');
-    expect(contentActions).toContain('formulaBox.offsetHeight');
     expect(contentActions).toContain('formulaFit.clientWidth');
-    expect(contentActions).toMatch(/formulaBox\.style\.transform = `scale\(\$\{scale\}\)`/);
-    // The middle wrapper is sized to the scaled visual box (height
-    // compensation and scaled scrollable width).
-    expect(contentActions).toMatch(/formulaStretch\.style\.width = `\$\{Math\.ceil\(scale \* naturalWidth\)\}px`/);
-    expect(contentActions).toMatch(/formulaStretch\.style\.height = `\$\{Math\.ceil\(scale \* naturalHeight\)\}px`/);
+    expect(contentActions).toMatch(/formulaBox\.style\.zoom = String\(Math\.floor\(scale \* 1000\) \/ 1000\)/);
+    expect(contentActions).toContain("removeProperty('zoom')");
     expect(contentActions).toMatch(/const formulaResizeObserver = new ResizeObserver/);
     expect(contentActions).toContain('formulaResizeObserver.observe(formulaFit)');
     expect(contentActions).not.toContain('setInterval');
     expect(contentActions).not.toContain('MutationObserver');
-    // No font-size-based scaling is left over.
+    // No font-size or transform scaling is left over.
     expect(contentActions).not.toContain('--formula-scale');
-    // PNG capture neutralizes the scaling before capture and re-fits after.
+    expect(contentActions).not.toContain('style.transform');
+    // PNG capture neutralizes the zoom before capture and re-fits after.
     const exportIndex = contentActions.indexOf("querySelector('[data-download-png]')");
     const captureIndex = contentActions.indexOf('toPng(captureTarget');
     const resetIndex = contentActions.indexOf('scaledFormulas.forEach(resetFormulaDisplay);', exportIndex);
