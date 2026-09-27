@@ -139,39 +139,77 @@ export async function consumeFormulaAllowance({ db, userId, isAdmin = false }) {
   `).bind(userId, dailyLimit).first();
 
   if (!usage) throw new BillingError(`今天的 ${dailyLimit} 次安全上限已用完，請明天再試。`, 429);
-  const count = Number(usage.request_count || 0);
-  if (count <= freeLimit) {
-    return { source: 'free', remaining: Math.max(0, freeLimit - count), limit: freeLimit };
+
+  let freeUsage;
+  try {
+    freeUsage = await db.prepare(`
+      UPDATE formula_ai_daily_usage
+      SET free_count = free_count + 1, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ? AND usage_date = CURRENT_DATE AND free_count < ?
+      RETURNING free_count
+    `).bind(userId, freeLimit).first();
+  } catch (error) {
+    await decrementFormulaDailyUsage(db, userId, false);
+    throw error;
   }
 
-  const balance = await db.prepare(`
-    UPDATE formula_ai_credit_balances
-    SET balance = balance - 1,
-        lifetime_consumed = lifetime_consumed + 1,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE user_id = ? AND balance > 0
-    RETURNING balance
-  `).bind(userId).first();
+  if (freeUsage) {
+    return { source: 'free', remaining: Math.max(0, freeLimit - Number(freeUsage.free_count || 0)), limit: freeLimit };
+  }
+
+  let balance;
+  try {
+    balance = await db.prepare(`
+      UPDATE formula_ai_credit_balances
+      SET balance = balance - 1,
+          lifetime_consumed = lifetime_consumed + 1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ? AND balance > 0
+      RETURNING balance
+    `).bind(userId).first();
+  } catch (error) {
+    await decrementFormulaDailyUsage(db, userId, false);
+    throw error;
+  }
 
   if (!balance) {
-    await db.prepare(`
-      UPDATE formula_ai_daily_usage
-      SET request_count = MAX(0, request_count - 1), updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = ? AND usage_date = CURRENT_DATE
-    `).bind(userId).run();
+    await decrementFormulaDailyUsage(db, userId, false);
     throw new BillingError('今天的 5 次免費公式生成已用完；可以購買額度後繼續。', 402);
   }
   return { source: 'purchased', remaining: Number(balance.balance || 0), limit: dailyLimit };
 }
 
-export async function restorePurchasedFormulaCredit(db, userId) {
-  await db.prepare(`
-    UPDATE formula_ai_credit_balances
-    SET balance = balance + 1,
-        lifetime_consumed = MAX(0, lifetime_consumed - 1),
-        updated_at = CURRENT_TIMESTAMP
-    WHERE user_id = ?
-  `).bind(userId).run();
+export async function restoreFormulaAllowance(db, userId, allowance) {
+  const restoreDailyUsage = dailyUsageDecrementStatement(db, userId, allowance.source === 'free');
+
+  if (allowance.source === 'purchased') {
+    const restoreCredit = db.prepare(`
+      UPDATE formula_ai_credit_balances
+      SET balance = balance + 1,
+          lifetime_consumed = MAX(0, lifetime_consumed - 1),
+          updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `).bind(userId);
+    // D1 batches are transactional, so both parts of a purchased rollback
+    // succeed together rather than leaving a partially-refunded attempt.
+    await db.batch([restoreDailyUsage, restoreCredit]);
+    return;
+  }
+
+  await restoreDailyUsage.run();
+}
+
+async function decrementFormulaDailyUsage(db, userId, restoreFree) {
+  await dailyUsageDecrementStatement(db, userId, restoreFree).run();
+}
+
+function dailyUsageDecrementStatement(db, userId, restoreFree) {
+  const freeCountUpdate = restoreFree ? ', free_count = MAX(0, free_count - 1)' : '';
+  return db.prepare(`
+    UPDATE formula_ai_daily_usage
+    SET request_count = MAX(0, request_count - 1)${freeCountUpdate}, updated_at = CURRENT_TIMESTAMP
+    WHERE user_id = ? AND usage_date = CURRENT_DATE
+  `).bind(userId);
 }
 
 async function recordCompletedCheckout(db, event, env) {

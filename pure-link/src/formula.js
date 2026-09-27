@@ -55,6 +55,22 @@ export function normalizeFormulaExpression(expression) {
   return normalized;
 }
 
+export function isValidFormulaExpression(expression) {
+  try {
+    katex.renderToString(normalizeFormulaExpression(expression), {
+      displayMode: true,
+      output: 'html',
+      throwOnError: true,
+      trust: false,
+      // Parsing should not emit warnings containing characters from AI output.
+      strict: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function mapScript(value, superscript) {
   const from = superscript ? '⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿ' : '₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢⱼₖₗₘₙₒₚᵣₛₜᵤᵥₓ';
   const to = superscript ? '0123456789+-=()n' : '0123456789+-=()aehijklmnoprstuvx';

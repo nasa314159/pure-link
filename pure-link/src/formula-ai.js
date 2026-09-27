@@ -1,5 +1,6 @@
 import { ValidationError } from './content.js';
-import { consumeFormulaAllowance, restorePurchasedFormulaCredit } from './billing.js';
+import { consumeFormulaAllowance, restoreFormulaAllowance } from './billing.js';
+import { isValidFormulaExpression } from './formula.js';
 
 export const FORMULA_AI_DAILY_LIMIT = 5;
 export const FORMULA_AI_ADMIN_DAILY_LIMIT = 100;
@@ -8,10 +9,11 @@ const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_LATEX_LENGTH = 2000;
 
 export class FormulaAiError extends Error {
-  constructor(message, status = 502) {
+  constructor(message, status = 502, category = 'invalid_draft') {
     super(message);
     this.name = 'FormulaAiError';
     this.status = status;
+    this.category = category;
   }
 }
 
@@ -52,15 +54,19 @@ export async function generateFormulaDraft({ description, userId, db, ai, dailyL
       temperature: 0.1,
     });
   } catch {
-    if (allowance.source === 'purchased') await restorePurchasedFormulaCredit(db, userId);
-    throw new FormulaAiError(errorMessages?.formulaProviderFailed || 'Cloudflare Workers AI 暫時沒有完成這次生成，這次嘗試仍計入每日額度。');
+    await restoreAllowanceAfterFailure(db, userId, allowance, errorMessages);
+    throw new FormulaAiError(
+      errorMessages?.formulaProviderFailed || 'Formula generation did not complete. Your allowance was restored; please try again.',
+      502,
+      'provider_failure',
+    );
   }
 
   let latex;
   try {
-    latex = extractLatex(result, errorMessages?.formulaInvalidDraft);
+    latex = extractLatex(result, errorMessages);
   } catch (error) {
-    if (allowance.source === 'purchased') await restorePurchasedFormulaCredit(db, userId);
+    await restoreAllowanceAfterFailure(db, userId, allowance, errorMessages);
     throw error;
   }
   return {
@@ -69,12 +75,24 @@ export async function generateFormulaDraft({ description, userId, db, ai, dailyL
     limit: allowance.limit,
     allowanceSource: allowance.source,
     provider: 'Cloudflare Workers AI',
-    model: 'llama-3.1-8b-instruct-fast',
+    model: FORMULA_AI_MODEL,
   };
 }
 
+async function restoreAllowanceAfterFailure(db, userId, allowance, errorMessages) {
+  try {
+    await restoreFormulaAllowance(db, userId, allowance);
+  } catch {
+    throw new FormulaAiError(
+      errorMessages?.formulaUnavailable || 'Formula generation is unavailable right now. Please try again.',
+      503,
+      'quota_rollback_failure',
+    );
+  }
+}
+
 export function normalizeDescription(value, errorMessages = null) {
-  const description = String(value || '').trim();
+  const description = typeof value === 'string' ? value.trim() : '';
   if (!description) throw new ValidationError(errorMessages?.formulaDescriptionRequired || '請先用一句話描述要產生的公式。', 'description');
   if (description.length > MAX_DESCRIPTION_LENGTH) {
     throw new ValidationError(errorMessages?.formulaDescriptionTooLong || `公式描述不得超過 ${MAX_DESCRIPTION_LENGTH} 個字元。`, 'description');
@@ -82,23 +100,54 @@ export function normalizeDescription(value, errorMessages = null) {
   return description;
 }
 
-export function extractLatex(result, invalidDraftMessage = '') {
-  let payload = result?.response ?? result;
+// Workers AI wraps text-generation output in `response`; accept either its JSON
+// string or an already-parsed `{ latex }` value. Direct schema values are also
+// supported, but bare LaTeX strings and arbitrary nested response fields are not.
+export function extractLatex(result, errorMessages = null) {
+  const hasResponse = result !== null && typeof result === 'object' && Object.prototype.hasOwnProperty.call(result, 'response');
+  let payload = hasResponse ? result.response : result;
   if (typeof payload === 'string') {
-    const trimmed = payload.trim();
     try {
-      payload = JSON.parse(trimmed);
+      payload = JSON.parse(payload.trim());
     } catch {
-      payload = { latex: trimmed };
+      throw unexpectedResponseError(errorMessages);
     }
   }
-  let latex = typeof payload?.latex === 'string' ? payload.latex.trim() : '';
+
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw unexpectedResponseError(errorMessages);
+  }
+  const keys = Object.keys(payload);
+  if (keys.length !== 1 || keys[0] !== 'latex' || typeof payload.latex !== 'string') {
+    throw unexpectedResponseError(errorMessages);
+  }
+
+  let latex = payload.latex.trim();
   latex = latex.replace(/^```(?:latex|tex)?\s*/i, '').replace(/\s*```$/i, '').trim();
   if (latex.startsWith('$$') && latex.endsWith('$$')) latex = latex.slice(2, -2).trim();
   else if (latex.startsWith('$') && latex.endsWith('$')) latex = latex.slice(1, -1).trim();
 
   if (!latex || latex.length > MAX_LATEX_LENGTH || /<\/?[A-Za-z][^>]*>|```/.test(latex)) {
-    throw new FormulaAiError(invalidDraftMessage || 'AI 沒有回傳可安全編輯的單一 LaTeX 公式，請換一種描述再試。');
+    throw invalidDraftError(errorMessages);
+  }
+  if (!isValidFormulaExpression(latex)) {
+    throw invalidDraftError(errorMessages);
   }
   return latex;
+}
+
+function unexpectedResponseError(errorMessages) {
+  return new FormulaAiError(
+    errorMessages?.formulaResponseInvalid || 'Formula generation returned an unreadable response. Your allowance was restored; please try again.',
+    502,
+    'unexpected_response',
+  );
+}
+
+function invalidDraftError(errorMessages) {
+  return new FormulaAiError(
+    errorMessages?.formulaInvalidDraft || 'AI did not return a valid editable LaTeX formula. Your allowance was restored; please try a different description.',
+    502,
+    'invalid_draft',
+  );
 }
