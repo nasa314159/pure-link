@@ -9,12 +9,21 @@ const resvgWasmPlugin = {
   name: 'purelink-test-resvg-wasm',
   enforce: 'pre',
   resolveId(id) {
-    return /index_bg\.wasm$/.test(id) ? '\0purelink-resvg-wasm' : null;
+    if (/index_bg\.wasm$/.test(id)) return '\0purelink-resvg-wasm';
+    if (/\.ttf$/.test(id)) return '\0purelink-brand-font';
+    return null;
   },
   load(id) {
-    if (id !== '\0purelink-resvg-wasm') return null;
-    const base64 = readFileSync(new URL('./node_modules/@resvg/resvg-wasm/index_bg.wasm', import.meta.url)).toString('base64');
-    return `const BYTES = Uint8Array.from(atob(${JSON.stringify(base64)}), (c) => c.charCodeAt(0));\nexport default new WebAssembly.Module(BYTES);`;
+    if (id !== '\0purelink-resvg-wasm' && id !== '\0purelink-brand-font') return null;
+    const file = id === '\0purelink-resvg-wasm'
+      ? './node_modules/@resvg/resvg-wasm/index_bg.wasm'
+      : './node_modules/katex/dist/fonts/KaTeX_SansSerif-Regular.ttf';
+    const base64 = readFileSync(new URL(file, import.meta.url)).toString('base64');
+    if (id === '\0purelink-resvg-wasm') {
+      return `const BYTES = Uint8Array.from(atob(${JSON.stringify(base64)}), (c) => c.charCodeAt(0));\nexport default new WebAssembly.Module(BYTES);`;
+    }
+    // Match the wrangler "Data" module type: imported default is an ArrayBuffer.
+    return `export default Uint8Array.from(atob(${JSON.stringify(base64)}), (c) => c.charCodeAt(0)).buffer;`;
   },
 };
 

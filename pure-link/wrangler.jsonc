@@ -15,6 +15,14 @@
 		"PUBLIC_ORIGIN": "https://no-no.uk",
 		"CREEM_PRODUCT_300_ID": "prod_4UdvN9knG2AzhhktS3Nwj9"
 	},
+	// Binary module import rules (imported in src/index.js).
+	"rules": [
+		{
+			"type": "Data",
+			"globs": ["**/*.ttf"],
+			"fallthrough": true
+		}
+	],
 	// mathjax-full reads its version through a require() fallback unless this is
 	// defined at bundle time; workerd would crash on that eval'd require.
 	"define": {

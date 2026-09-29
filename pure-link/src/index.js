@@ -6,7 +6,9 @@ import { html, json, noContent, redirect, text, xml } from './http.js';
 import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderSocialPreviewPage, renderStartPage, renderSupportPage, renderUrlPreview } from './pages.js';
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { renderFormulaOgImage, FormulaRenderError } from './formula-og.js';
+// Static data imports (CompiledWasm / Data module rules in wrangler.jsonc):
 import resvgWasm from '@resvg/resvg-wasm/index_bg.wasm';
+import brandFont from 'katex/dist/fonts/KaTeX_SansSerif-Regular.ttf';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { sendReportNotification } from './discord.js';
@@ -432,7 +434,7 @@ async function formulaOgImage(request, rawSlug, repository, env) {
   }
 
   try {
-    const { png } = await renderFormulaOgImage(resvgWasm, link.content);
+    const { png } = await renderFormulaOgImage(resvgWasm, link.content, brandFont);
     return pngResponse(png);
   } catch (error) {
     if (error instanceof FormulaRenderError) {
