@@ -38,15 +38,15 @@ const MUTED = '#65716b';
 
 // Bottom-right brand line: [link icon] PureLink. Small, low-contrast, and far
 // from the formula area so it stays visually quiet.
-const BRAND_MARK_SIZE = 30;
-const BRAND_OPACITY = 0.6;
+const BRAND_MARK_SIZE = 32;
+const BRAND_OPACITY = 0.69;
 const BRAND_RIGHT_MARGIN = 44;
 const BRAND_BOTTOM_MARGIN = 48;
 const BRAND_GAP = 9;
 const BRAND_TEXT = 'PureLink';
 const BRAND_FONT_FAMILY = 'KaTeX_SansSerif';
-const BRAND_FONT_SIZE = 32;
-const BRAND_TEXT_LENGTH = 123;
+const BRAND_FONT_SIZE = 34;
+const BRAND_TEXT_LENGTH = 131;
 
 // Vector mirror of public/favicon.svg (background chip removed) so the OG
 // image carries a quiet PureLink mark. The link icon itself, drawn as paths
