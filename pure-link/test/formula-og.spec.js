@@ -217,8 +217,8 @@ describe('formula OG image renderer', () => {
 
     // Icon sits left of the wordmark; the wordmark ends inside the 44px right
     // margin and both sit above the 48px bottom margin.
-    expect(brand[1]).toContain(`<g transform="translate(${1200 - 44 - 92 - 9 - 22} ${630 - 48 - 22}) scale(0.4583333333333333)">`);
-    expect(brand[1]).toContain(`<text x="${1200 - 44}" y="${630 - 48 - 22 + 19}" `);
+    expect(brand[1]).toContain(`<g transform="translate(${1200 - 44 - 123 - 9 - 30} ${630 - 48 - 30}) scale(0.625)">`);
+    expect(brand[1]).toContain(`<text x="${1200 - 44}" y="${630 - 48 - 30 + 27}" `);
 
     // Nothing promotional: no extra text nodes besides the single wordmark.
     expect((composed.match(/<text /g) || []).length).toBe(1);
@@ -227,7 +227,7 @@ describe('formula OG image renderer', () => {
   it('omits the wordmark when no brand font is supplied', async () => {
     const composed = composeFormulaOgSvg(await renderFormulaSegments(HEAT_FORMULA));
     expect(composed).not.toContain('<text ');
-    expect(composed).toContain('translate(1134 560)');
+    expect(composed).toContain(`translate(${1200 - 44 - 30} ${630 - 48 - 30})`);
   });
 
   it('fails safely on empty, malformed, and missing rasterizer', async () => {
