@@ -5,6 +5,8 @@ import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text, xml } from './http.js';
 import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderSocialPreviewPage, renderStartPage, renderSupportPage, renderUrlPreview } from './pages.js';
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
+import { renderFormulaOgImage, FormulaRenderError } from './formula-og.js';
+import resvgWasm from '@resvg/resvg-wasm/index_bg.wasm';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { sendReportNotification } from './discord.js';
@@ -133,6 +135,13 @@ export async function routeRequest(request, env, context) {
   if (isPublicRead && (path.startsWith('assets/') || ['favicon.svg', 'og.png'].includes(path))) {
     if (!env.ASSETS) return text('Asset not found.', { status: 404 });
     return env.ASSETS.fetch(request);
+  }
+
+  // Dynamic Open Graph / Twitter preview image for formula PureLinks.
+  // Locale-prefixed variants are not links to shared content (see below), so
+  // only the plain /og/formula/<slug>.png path resolves the stored formula.
+  if (isPublicRead && !localeRoute && path.startsWith('og/formula/') && path.endsWith('.png')) {
+    return publicReadResponse(request, await formulaOgImage(request, path.slice('og/formula/'.length, -'.png'.length), repository, env));
   }
 
   if (request.method === 'GET' && path === 'auth/google') return startGoogleAuth(request, env);
@@ -405,6 +414,42 @@ async function createNativeCard(request, requestUrl, repository, env, context) {
     }
   }
   return json({ error: messages.api.uniqueLinkFailed }, { status: 503 });
+}
+
+// Serves the formula-specific OG/Twitter preview image. Only formulas resolve;
+// unknown/non-formula slugs 404, and a formula that cannot render fails safely
+// to the generic static OG image.
+async function formulaOgImage(request, rawSlug, repository, env) {
+  const locale = resolveLocale(request);
+  const slug = String(rawSlug || '');
+  if (!slug || slug.includes('/') || slug.length > 30) {
+    return html(renderNotFoundPage(locale), { status: 404 });
+  }
+
+  const link = await repository.findBySlug(slug);
+  if (!isAvailable(link) || link.content_type !== 'formula') {
+    return html(renderNotFoundPage(locale), { status: 404 });
+  }
+
+  try {
+    const { png } = await renderFormulaOgImage(resvgWasm, link.content);
+    return pngResponse(png);
+  } catch (error) {
+    if (error instanceof FormulaRenderError) {
+      console.error('Formula OG render failed', { name: error.name, message: error.message });
+      return redirect('/og.png', 302, { headers: { 'cache-control': 'no-store' } });
+    }
+    throw error;
+  }
+}
+
+function pngResponse(pngBytes) {
+  const headers = new Headers();
+  headers.set('content-type', 'image/png');
+  headers.set('cache-control', 'public, max-age=3600');
+  headers.set('referrer-policy', 'no-referrer');
+  headers.set('x-content-type-options', 'nosniff');
+  return new Response(pngBytes, { headers });
 }
 
 async function generateFormula(request, env) {

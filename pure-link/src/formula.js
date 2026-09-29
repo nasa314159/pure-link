@@ -15,14 +15,29 @@ export function renderFormulaContent(source) {
   let output = '';
   for (const match of matches) {
     output += formatText(content.slice(cursor, match.index));
-    const token = match[0];
-    const displayMode = token.startsWith('$$');
-    const expression = token.slice(displayMode ? 2 : 1, displayMode ? -2 : -1);
-    output += renderMath(expression, displayMode);
-    cursor = match.index + token.length;
+    output += renderMath(...extractMatch(match));
+    cursor = match.index + match[0].length;
   }
   output += formatText(content.slice(cursor));
   return output;
+}
+
+// Returns the math segments of a stored formula in storage order so the share
+// page and the OG image render exactly the same list of math pieces.
+export function splitFormulaSegments(source) {
+  const content = String(source);
+  const matches = [...content.matchAll(DELIMITED_MATH)];
+  if (matches.length === 0) return [{ expression: content, displayMode: true }];
+  return matches.map((match) => {
+    const [expression, displayMode] = extractMatch(match);
+    return { expression, displayMode };
+  });
+}
+
+function extractMatch(match) {
+  const token = match[0];
+  const displayMode = token.startsWith('$$');
+  return [token.slice(displayMode ? 2 : 1, displayMode ? -2 : -1), displayMode];
 }
 
 function renderMath(expression, displayMode) {

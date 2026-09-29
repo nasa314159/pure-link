@@ -716,6 +716,8 @@ export function renderFormulaPage(link, locale = 'zh-Hant') {
     robots: 'noindex, nofollow, noarchive',
     canonicalPath: `/${link.slug}`,
     locale,
+    // Social previews show the rendered formula itself, not the generic image.
+    ogImage: `https://no-no.uk/og/formula/${encodeURIComponent(link.slug)}.png`,
     body: `
       <main class="page">
         <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
@@ -1592,7 +1594,7 @@ export function renderNativeVerificationPage(nonce, turnstileSiteKey, locale = '
   });
 }
 
-function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [], googleSiteVerification = '' }) {
+function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [], googleSiteVerification = '', ogImage = '' }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
   const scripts = [externalScript, ...externalScripts].filter(Boolean);
   const canonicalUrl = canonicalPath ? `https://no-no.uk${canonicalPath}` : '';
@@ -1604,6 +1606,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     ? `<script src="${escapeHtml(source)}" async defer></script>`
     : `<script type="module" src="${escapeHtml(source)}"></script>`).join('');
   const verificationMarkup = googleSiteVerification ? `<meta name="google-site-verification" content="${escapeHtml(googleSiteVerification)}">` : '';
+  const socialImage = ogImage || 'https://no-no.uk/og.png?v=1';
   const jsonLd = isIndexable ? `<script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'WebSite',
@@ -1624,14 +1627,14 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
   <meta property="og:type" content="website">
   <meta property="og:title" content="${escapeHtml(title)}">
   <meta property="og:description" content="${escapeHtml(description)}">
-  <meta property="og:image" content="https://no-no.uk/og.png?v=1">
+  <meta property="og:image" content="${escapeHtml(socialImage)}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   ${canonicalUrl ? `<meta property="og:url" content="${escapeHtml(canonicalUrl)}">` : ''}
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escapeHtml(title)}">
   <meta name="twitter:description" content="${escapeHtml(description)}">
-  <meta name="twitter:image" content="https://no-no.uk/og.png?v=1">
+  <meta name="twitter:image" content="${escapeHtml(socialImage)}">
   ${jsonLd}
   <title>${escapeHtml(title)}</title>
   ${canonicalMarkup}

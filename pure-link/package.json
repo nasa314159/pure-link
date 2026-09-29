@@ -22,8 +22,10 @@
 		"test:watch": "vitest --config vitest.unit.config.js"
 	},
 	"dependencies": {
+		"@resvg/resvg-wasm": "2.6.2",
 		"html-to-image": "1.11.13",
-		"katex": "0.16.22"
+		"katex": "0.16.22",
+		"mathjax-full": "3.2.1"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.20.2",
