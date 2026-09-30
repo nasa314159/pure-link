@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderStartPage, renderSupportPage } from '../src/pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderStartPage, renderSupportPage, renderUrlPreview } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -999,6 +999,54 @@ describe('interactive pages', () => {
     expect(html).toContain('src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer');
     expect(html).toContain('window.turnstile?.reset();');
     expect(html).not.toContain('type="module" src="https://challenges.cloudflare.com');
+  });
+
+  describe('destination preview management section', () => {
+    const baseLink = { slug: 'preview-slug', content_type: 'url', content: 'https://example.com/watch?v=abc', is_affiliate: 0, created_at: '2026-09-01 00:00:00' };
+
+    it('shows the quiet management section with its delete script only for confirmed managers', () => {
+      const stranger = renderUrlPreview(baseLink, 'en');
+      expect(stranger).toContain('example.com/watch?v=abc');
+      expect(stranger).toContain('Continue to destination');
+      expect(stranger).not.toContain('You manage this PureLink');
+      expect(stranger).not.toContain('Delete this PureLink');
+      expect(stranger).not.toContain('preview-delete');
+      expect(stranger).not.toMatch(/<script nonce=/);
+
+      const manager = renderUrlPreview(baseLink, 'en', { nonce: 'preview-nonce' });
+      expect(manager).toContain('You manage this PureLink');
+      expect(manager).toContain('Delete this PureLink');
+      expect(manager).toContain('nonce="preview-nonce"');
+      expect(() => new Function(extractScript(manager))).not.toThrow();
+      expect(extractScript(manager)).toContain("encodeURIComponent(slug)");
+      expect(extractScript(manager)).not.toContain('authorization');
+    });
+
+    it('renders the management section in the shared locale style', () => {
+      const chinese = renderUrlPreview(baseLink, 'zh-Hant', { nonce: 'preview-nonce' });
+      expect(chinese).toContain('你管理這個 PureLink。');
+      expect(chinese).toContain('刪除這個 PureLink');
+      expect(chinese).toContain('destination-url');
+      expect(chinese).toContain('class="preview-manage"');
+    });
+  });
+
+  describe('managed destination display', () => {
+    it('shows the stored destination URL as escaped text for URL links', () => {
+      const html = renderManagePage({ slug: 'dest-link', content: 'https://example.com/a?q="x<y"&b=1', content_type: 'url', owner_user_id: null }, 'manage-nonce');
+      expect(html).toContain('class="managed-destination"');
+      expect(html).toContain('&quot;x&lt;y&quot;');
+      expect(html).not.toContain('"x<y"');
+    });
+
+    it('keeps formula and card management presentations unchanged', () => {
+      const formula = renderManagePage({ slug: 'formula-link', content: 'E=mc^2', content_type: 'formula', owner_user_id: null }, 'manage-nonce');
+      const card = renderManagePage({ slug: 'card-link', content: 'a card', content_type: 'card', owner_user_id: null }, 'manage-nonce');
+      for (const html of [formula, card]) {
+        expect(html).not.toContain('class="managed-destination"');
+        expect(html).not.toContain('>Destination<');
+      }
+    });
   });
 
   it('emits a syntactically valid anonymous management script', () => {

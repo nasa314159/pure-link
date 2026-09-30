@@ -286,7 +286,19 @@ export async function routeRequest(request, env, context) {
     // The explicit human preview page /slug+ keeps its existing behavior.
     if (!isPreview && isSocialPreviewCrawler(request)) return html(renderSocialPreviewPage(locale));
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: isPreview ? 'preview' : 'open', contentType: 'url' });
-    return isPreview ? html(renderUrlPreview(link, locale)) : redirect(link.content, 302);
+    if (isPreview) {
+      // Server-side, request-only management determination: the Delete affordance
+      // is rendered only when the current request's own session account owns this
+      // PureLink — otherwise it is not sent at all (no client-side ownership
+      // inference, no CSS hiding). Deletion still re-verifies ownership, origin,
+      // and credentials inside the unchanged DELETE /api/links/<slug> handler.
+      const user = request.method === 'GET' ? await getCurrentUser(request, env) : null;
+      const manages = Boolean(user && link.owner_user_id && link.owner_user_id === user.id);
+      const nonce = manages ? createSlug() + createSlug() : '';
+      // The response can differ per requester now, so keep every cache out of it.
+      return html(renderUrlPreview(link, locale, manages ? { nonce } : null), { headers: { 'cache-control': 'no-store' } }, { scriptNonce: nonce });
+    }
+    return redirect(link.content, 302);
   }
   if (link.content_type === 'formula') {
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'formula' });

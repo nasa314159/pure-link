@@ -677,6 +677,112 @@ describe('PureLink worker', () => {
     expect(preview.headers.get('referrer-policy')).toBe('no-referrer');
   });
 
+  it('shows the stored destination on the URL management page and only there', async () => {
+    const created = await createLink(env, { contentType: 'url', content: 'https://example.com/shop?ref=friend', slug: 'manage-dest' });
+    const management = await worker.fetch(new Request(created.body.managementUrl), env);
+    const managementHtml = await management.text();
+    expect(managementHtml).toContain('class="managed-destination"');
+    expect(managementHtml).toContain('Destination');
+    expect(managementHtml).toContain('https://example.com/shop?ref=friend');
+
+    // Formula and card management presentation is deliberately unchanged.
+    const formula = await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'manage-formula' });
+    const formulaManagement = await (await worker.fetch(new Request(formula.body.managementUrl), env)).text();
+    expect(formulaManagement).not.toContain('class="managed-destination"');
+    expect(formulaManagement).not.toContain('>Destination<');
+
+    const card = await createLink(env, { contentType: 'card', content: 'A quiet card', slug: 'manage-card' });
+    const cardManagement = await (await worker.fetch(new Request(card.body.managementUrl), env)).text();
+    expect(cardManagement).not.toContain('class="managed-destination"');
+  });
+
+  it('keeps the destination preview public and management-free for strangers', async () => {
+    const created = await createLink(env, { contentType: 'url', content: 'https://example.com/shop', slug: 'stranger-preview' });
+    const previewResponse = await worker.fetch(new Request('https://pure.test/stranger-preview+'), env);
+    expect(previewResponse.status).toBe(200);
+    const previewHtml = await previewResponse.text();
+    expect(previewHtml).toContain('example.com');
+    expect(previewHtml).toContain('example.com/shop');
+    expect(previewHtml).not.toContain('You manage this PureLink');
+    expect(previewHtml).not.toContain('Delete this PureLink');
+    expect(previewHtml).not.toContain('preview-delete');
+    expect(previewResponse.headers.get('content-security-policy')).not.toContain('nonce-');
+
+    // The anonymous management credential is never presented by a plain preview
+    // navigation (the browser does not send fragments or headers to the server),
+    // so no management markup can be produced for it on this page either.
+    const previewWithCredential = await worker.fetch(new Request('https://pure.test/stranger-preview+', {
+      headers: { authorization: `Bearer ${created.body.managementToken}` },
+    }), env);
+    expect((await previewWithCredential.text())).not.toContain('You manage this PureLink');
+  });
+
+  it('renders preview deletion for the account owner only, then invalidates the link', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    const created = await createLink(env, {
+      contentType: 'url', content: 'https://example.com/owned', slug: 'owned-preview',
+    }, { cookie: `purelink_session=${ownerSession}` });
+    expect(created.body.ownerLinked).toBe(true);
+
+    const stranger = await worker.fetch(new Request('https://pure.test/owned-preview+'), env);
+    expect((await stranger.text())).not.toContain('You manage this PureLink');
+
+    const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+    const other = await worker.fetch(new Request('https://pure.test/owned-preview+', { headers: { cookie: `purelink_session=${otherSession}` } }), env);
+    expect((await other.text())).not.toContain('You manage this PureLink');
+
+    const owner = await worker.fetch(new Request('https://pure.test/owned-preview+', { headers: { cookie: `purelink_session=${ownerSession}` } }), env);
+    const ownerHtml = await owner.text();
+    expect(ownerHtml).toContain('You manage this PureLink');
+    expect(ownerHtml).toContain('Delete this PureLink');
+    expect(ownerHtml).toContain("method: 'DELETE'");
+    expect(owner.headers.get('content-security-policy')).toMatch(/script-src 'self' 'nonce-[^']+'/);
+
+    // Deleting from the preview request re-verifies authorization server-side.
+    const deletion = await worker.fetch(new Request('https://pure.test/api/links/owned-preview', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}` },
+    }), env);
+    expect(deletion.status).toBe(204);
+
+    // The deleted URL stops resolving and its preview exposes nothing.
+    const redirectAfter = await worker.fetch(new Request('https://pure.test/owned-preview', { redirect: 'manual' }), env);
+    expect(redirectAfter.status).toBe(404);
+    const previewAfter = await worker.fetch(new Request('https://pure.test/owned-preview+'), env);
+    expect(previewAfter.status).toBe(404);
+    expect(await previewAfter.text()).not.toContain('example.com/owned');
+    const manageAfter = await worker.fetch(new Request('https://pure.test/en/manage/owned-preview'), env);
+    expect(manageAfter.status).toBe(404);
+  });
+
+  it('rejects preview deletion without ownership, a valid session, or a same-origin request', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, {
+      contentType: 'url', content: 'https://example.com/gated', slug: 'gated-delete',
+    }, { cookie: `purelink_session=${ownerSession}` });
+
+    // Anonymous deletion needs a management credential along its existing path.
+    const anonymous = await worker.fetch(new Request('https://pure.test/api/links/gated-delete', { method: 'DELETE' }), env);
+    expect(anonymous.status).toBe(401);
+
+    // Another signed-in account is a stranger: the ownership predicate changes no rows.
+    const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+    const strangerOwner = await worker.fetch(new Request('https://pure.test/api/links/gated-delete', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${otherSession}` },
+    }), env);
+    expect(strangerOwner.status).toBe(404);
+
+    // Cross-site deletion attempts are rejected before any account lookup.
+    const foreignOrigin = await worker.fetch(new Request('https://pure.test/api/links/gated-delete', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}`, origin: 'https://attacker.example' },
+    }), env);
+    expect(foreignOrigin.status).toBe(403);
+
+    // GET must never delete; the owner record is untouched.
+    const getDeletion = await worker.fetch(new Request('https://pure.test/api/links/gated-delete'), env);
+    expect(getDeletion.status).not.toBe(204);
+    expect(db.links.has('gated-delete')).toBe(true);
+  });
+
   it('escapes creator content rather than executing it', async () => {
     const created = await createLink(env, {
       contentType: 'card',
@@ -749,18 +855,17 @@ describe('PureLink worker', () => {
   });
 });
 
-async function createLink(env, body) {
+async function createLink(env, body, headers = {}) {
   const response = await worker.fetch(new Request('https://pure.test/api/links', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
   }), env);
   return { response, body: await response.json() };
 }
 
-async function authenticateTestUser(env) {
-  const token = 'test-session-token';
-  const user = { id: 'user-1', email: 'person@example.com', display_name: 'Person', avatar_url: null, is_admin: 0 };
+async function authenticateTestUser(env, user = { id: 'user-1', email: 'person@example.com', display_name: 'Person', avatar_url: null, is_admin: 0 }) {
+  const token = `test-session-token-${user.id}`;
   env.GOOGLE_CLIENT_ID = 'test-client';
   env.GOOGLE_CLIENT_SECRET = 'test-secret';
   env.pure_link_db.users.set(user.id, user);
@@ -915,12 +1020,17 @@ class MemoryStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (this.sql.startsWith('DELETE FROM links')) {
-      const [slug, managementTokenHash] = this.values;
-      const row = this.db.links.get(slug);
-      if (!row || row.management_token_hash !== managementTokenHash) {
-        return { success: true, meta: { changes: 0 } };
+      const row = this.db.links.get(this.values[0]);
+      if (this.sql.includes('management_token_hash')) {
+        const [slug, managementTokenHash] = this.values;
+        const match = row && row.management_token_hash === managementTokenHash;
+        if (!match) return { success: true, meta: { changes: 0 } };
+      } else {
+        const [slug, ownerUserId] = this.values;
+        const match = row && row.owner_user_id === ownerUserId;
+        if (!match) return { success: true, meta: { changes: 0 } };
       }
-      this.db.links.delete(slug);
+      this.db.links.delete(this.values[0]);
       return { success: true, meta: { changes: 1 } };
     }
     if (this.sql.startsWith('INSERT INTO reports')) {

@@ -677,10 +677,25 @@ export function renderSocialPreviewPage(locale = 'zh-Hant') {
   });
 }
 
-export function renderUrlPreview(link, locale = 'zh-Hant') {
+// The destination preview stays public and informational. The optional
+// `management` argument is passed only after the server has verified that the
+// request itself carries management access (account ownership via its session
+// cookie), so strangers never receive management markup or its script. The
+// rendered Delete action is purely a convenience affordance: the existing
+// DELETE /api/links/<slug> endpoint independently re-verifies management
+// access, CSRF origin, and account ownership on every deletion request.
+export function renderUrlPreview(link, locale = 'zh-Hant', management = null) {
   const m = getMessages(locale);
+  const manages = Boolean(management);
+  const nonce = manages ? String(management.nonce || '') : '';
   const destination = new URL(link.content);
   const affiliate = Number(link.is_affiliate) === 1;
+  const manageSection = manages ? `
+          <section class="preview-manage">
+            <p class="preview-manage-title">${m.manage.youManage}</p>
+            <button class="danger-button" id="preview-delete" type="button">${m.manage.delete}</button>
+            <p class="notice" id="preview-delete-status" role="status" hidden></p>
+          </section>` : '';
   return documentShell({
     title: `${m.content.preview}: ${destination.hostname} — PureLink`,
     description: m.page.previewDescription,
@@ -700,12 +715,56 @@ export function renderUrlPreview(link, locale = 'zh-Hant') {
           </div>
           <a class="primary-link" href="${escapeHtml(destination.toString())}" rel="noreferrer">${m.content.continue}</a>
           <a class="report-link" href="${localizedHref(locale, `report/${link.slug}`)}">${m.content.report}</a>
+          ${manageSection}
           <p class="notice">${escapeHtml(m.content.platformNotice)} ${m.content.previewNotice}</p>
           ${languageSwitcher(locale, `/${link.slug}+`)}
         </article>
       </main>
     `,
+    script: manages ? previewDeleteScript(link.slug, locale) : '',
+    nonce,
   });
+}
+
+// Mirror of the management page's two-press confirmation and item deletion,
+// wired to the unchanged DELETE /api/links/<slug> endpoint. Deletion relies on
+// the account session (cookie) — no credential is ever embedded in this page.
+function previewDeleteScript(slug, locale) {
+  const safeSlug = JSON.stringify(slug).replaceAll('<', '\\u003c');
+  const messages = JSON.stringify({
+    deleteAgain: getMessages(locale).manage.deleteAgain,
+    delete: getMessages(locale).manage.delete,
+    deleted: getMessages(locale).manage.deleted,
+    deleteFailed: getMessages(locale).manage.deleteFailed,
+  }).replaceAll('<', '\\u003c');
+  return `
+      const manageMessages = ${messages};
+      const slug = ${safeSlug};
+      const button = document.getElementById('preview-delete');
+      const status = document.getElementById('preview-delete-status');
+      let deleteArmed = false;
+      button.addEventListener('click', async () => {
+        if (!deleteArmed) {
+          deleteArmed = true;
+          button.textContent = manageMessages.deleteAgain;
+          setTimeout(() => { deleteArmed = false; button.textContent = manageMessages.delete; }, 5000);
+          return;
+        }
+        button.disabled = true;
+        const response = await fetch('/api/links/' + encodeURIComponent(slug), { method: 'DELETE' });
+        if (response.ok) {
+          button.hidden = true;
+          status.hidden = false;
+          status.textContent = manageMessages.deleted;
+        } else {
+          button.disabled = false;
+          deleteArmed = false;
+          button.textContent = manageMessages.delete;
+          status.hidden = false;
+          status.textContent = manageMessages.deleteFailed;
+        }
+      });
+    `;
 }
 
 export function renderFormulaPage(link, locale = 'zh-Hant') {
@@ -1079,6 +1138,12 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
   const safeSlugScript = JSON.stringify(slug).replaceAll('<', '\\u003c');
   const accountAccess = Boolean(user && link.owner_user_id === user.id);
   const contentTypeName = ({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content;
+  // URL links are identified by a slug alone, which says nothing about where
+  // they go. Show the stored destination, escaped as plain text; never fetch
+  // destination metadata or resolve redirects here.
+  const destinationMarkup = link.content_type === 'url' && link.content
+    ? `<span class="managed-destination"><span>${m.manage.destination}</span><code>${escapeHtml(link.content)}</code></span>`
+    : '';
   const accountPanel = user
     ? `<div class="account-connect"><p>${m.page.signedIn}${m.page.labelSeparator}<strong>${escapeHtml(user.email)}</strong></p>${accountAccess ? `<p>${m.page.alreadyLinked}</p>` : `<button class="secondary-button" id="claim-link" type="button">${m.manage.claim}</button>`}<a href="${localizedHref(locale, 'account')}">${m.page.viewAccount}</a></div>`
     : googleAuthConfigured
@@ -1100,6 +1165,7 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
             <span>${escapeHtml(contentTypeName)}</span>
             <strong>/${escapeHtml(slug)}</strong>
             <a class="primary-link" href="/${escapeHtml(slug)}">${m.manage.view}</a>
+            ${destinationMarkup}
           </div>
           ${accountPanel}
           <div class="manage-actions" id="manage-actions" hidden>
@@ -1793,6 +1859,9 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .panel { padding: clamp(1.4rem, 5vw, 3.5rem); border: 1px solid var(--line); border-radius: 2rem; background: var(--surface); box-shadow: 0 1.5rem 5rem rgba(35, 62, 50, .08); backdrop-filter: blur(18px); }
     .preview-panel h1 { max-width: none; font-size: clamp(2rem, 6vw, 4.5rem); overflow-wrap: anywhere; }
     .destination-url { margin: 1.5rem 0; padding: 1rem; border-radius: 1rem; background: #edf2ef; color: #435149; font-family: ui-monospace, "SFMono-Regular", monospace; overflow-wrap: anywhere; }
+    .preview-manage { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); display: grid; gap: .75rem; justify-items: start; }
+    .preview-manage .preview-manage-title { margin: 0; color: var(--muted); font-size: .8rem; font-weight: 650; }
+    .preview-manage .danger-button { width: auto; margin-top: 0; padding: .6rem 1rem; font-size: .8rem; }
     .facts { margin: 1.5rem 0 2rem; border-block: 1px solid var(--line); }
     .facts p { display: grid; grid-template-columns: minmax(7rem, .4fr) 1fr; gap: 1rem; margin: 0; padding: 1rem 0; border-bottom: 1px solid var(--line); }
     .facts p:last-child { border-bottom: 0; }
@@ -1835,6 +1904,8 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .managed-content-card { display: grid; grid-template-columns: auto 1fr auto; gap: .8rem; align-items: center; margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: #f8fbf9; }
     .managed-content-card span { color: var(--muted); font-size: .75rem; }
     .managed-content-card .primary-link { padding: .7rem 1rem; }
+    .managed-content-card .managed-destination { grid-column: 1 / -1; display: grid; gap: .3rem; padding-top: .75rem; border-top: 1px solid var(--line); }
+    .managed-content-card .managed-destination code { color: var(--ink); font-family: ui-monospace, "SFMono-Regular", monospace; font-size: .8rem; overflow-wrap: anywhere; }
     .account-connect { display: grid; gap: .7rem; margin: 1rem 0 1.5rem; padding: 1rem; border-radius: 1.2rem; background: #edf5f1; }
     .account-connect p { margin: 0; color: var(--muted); line-height: 1.55; }
     .google-link { display: flex; justify-content: center; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: white; text-decoration: none; font-weight: 700; }
