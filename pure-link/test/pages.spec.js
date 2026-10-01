@@ -1152,6 +1152,97 @@ describe('interactive pages', () => {
     expect(() => new Function(script)).not.toThrow();
   });
 
+  describe('anonymous recovery handoff', () => {
+    const urlLink = { slug: 'handoff-url', content: 'https://example.com/watch?v=abc', content_type: 'url', is_affiliate: 0, created_at: '2026-09-01 00:00:00' };
+    const formulaLink = { slug: 'handoff-formula', content: 'x² + y²', content_type: 'formula', created_at: '2026-09-01 00:00:00' };
+    const cardLink = { slug: 'handoff-card', content: 'a quiet note', signature: '', theme: 'paper', content_type: 'card', created_at: '2026-09-01 00:00:00' };
+
+    it('keeps the recovery URL fragment-based and persists the credential unchanged', () => {
+      const html = renderManagePage(urlLink, 'manage-nonce', null, false, 'en');
+      const script = extractScript(html);
+      // The fragment stays the credential transport (never query, path, or server-visible state).
+      expect(script).toContain("location.hash.slice(1)");
+      expect(script).toContain("localStorage.setItem(storageKey, fragmentToken)");
+      // The copied management address keeps the recovery-file format.
+      expect(script).toContain("'/manage/' + encodeURIComponent(slug) + '#' + token");
+      expect(html).toContain('Copy management address');
+      expect(html).toContain('Download recovery file');
+      expect(() => new Function(script)).not.toThrow();
+    });
+
+    it('maps successful recovery onto the canonical surface of each content type', () => {
+      const urlScript = extractScript(renderManagePage(urlLink, 'n1'));
+      expect(urlScript).toContain('"/handoff-url+?handoff=1"');
+      const formulaScript = extractScript(renderManagePage(formulaLink, 'n2'));
+      expect(formulaScript).toContain('"/handoff-formula?handoff=1"');
+      const cardScript = extractScript(renderManagePage(cardLink, 'n3'));
+      expect(cardScript).toContain('"/handoff-card?handoff=1"');
+      for (const script of [urlScript, formulaScript, cardScript]) {
+        // Direct handoff after validation — no intermediate success page.
+        expect(script).toContain('location.replace(canonicalDestination)');
+      }
+    });
+
+    it('gates the handoff on the stored credential re-verifying against the stored hash', () => {
+      const script = extractScript(renderManagePage(formulaLink, 'n1'));
+      // The deciding composition: the hash-derived fingerprint must match;
+      // the localStorage hit alone never owns the redirect.
+      expect(script).toContain("localStorage.getItem('purelink:management:' + slug)");
+      expect(script).toContain("observedHash.slice(0, 16) === publicFingerprint");
+      expect(script).toContain("if (token && fingerprintMatches && !accountAccess)");
+    });
+
+    it('redirects invalid credentials nowhere and keeps the recovery error state', () => {
+      const html = renderManagePage({ slug: 'gone-slug', content_type: 'formula', owner_user_id: null, management_token_hash: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }, 'n1', null, false, 'en');
+      const script = extractScript(html);
+      // No credential-independent redirect: without a verified match, the
+      // visitor keeps the fallback page and its recovery status.
+      expect(html).toContain('No anonymous management credential was found');
+      expect(script).toContain("status.textContent = manageMessages.missingCredential");
+    });
+
+    it('keeps credentials out of markup, scripts, and noscript fallbacks', () => {
+      for (const [link, nonce] of [[urlLink, 'n1'], [formulaLink, 'n2'], [cardLink, 'n3']]) {
+        const html = renderManagePage(link, nonce, null, false, 'en');
+        expect(html).not.toContain('purelink:owner-fp:');
+        expect(html).not.toContain('data-purelink-owner-fp');
+        // The noscript body carries instructions only, never credentials.
+        expect(html).toContain('<noscript>');
+        expect(html).toContain('management needs JavaScript');
+        expect(() => new Function(extractScript(html))).not.toThrow();
+      }
+    });
+  });
+
+  describe('anonymous owner activation on canonical pages', () => {
+    const activationSource = readFileSync(new URL('../client/owner-activation.js', import.meta.url), 'utf8');
+
+    it('reveals the identical owner section only after a verified local credential', () => {
+      // Same section contract as the session-owner render: ids, title, delete.
+      const formula = renderFormulaPage({ slug: 'a-f', content: 'x² + y²', content_type: 'formula', created_at: '2026-09-01 00:00:00' }, 'en', { nonce: '', slug: 'a-f', publicFingerprint: 'fp16chars' });
+      const card = renderCardPage({ slug: 'a-c', content: 'note', signature: '', theme: 'paper', content_type: 'card', created_at: '2026-09-01 00:00:00' }, 'en', 'card-nonce', { nonce: '', slug: 'a-c', publicFingerprint: 'fp16chars' });
+      const urlPreview = renderUrlPreview({ slug: 'a-u', content: 'https://example.com', content_type: 'url', is_affiliate: 0, created_at: '2026-09-01 00:00:00' }, 'en', { nonce: '', slug: 'a-u', publicFingerprint: 'fp16chars' });
+      for (const [page, sectionClass] of [[formula, 'content-manage'], [card, 'content-manage'], [urlPreview, 'preview-manage']]) {
+        expect(page).toContain('You manage this PureLink');
+        expect(page).toContain('Delete this PureLink');
+        expect(page).toContain(`<section class="${sectionClass}" hidden data-owner-section`);
+        expect(page).toContain('data-public-fingerprint="fp16chars"');
+        expect(page).toContain("import('/assets/owner-activation.js')");
+        // No credential ever reaches the markup.
+        expect(page).not.toContain('purelink:management:');
+        expect(page).not.toContain('Bearer ');
+      }
+      expect(formula).toContain('owner-delete');
+      expect(urlPreview).toContain('preview-delete');
+      // Activation reveals the same id-wired section, never invents its own.
+      expect(activationSource).toContain("section.querySelector('.danger-button')");
+      expect(activationSource).toContain("observedFingerprint !== publicFingerprint");
+      expect(activationSource).toContain("localStorage.getItem(`purelink:management:${slug}`)");
+      // The temporary handoff signal leaves the visible address after load.
+      expect(activationSource).toContain("location.pathname + location.hash");
+    });
+  });
+
   it('emits a syntactically valid report form script', () => {
     const html = renderReportPage('reported-link', 'report-nonce');
     const script = extractScript(html);

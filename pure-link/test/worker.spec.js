@@ -945,6 +945,139 @@ describe('PureLink worker', () => {
     expect(created.body.contentType).toBe('formula');
   });
 
+  describe('anonymous recovery handoff', () => {
+    async function createAnonymousLink(body) {
+      return createLink(env, body);
+    }
+
+    it('marks the hidden owner section on canonical pages through the handoff signal only', async () => {
+      const url = await createAnonymousLink({ contentType: 'url', content: 'https://example.com/handoff', slug: 'anon-url' });
+      const formula = await createAnonymousLink({ contentType: 'formula', content: 'E=mc^2', slug: 'anon-formula' });
+      const card = await createAnonymousLink({ contentType: 'card', content: 'Anon card', slug: 'anon-card' });
+
+      // Handoff responses expose the hidden allowlisted section and its
+      // activation hook; nothing is visible to a viewer without the
+      // locally stored credential.
+      const urlHandoff = await worker.fetch(new Request('https://pure.test/anon-url+?handoff=1'), env);
+      expect(urlHandoff.status).toBe(200);
+      expect(urlHandoff.headers.get('cache-control')).toBe('no-store');
+      const urlBody = await urlHandoff.text();
+      expect(urlBody).toContain('hidden data-owner-section');
+      expect(urlBody).toContain("import('/assets/owner-activation.js')");
+
+      const formulaHandoff = await worker.fetch(new Request('https://pure.test/anon-formula?handoff=1'), env);
+      expect(formulaHandoff.status).toBe(200);
+      const formulaBody = await formulaHandoff.text();
+      expect(formulaBody).toContain('hidden data-owner-section');
+      expect(formulaBody).toContain("import('/assets/owner-activation.js')");
+
+      const cardHandoff = await worker.fetch(new Request('https://pure.test/anon-card?handoff=1'), env);
+      expect(cardHandoff.status).toBe(200);
+      const cardBody = await cardHandoff.text();
+      expect(cardBody).toContain('hidden data-owner-section');
+      expect(cardBody).toContain("import('/assets/owner-activation.js')");
+
+      // Plain canonical pages render nothing about management at all.
+      for (const address of ['https://pure.test/anon-url+', 'https://pure.test/anon-formula', 'https://pure.test/anon-card']) {
+        const plain = await worker.fetch(new Request(address), env);
+        expect(plain.status).toBe(200);
+        const plainBody = await plain.text();
+        expect(plainBody).not.toContain('data-owner-section');
+        expect(plainBody).not.toContain('You manage this PureLink');
+        expect(plainBody).not.toContain('owner-activation');
+      }
+
+      void url; void formula; void card;
+    });
+
+    it('allowlists the exact stored-management-hash fingerprint and never the credential', async () => {
+      const created = await createAnonymousLink({ contentType: 'card', content: 'Fingerprint card', slug: 'fp-card' });
+      const response = await worker.fetch(new Request('https://pure.test/fp-card?handoff=1'), env);
+      const body = await response.text();
+      const expectedFingerprint = (await hashManagementToken(created.body.managementToken)).slice(0, 16);
+      expect(body).toContain(`data-public-fingerprint="${expectedFingerprint}"`);
+      // The raw credential and any credential-storage key never appear in
+      // handoff markup; the fingerprint itself is public by design.
+      expect(body).not.toContain(created.body.managementToken);
+      expect(body).not.toContain('purelink:management:');
+      expect(body).not.toContain('Bearer ');
+    });
+
+    it('leaves handoff URLs on the canonical surface without the signal', async () => {
+      await createAnonymousLink({ contentType: 'card', content: 'Cleanup card', slug: 'cleanup-card' });
+      const response = await worker.fetch(new Request('https://pure.test/cleanup-card?handoff=1'), env);
+      const body = await response.text();
+      // The inline hook only wires the activation module, which drops the
+      // temporary ?handoff=1 continuity signal from the visible address.
+      expect(body).toContain("import('/assets/owner-activation.js')");
+      expect(body).not.toContain('?handoff=1');
+    });
+
+    it('keeps unrelated signed-in users and strangers management-free on handoff pages', async () => {
+      await createAnonymousLink({ contentType: 'formula', content: 'E=mc^2', slug: 'handoff-only' });
+      const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+      const signedIn = await worker.fetch(new Request('https://pure.test/handoff-only?handoff=1', { headers: { cookie: `purelink_session=${otherSession}` } }), env);
+      expect(signedIn.status).toBe(200);
+      const body = await signedIn.text();
+      // No server-rendered (unhidden) owner section for a non-owner: the
+      // hidden allowlisted section may exist, but it can only be revealed
+      // by the matching locally stored credential, and the DELETE endpoint
+      // re-verifies server-side regardless.
+      expect(body).not.toMatch(/<section class="content-manage">/);
+      expect(body).toContain('hidden data-owner-section');
+      // Strangers without the handoff signal never see the section at all.
+      const stranger = await worker.fetch(new Request('https://pure.test/handoff-only'), env);
+      expect(await stranger.text()).not.toContain('data-owner-section');
+    });
+
+    it('keeps the manage page redirect targets on the canonical surfaces', async () => {
+      const url = await createAnonymousLink({ contentType: 'url', content: 'https://example.com/redirect', slug: 'redirect-url' });
+      const formula = await createAnonymousLink({ contentType: 'formula', content: 'E=mc^2', slug: 'redirect-formula' });
+      const card = await createAnonymousLink({ contentType: 'card', content: 'Redirect card', slug: 'redirect-card' });
+      expect(url.body.url).toBe('https://pure.test/redirect-url');
+      void formula; void card;
+      // The manage markup embeds each content type's canonical handoff URL.
+      const urlManage = await (await worker.fetch(new Request('https://pure.test/manage/redirect-url'), env)).text();
+      expect(urlManage).toContain('/redirect-url+?handoff=1');
+      const formulaManage = await (await worker.fetch(new Request('https://pure.test/manage/redirect-formula'), env)).text();
+      expect(formulaManage).toContain('/redirect-formula?handoff=1');
+      const cardManage = await (await worker.fetch(new Request('https://pure.test/manage/redirect-card'), env)).text();
+      expect(cardManage).toContain('/redirect-card?handoff=1');
+    });
+
+    it('deletes each anonymous content type with its credential and inactivates every surface', async () => {
+      const url = await createAnonymousLink({ contentType: 'url', content: 'https://example.com/gone', slug: 'gone-url' });
+      const formula = await createAnonymousLink({ contentType: 'formula', content: 'E=mc^2', slug: 'gone-formula' });
+      const card = await createAnonymousLink({ contentType: 'card', content: 'Gone card', slug: 'gone-card' });
+
+      const unauthorizedFormula = await worker.fetch(new Request('https://pure.test/api/links/gone-formula', {
+        method: 'DELETE', headers: { authorization: `Bearer ${'x'.repeat(43)}` },
+      }), env);
+      expect(unauthorizedFormula.status).toBe(404);
+      expect(db.links.has('gone-formula')).toBe(true);
+
+      for (const [slug, token] of [['gone-url', url.body.managementToken], ['gone-formula', formula.body.managementToken], ['gone-card', card.body.managementToken]]) {
+        const deletion = await worker.fetch(new Request(`https://pure.test/api/links/${slug}`, {
+          method: 'DELETE', headers: { authorization: `Bearer ${token}` },
+        }), env);
+        expect(deletion.status).toBe(204);
+        expect((await worker.fetch(new Request(`https://pure.test/${slug}`), env)).status).toBe(404);
+        expect((await worker.fetch(new Request(`https://pure.test/${slug}+`), env)).status).toBe(404);
+      }
+
+      // The deleted Formula no longer reaches the dynamic OG endpoint either.
+      const formulaOg = await worker.fetch(new Request('https://pure.test/og/formula/gone-formula.png'), env);
+      expect(formulaOg.status).toBe(404);
+    });
+
+    it('keeps the redirect-only URL path intact for anonymous and signed-in visitors', async () => {
+      await createAnonymousLink({ contentType: 'url', content: 'https://example.com/redirect-only', slug: 'redirect-only' });
+      const redirect = await worker.fetch(new Request('https://pure.test/redirect-only', { redirect: 'manual' }), env);
+      expect(redirect.status).toBe(302);
+      expect(redirect.headers.get('location')).toBe('https://example.com/redirect-only');
+    });
+  });
+
   it('deletes anonymous content only with its management token', async () => {
     const created = await createLink(env, { contentType: 'formula', content: 'E=mc^2' });
     const slug = created.body.slug;

@@ -1,4 +1,5 @@
 import { escapeHtml } from './http.js';
+import { hashManagementToken } from './security.js';
 import { listAiCreditPacks } from './credit-products.js';
 import { renderFormulaContent } from './formula.js';
 import { getMessages, localizedPath } from './i18n.js';
@@ -686,16 +687,24 @@ export function renderSocialPreviewPage(locale = 'zh-Hant') {
 // access, CSRF origin, and account ownership on every deletion request.
 export function renderUrlPreview(link, locale = 'zh-Hant', management = null) {
   const m = getMessages(locale);
-  const manages = Boolean(management);
+  const manages = Boolean(management?.nonce);
   const nonce = manages ? String(management.nonce || '') : '';
   const destination = new URL(link.content);
   const affiliate = Number(link.is_affiliate) === 1;
-  const manageSection = manages ? `
-          <section class="preview-manage">
+  // Only rendered when the request carries management context: visible for
+  // the verified session owner, hidden (allowlisted for the owner-activation
+  // module) for the anonymous handoff, and absent — byte-identical public
+  // page — for strangers. Visibility is decided exactly as released
+  // (request-only session check; deletion still re-verifies inside the
+  // unchanged DELETE /api/links/<slug> handler).
+  const manageSection = management
+    ? `
+          <section class="preview-manage"${manages ? '' : ' hidden data-owner-section'}${manages ? '' : ` data-public-fingerprint="${escapeHtml(management.publicFingerprint || '')}"`}${manages || !management.slug ? '' : ` data-purelink-slug="${escapeHtml(management.slug)}"`}>
             <p class="preview-manage-title">${m.manage.youManage}</p>
-            <button class="danger-button" id="preview-delete" type="button">${m.manage.delete}</button>
+            <button class="danger-button" id="preview-delete" type="button"${manages ? '' : ' hidden'}>${manages ? m.manage.delete : m.manage.deleteThisLink}</button>
             <p class="notice" id="preview-delete-status" role="status" hidden></p>
-          </section>` : '';
+          </section>`
+    : '';
   return documentShell({
     title: `${m.content.preview}: ${destination.hostname} — PureLink`,
     description: m.page.previewDescription,
@@ -721,7 +730,7 @@ export function renderUrlPreview(link, locale = 'zh-Hant', management = null) {
         </article>
       </main>
     `,
-    script: manages ? ownerDeleteScript(link.slug, locale) : '',
+    script: manages ? ownerDeleteScript(link.slug, locale) : anonymousActivationScript(locale, management),
     nonce,
   });
 }
@@ -732,13 +741,32 @@ export function renderUrlPreview(link, locale = 'zh-Hant', management = null) {
 // Used by the URL destination preview (its preview-delete ids) and by the
 // Formula/Card content pages' quiet owner section (owner-delete ids), which the
 // server renders only for the verified session account that owns the link.
+// Inline bootstrap for the anonymous-record activation on canonical pages.
+// Emits nothing unless the server marked the section for allowlisting
+// (management.publicFingerprint); keeps every local value inside guarded
+// template fields and always guarded with double quotes.
+function anonymousActivationScript(locale, management = null) {
+  if (!management?.publicFingerprint) return '';
+  const bundle = JSON.stringify(getMessages(locale).manage).replaceAll('<', '\\u003c');
+  return `
+      (function () {
+        const localeMessages = ${bundle};
+        const activate = () => import('/assets/owner-activation.js')
+          .then((module) => module.activateCanonicalOwnerSection({ localeMessages }))
+          .catch(() => {});
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', activate);
+        else activate();
+      })();
+    `;
+}
+
 function ownerDeleteScript(slug, locale, ids = {}) {
   const buttonId = JSON.stringify(ids.button || 'preview-delete');
   const statusId = JSON.stringify(ids.status || 'preview-delete-status');
   const safeSlug = JSON.stringify(slug).replaceAll('<', '\\u003c');
   const messages = JSON.stringify({
     deleteAgain: getMessages(locale).manage.deleteAgain,
-    delete: getMessages(locale).manage.delete,
+    delete: getMessages(locale).manage.deleteThisLink,
     deleted: getMessages(locale).manage.deleted,
     deleteFailed: getMessages(locale).manage.deleteFailed,
   }).replaceAll('<', '\\u003c');
@@ -747,6 +775,7 @@ function ownerDeleteScript(slug, locale, ids = {}) {
       const slug = ${safeSlug};
       const button = document.getElementById(${buttonId});
       const status = document.getElementById(${statusId});
+      button.textContent = manageMessages.delete;
       let deleteArmed = false;
       button.addEventListener('click', async () => {
         if (!deleteArmed) {
@@ -774,13 +803,26 @@ function ownerDeleteScript(slug, locale, ids = {}) {
 
 // Quiet, visually secondary owner section reused by the Formula and Card
 // content pages. Rendered only when the server already verified that the
-// request's own session account manages this PureLink.
-function contentManageSection(locale) {
+// request's own session account manages this PureLink, or — for anonymous
+// credential holders — hidden with an allowlisting fingerprint that the
+// owner-activation module can verify locally (the deciding call lives in
+// `anonymousActivationScript`, whose import triggers the activation module).
+function contentManageSection(locale, management = null) {
   const m = getMessages(locale);
+  // The `hidden` state + data-owner-section mark is the server render for
+  // anonymous management (fingerprint/slug attributes included); the
+  // account-owner render (management.nonce set) gets the section unhidden
+  // inline, so it displays exactly as released.
+  const managesServerSide = Boolean(management?.nonce);
+  const sectionTag = `${management && !managesServerSide ? ' hidden data-owner-section' : ''}`;
+  const stateTag = `${management && !managesServerSide ? ` data-public-fingerprint="${escapeHtml(management.publicFingerprint || '')}"` : ''}`;
+  const stateSlug = `${management && !managesServerSide && management.slug ? ` data-purelink-slug="${escapeHtml(management.slug)}"` : ''}`;
+  const buttonLabel = `${managesServerSide ? m.manage.delete : m.manage.deleteThisLink}`;
+  const buttonHidden = `${managesServerSide ? '' : ' hidden'}`;
   return `
-          <section class="content-manage">
+          <section class="content-manage"${sectionTag}${stateTag}${stateSlug}>
             <p class="content-manage-title">${m.manage.youManage}</p>
-            <button class="danger-button" id="owner-delete" type="button">${m.manage.delete}</button>
+            <button class="danger-button" id="owner-delete" type="button"${buttonHidden}>${buttonLabel}</button>
             <p class="notice" id="owner-delete-status" role="status" hidden></p>
           </section>`;
 }
@@ -795,9 +837,9 @@ function contentManageSection(locale) {
 // ownership on every deletion request.
 export function renderFormulaPage(link, locale = 'zh-Hant', management = null) {
   const m = getMessages(locale);
-  const manages = Boolean(management);
+  const manages = Boolean(management?.nonce);
   const manageNonce = manages ? String(management.nonce || '') : '';
-  const manageSection = manages ? contentManageSection(locale) : '';
+  const manageSection = management ? contentManageSection(locale, management) : '';
   return documentShell({
     title: `${m.common.formula} — PureLink`,
     description: m.page.formulaDescription,
@@ -833,7 +875,7 @@ export function renderFormulaPage(link, locale = 'zh-Hant', management = null) {
         </article>
       </main>
     `,
-    script: manages ? ownerDeleteScript(link.slug, locale, { button: 'owner-delete', status: 'owner-delete-status' }) : '',
+    script: `${manages ? ownerDeleteScript(link.slug, locale, { button: 'owner-delete', status: 'owner-delete-status' }) : anonymousActivationScript(locale, management)}`,
     nonce: manageNonce,
     externalScript: '/assets/content-actions.js',
   });
@@ -844,8 +886,8 @@ export function renderFormulaPage(link, locale = 'zh-Hant', management = null) {
 // so the quiet owner section never reaches anonymous viewers or strangers.
 export function renderCardPage(link, locale = 'zh-Hant', nonce = '', management = null) {
   const m = getMessages(locale);
-  const manages = Boolean(management);
-  const manageSection = manages ? contentManageSection(locale) : '';
+  const manages = Boolean(management?.nonce);
+  const manageSection = management ? contentManageSection(locale, management) : '';
   const signature = link.signature ? `<p class="signature">— ${escapeHtml(link.signature)}</p>` : '';
   const cardContentId = `card-content-${Math.random().toString(36).slice(2, 9)}`;
   return documentShell({
@@ -880,7 +922,7 @@ export function renderCardPage(link, locale = 'zh-Hant', nonce = '', management 
         </article>
       </main>
     `,
-    script: `
+    script: `${manages ? ownerDeleteScript(link.slug, locale, { button: 'owner-delete', status: 'owner-delete-status' }) : anonymousActivationScript(locale, management)}
       // Mirrors the supporter-message collapse: 6-line clamp on long card
       // content, localized Show more / Show less, and ResizeObserver-based
       // re-evaluation while collapsed.
@@ -922,7 +964,6 @@ export function renderCardPage(link, locale = 'zh-Hant', nonce = '', management 
         });
         resizeObserver.observe(msg);
       });
-    ${manages ? ownerDeleteScript(link.slug, locale, { button: 'owner-delete', status: 'owner-delete-status' }) : ''}
     `,
     externalScript: '/assets/content-actions.js',
   });
@@ -1171,18 +1212,41 @@ function localizedLegalContent(page, locale, defaults) {
   return { eyebrow, title, intro, sections, lang: locale };
 }
 
+// Compute the creation-time holder fingerprint — the fragment-free static
+// anchor passed to `ownershipRefreshOnLoad`. The hash is opaque to a
+// stranger, but a holder with the real credential can confirm a match
+// locally; verification is still primary, and any version bump degrades
+// safely back to the manage page with its credential intact.
+// A credential-free, always-served static anchor for the handoff gate: the
+// first 16 base64url characters of the link's stored management hash. It
+// proves nothing on its own; the deciding check is the client's
+// re-verification of the locally stored credential through the existing
+// anonymous-management mechanism. This helper is intentionally
+// synchronous and never sees the credential itself.
+function storedOwnerFingerprint(link) {
+  return String(link.management_token_hash || '').slice(0, 16);
+}
+
 export function renderManagePage(link, nonce, user = null, googleAuthConfigured = false, locale = 'zh-Hant') {
   const m = getMessages(locale);
   const slug = link.slug;
   const safeSlugScript = JSON.stringify(slug).replaceAll('<', '\\u003c');
   const accountAccess = Boolean(user && link.owner_user_id === user.id);
   const contentTypeName = ({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content;
+  // The canonical management surface for the handoff; the URL fragment does
+  // not exist server-side, so this redirect is only the destination of the
+  // client-side runtime check (which itself re-verifies through the existing
+  // anonymous-management mechanism). 'No JavaScript' fallback: nothing is
+  // revealed by this markup, just the fallback page.
+  const canonicalHandoffUrl = `/${escapeHtml(slug)}${link.content_type === 'url' ? '+' : ''}?handoff=1`;
+  const ownerFingerprint = storedOwnerFingerprint(link);
   // URL links are identified by a slug alone, which says nothing about where
   // they go. Show the stored destination, escaped as plain text; never fetch
   // destination metadata or resolve redirects here.
   const destinationMarkup = link.content_type === 'url' && link.content
     ? `<span class="managed-destination"><span>${m.manage.destination}</span><code>${escapeHtml(link.content)}</code></span>`
     : '';
+  const managementData = { slug, publicFingerprint: ownerFingerprint };
   const accountPanel = user
     ? `<div class="account-connect"><p>${m.page.signedIn}${m.page.labelSeparator}<strong>${escapeHtml(user.email)}</strong></p>${accountAccess ? `<p>${m.page.alreadyLinked}</p>` : `<button class="secondary-button" id="claim-link" type="button">${m.manage.claim}</button>`}<a href="${localizedHref(locale, 'account')}">${m.page.viewAccount}</a></div>`
     : googleAuthConfigured
@@ -1213,17 +1277,25 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
             <button class="danger-button" id="delete-link" type="button">${m.manage.delete}</button>
           </div>
           <p class="notice" id="management-status" role="status">${m.manage.checking}</p>
+          <noscript><p class="notice">${m.manage.noScriptBody}</p></noscript>
           ${languageSwitcher(locale, `manage/${slug}`)}
         </article>
       </main>
     `,
+    externalScripts: ['/assets/hash-credential.js'],
     script: `
       const manageMessages = ${JSON.stringify(m.manage).replaceAll('<', '\\u003c')};
       const homeMessages = ${JSON.stringify(m.home).replaceAll('<', '\\u003c')};
       const pageMessages = ${JSON.stringify(m.page).replaceAll('<', '\\u003c')};
+
+      const hashManagementToken = (credential) => import('/assets/hash-credential.js').then((mod) => mod.hashManagementToken(credential));
       const slug = ${safeSlugScript};
       const contentTypeName = ${JSON.stringify(contentTypeName).replaceAll('<', '\\u003c')};
       const storageKey = 'purelink:management:' + slug;
+      // Existing anonymous-management mechanism, unchanged: the fragment
+      // credential is persisted under the same 'purelink:management:<slug>'
+      // key every other part of the design reads. The fragment is never
+      // sent anywhere and never rendered.
       const fragmentToken = location.hash.slice(1);
       if (fragmentToken) localStorage.setItem(storageKey, fragmentToken);
       const token = fragmentToken || localStorage.getItem(storageKey) || '';
@@ -1233,16 +1305,64 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
       const copyManagement = document.getElementById('copy-management');
       const downloadRecovery = document.getElementById('download-recovery');
       const canonicalAddress = location.origin + '/manage/' + encodeURIComponent(slug) + '#' + token;
+      const canonicalDestination = ${JSON.stringify(canonicalHandoffUrl).replaceAll('<', '\u003c')};
 
       copyManagement.hidden = !token;
       downloadRecovery.hidden = !token;
-
+      const publicFingerprint = ${JSON.stringify(ownerFingerprint).replaceAll('<', '\\u003c')};
       if (token || accountAccess) {
         actions.hidden = false;
         status.textContent = accountAccess ? manageMessages.accountAccess : manageMessages.anonymousAccess;
       } else {
         status.textContent = manageMessages.missingCredential;
       }
+
+      // Canonical handoff gate (async IIFE — the manage script runs as a
+      // classic inline script, so top-level await is unavailable). The
+      // locally stored credential — already persisted by this same script at
+      // fragment-recovery time — must re-derive the page's public
+      // fingerprint (first 16 base64url characters of the stored management
+      // hash). This deciding check is composed with the localStorage hit:
+      // the item value itself is never trusted as authority, and no
+      // credential value is ever logged, rendered, or re-embedded.
+      //   - Verified: location.replace(canonicalDestination) — the content
+      //     type's canonical surface, handoff-flagged so the canonical page
+      //     renders the same hidden owner-allowlisted section; the fragment
+      //     disappears from the address because the new URL carries none.
+      //   - Wrong credential/404/no-JS-hash-mismatch: no redirect — the
+      //     visitor stays on this fallback page with the existing recovery
+      //     actions and status visible instead.
+      (async () => {
+        let fingerprintMatches = false;
+        try {
+          const storedCredential = localStorage.getItem('purelink:management:' + slug) || '';
+          if (storedCredential && publicFingerprint) {
+            const observedHash = await hashManagementToken(storedCredential);
+            fingerprintMatches = observedHash.slice(0, 16) === publicFingerprint;
+          }
+        } catch { fingerprintMatches = false; }
+        if (token && fingerprintMatches && !accountAccess) {
+          try { location.replace(canonicalDestination); } catch { /* keep the fallback page */ }
+          return;
+        }
+        if (accountAccess) {
+          // Session owners with an embedded credential also redirect; bare
+          // session owners (reopened without the fragment) stay on the
+          // fallback page — unchanged, since the anonymous mechanism is
+          // what this handoff is defined to verify.
+          if (token) {
+            try { location.replace(canonicalDestination); } catch { /* keep the fallback page */ }
+            return;
+          }
+          try {
+            const existed = localStorage.getItem('purelink:management:' + slug);
+            const observedHash = existed ? await hashManagementToken(existed) : '';
+            if (observedHash && publicFingerprint && observedHash.slice(0, 16) === publicFingerprint) {
+              try { location.replace(canonicalDestination); } catch { /* keep the fallback page */ }
+            }
+          } catch { /* stay on the fallback page; the session owner can always redirect from My PureLinks */ }
+        }
+      })();
 
       copyManagement.addEventListener('click', async (event) => {
         await navigator.clipboard.writeText(canonicalAddress);

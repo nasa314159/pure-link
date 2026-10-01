@@ -253,6 +253,7 @@ export async function routeRequest(request, env, context) {
     if (!slug || slug.includes('/')) return html(renderNotFoundPage(locale), { status: 404 });
     const link = await repository.findBySlug(slug);
     if (!isAvailable(link)) return html(renderNotFoundPage(locale), { status: 404 });
+
     const nonce = createSlug() + createSlug();
     const user = await getCurrentUser(request, env);
     return html(renderManagePage(link, nonce, user, isGoogleAuthConfigured(env), locale), {}, { scriptNonce: nonce });
@@ -296,7 +297,24 @@ export async function routeRequest(request, env, context) {
       const manages = Boolean(user && link.owner_user_id && link.owner_user_id === user.id);
       const nonce = manages ? createSlug() + createSlug() : '';
       // The response can differ per requester now, so keep every cache out of it.
-      return html(renderUrlPreview(link, locale, manages ? { nonce } : null), { headers: { 'cache-control': 'no-store' } }, { scriptNonce: nonce });
+      // For anonymous management the server renders the same section hidden
+      // together with an allowlisted section mark (the redirect response for
+      // URL handoffs carries the allowlisted anonymous fingerprint). This is
+      // the same middleware all three content types share — no token, and
+      // certainly no raw credential, is ever present here.
+      // Anonymous handoff (?handoff=1 from the manage page's verified
+      // recovery flow, and fragment-only otherwise): the hidden allowlisted
+      // section + activation hook. No credential exists server-side here;
+      // the client-side owner-activation module re-verifies the locally
+      // stored credential before revealing anything, and the DELETE endpoint
+      // re-verifies the credential again on every deletion request.
+      const handoff = isPublicRead && requestUrl.searchParams.get('handoff') === '1';
+      const owner = manages
+        ? { nonce, slug: link.slug }
+        : handoff
+          ? { nonce: '', slug: link.slug, publicFingerprint: String(link.management_token_hash || '').slice(0, 16) }
+          : null;
+      return html(renderUrlPreview(link, locale, owner), { headers: { 'cache-control': 'no-store' } }, { scriptNonce: nonce || undefined });
     }
     return redirect(link.content, 302);
   }
@@ -308,19 +326,37 @@ export async function routeRequest(request, env, context) {
     // inside the unchanged DELETE /api/links/<slug> handler.
     const user = request.method === 'GET' ? await getCurrentUser(request, env) : null;
     const manages = Boolean(user && link.owner_user_id && link.owner_user_id === user.id);
-    if (!manages) return html(renderFormulaPage(link, locale));
-    const nonce = createSlug() + createSlug();
-    // The owner response differs per requester, so keep every cache out of it;
-    // non-owner responses stay identical for everyone.
-    return html(renderFormulaPage(link, locale, { nonce }), { headers: { 'cache-control': 'no-store' } }, { scriptNonce: nonce });
+    const nonce = manages ? createSlug() + createSlug() : '';
+    // The owner response differs per requester, so keep every cache out of
+    // it; non-owner non-handoff responses stay identical for everyone (the
+    // ?handoff=1 signal and the owner session are the only two contexts in
+    // which the hidden allowlisted section is rendered at all).
+    const handoff = isPublicRead && requestUrl.searchParams.get('handoff') === '1';
+    const owner = manages
+      ? { nonce, slug: link.slug }
+      : handoff
+        ? { nonce: '', slug: link.slug, publicFingerprint: String(link.management_token_hash || '').slice(0, 16) }
+        : null;
+    if (manages || handoff) {
+      return html(renderFormulaPage(link, locale, owner), { headers: { 'cache-control': 'no-store' } }, { scriptNonce: nonce || undefined });
+    }
+    return html(renderFormulaPage(link, locale));
   }
   if (link.content_type === 'card') {
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'card' });
     const user = request.method === 'GET' ? await getCurrentUser(request, env) : null;
     const manages = Boolean(user && link.owner_user_id && link.owner_user_id === user.id);
     const nonce = createSlug() + createSlug();
-    return manages
-      ? html(renderCardPage(link, locale, nonce, { nonce }), { headers: { 'cache-control': 'no-store' } }, { scriptNonce: nonce })
+    // Same two contexts as the Formula page: session owner or ?handoff=1
+    // signal; everything else is the unchanged public card page.
+    const handoff = isPublicRead && requestUrl.searchParams.get('handoff') === '1';
+    const owner = manages
+      ? { nonce, slug: link.slug }
+      : handoff
+        ? { nonce: '', slug: link.slug, publicFingerprint: String(link.management_token_hash || '').slice(0, 16) }
+        : null;
+    return manages || handoff
+      ? html(renderCardPage(link, locale, nonce, owner), { headers: { 'cache-control': 'no-store' } }, { scriptNonce: nonce })
       : html(renderCardPage(link, locale, nonce), {}, { scriptNonce: nonce });
   }
   return html(renderNotFoundPage(locale), { status: 404 });

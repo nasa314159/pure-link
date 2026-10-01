@@ -1,0 +1,1 @@
+async function c(e){if(typeof e!="string")throw new TypeError("Token must be a string.");let n=new TextEncoder().encode(e),r=await crypto.subtle.digest("SHA-256",n),o=new Uint8Array(r),t="";for(let a of o)t+=String.fromCharCode(a);return btoa(t).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"")}export{c as hashManagementToken};

@@ -20,6 +20,8 @@ await build({
   entryPoints: {
     'content-actions': resolve(projectRoot, 'client/content-actions.js'),
     'formula-editor': resolve(projectRoot, 'client/formula-editor.js'),
+    'owner-activation': resolve(projectRoot, 'client/owner-activation.js'),
+    'hash-credential': resolve(projectRoot, 'client/hash-credential.js'),
   },
   outdir: assetsRoot,
   bundle: true,
