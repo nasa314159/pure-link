@@ -302,12 +302,26 @@ export async function routeRequest(request, env, context) {
   }
   if (link.content_type === 'formula') {
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'formula' });
-    return html(renderFormulaPage(link, locale));
+    // Same request-only ownership determination as the URL destination preview:
+    // the owner section is rendered only for the session account that owns this
+    // PureLink, and deletion re-verifies ownership, origin, and credentials
+    // inside the unchanged DELETE /api/links/<slug> handler.
+    const user = request.method === 'GET' ? await getCurrentUser(request, env) : null;
+    const manages = Boolean(user && link.owner_user_id && link.owner_user_id === user.id);
+    if (!manages) return html(renderFormulaPage(link, locale));
+    const nonce = createSlug() + createSlug();
+    // The owner response differs per requester, so keep every cache out of it;
+    // non-owner responses stay identical for everyone.
+    return html(renderFormulaPage(link, locale, { nonce }), { headers: { 'cache-control': 'no-store' } }, { scriptNonce: nonce });
   }
   if (link.content_type === 'card') {
     if (request.method === 'GET') recordAggregateMetric({ context, db: env.pure_link_db, request, metricName: 'open', contentType: 'card' });
+    const user = request.method === 'GET' ? await getCurrentUser(request, env) : null;
+    const manages = Boolean(user && link.owner_user_id && link.owner_user_id === user.id);
     const nonce = createSlug() + createSlug();
-    return html(renderCardPage(link, locale, nonce), {}, { scriptNonce: nonce });
+    return manages
+      ? html(renderCardPage(link, locale, nonce, { nonce }), { headers: { 'cache-control': 'no-store' } }, { scriptNonce: nonce })
+      : html(renderCardPage(link, locale, nonce), {}, { scriptNonce: nonce });
   }
   return html(renderNotFoundPage(locale), { status: 404 });
 }

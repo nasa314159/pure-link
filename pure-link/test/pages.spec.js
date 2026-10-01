@@ -1031,6 +1031,102 @@ describe('interactive pages', () => {
     });
   });
 
+  describe('formula and card owner management section', () => {
+    const formulaLink = { slug: 'quiet-math', content: 'x² + y² = z²', content_type: 'formula', created_at: '2026-09-01 00:00:00' };
+    const cardLink = { slug: 'quiet-card', content: 'a quiet note', signature: '', theme: 'paper', content_type: 'card', created_at: '2026-09-01 00:00:00' };
+
+    it('keeps the formula content page management-free for anonymous and stranger viewers', () => {
+      const stranger = renderFormulaPage(formulaLink, 'en');
+      expect(stranger).toContain('x² + y² = z²');
+      expect(stranger).not.toContain('You manage this PureLink');
+      expect(stranger).not.toContain('Delete this PureLink');
+      expect(stranger).not.toContain('owner-delete');
+      expect(stranger).not.toMatch(/<script nonce=/);
+
+      // The shared content rendering is identical: the owner page is the
+      // stranger page plus exactly the manage section and its script
+      // (whitespace-normalized, since the section carries template indenting).
+      const owner = renderFormulaPage(formulaLink, 'en', { nonce: 'owner-nonce' });
+      const squeeze = (value) => value.replace(/\s+/g, ' ');
+      expect(squeeze(
+        owner
+          .replace(/<section class="content-manage">[\s\S]*?<\/section>/, '')
+          .replace(/<script nonce="owner-nonce">[\s\S]*?<\/script>/, ''),
+      )).toBe(squeeze(stranger));
+    });
+
+    it('adds the quiet formula owner section with its delete affordance for the verified owner', () => {
+      const owner = renderFormulaPage(formulaLink, 'en', { nonce: 'owner-nonce' });
+      expect(owner).toContain('You manage this PureLink.');
+      expect(owner).toContain('Delete this PureLink');
+      expect(owner).toContain('class="content-manage"');
+      expect(owner).toContain('nonce="owner-nonce"');
+      const script = extractScript(owner);
+      expect(() => new Function(script)).not.toThrow();
+      expect(script).toContain("encodeURIComponent(slug)");
+      expect(script).toContain("method: 'DELETE'");
+      expect(script).not.toContain('authorization');
+      expect(script).not.toContain('isOwner');
+      // The section sits after the shared content actions, near the footer area.
+      expect(owner.indexOf('report-link')).toBeLessThan(owner.indexOf('<section class="content-manage"'));
+    });
+
+    it('renders the content owner section in the shared locale style', () => {
+      const chinese = renderFormulaPage(formulaLink, 'zh-Hant', { nonce: 'owner-nonce' });
+      expect(chinese).toContain('你管理這個 PureLink。');
+      expect(chinese).toContain('刪除這個 PureLink');
+      expect(chinese).toContain('formula-source');
+    });
+
+    it('keeps card content and export behavior unchanged with and without the owner section', () => {
+      const stranger = renderCardPage(cardLink, 'en', 'card-nonce');
+      expect(stranger).toContain('a quiet note');
+      expect(stranger).toContain('nonce="card-nonce"');
+      expect(stranger).not.toContain('You manage this PureLink');
+      expect(stranger).not.toContain('Delete this PureLink');
+      expect(stranger).not.toContain('owner-delete');
+
+      const owner = renderCardPage(cardLink, 'en', 'card-nonce', { nonce: 'card-nonce' });
+      expect(owner).toContain('You manage this PureLink.');
+      expect(owner).toContain('Delete this PureLink');
+      expect(owner).toContain('class="content-manage"');
+      // The card script keeps its collapse behavior and gains only the delete flow.
+      const script = extractScript(owner);
+      expect(() => new Function(script)).not.toThrow();
+      expect(script).toContain('card-copy-expanded');
+      expect(script).toContain("method: 'DELETE'");
+      // Escaped card content is untouched.
+      expect(owner).toContain('a quiet note');
+    });
+  });
+
+  describe('account owner navigation targets', () => {
+    const user = { id: 'user-1', email: 'person@example.com' };
+    const links = [
+      { slug: 'nav-url', content_type: 'url' },
+      { slug: 'nav-formula', content_type: 'formula' },
+      { slug: 'nav-card', content_type: 'card' },
+    ];
+
+    it('routes URL management to the destination preview and formula/card to their content pages', () => {
+      const html = renderAccountPage(user, links, 0, {}, '', 'account-nonce', 'en');
+      expect(html).toContain('<a href="/nav-url+">Manage</a>');
+      expect(html).toContain('<a href="/nav-formula">Manage</a>');
+      expect(html).toContain('<a href="/nav-card">Manage</a>');
+      // The standalone manage address is no longer the account-owner entry.
+      expect(html).not.toContain('/en/manage/');
+      expect(html).not.toContain('manage/nav-');
+    });
+
+    it('keeps the same routing in Chinese', () => {
+      const html = renderAccountPage(user, links, 0, {}, '', 'account-nonce', 'zh-Hant');
+      expect(html).toContain('<a href="/nav-url+">管理</a>');
+      expect(html).toContain('<a href="/nav-formula">管理</a>');
+      expect(html).toContain('<a href="/nav-card">管理</a>');
+      expect(html).not.toContain('/zh-Hant/manage/');
+    });
+  });
+
   describe('managed destination display', () => {
     it('shows the stored destination URL as escaped text for URL links', () => {
       const html = renderManagePage({ slug: 'dest-link', content: 'https://example.com/a?q="x<y"&b=1', content_type: 'url', owner_user_id: null }, 'manage-nonce');

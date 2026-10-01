@@ -721,7 +721,7 @@ export function renderUrlPreview(link, locale = 'zh-Hant', management = null) {
         </article>
       </main>
     `,
-    script: manages ? previewDeleteScript(link.slug, locale) : '',
+    script: manages ? ownerDeleteScript(link.slug, locale) : '',
     nonce,
   });
 }
@@ -729,7 +729,12 @@ export function renderUrlPreview(link, locale = 'zh-Hant', management = null) {
 // Mirror of the management page's two-press confirmation and item deletion,
 // wired to the unchanged DELETE /api/links/<slug> endpoint. Deletion relies on
 // the account session (cookie) — no credential is ever embedded in this page.
-function previewDeleteScript(slug, locale) {
+// Used by the URL destination preview (its preview-delete ids) and by the
+// Formula/Card content pages' quiet owner section (owner-delete ids), which the
+// server renders only for the verified session account that owns the link.
+function ownerDeleteScript(slug, locale, ids = {}) {
+  const buttonId = JSON.stringify(ids.button || 'preview-delete');
+  const statusId = JSON.stringify(ids.status || 'preview-delete-status');
   const safeSlug = JSON.stringify(slug).replaceAll('<', '\\u003c');
   const messages = JSON.stringify({
     deleteAgain: getMessages(locale).manage.deleteAgain,
@@ -740,8 +745,8 @@ function previewDeleteScript(slug, locale) {
   return `
       const manageMessages = ${messages};
       const slug = ${safeSlug};
-      const button = document.getElementById('preview-delete');
-      const status = document.getElementById('preview-delete-status');
+      const button = document.getElementById(${buttonId});
+      const status = document.getElementById(${statusId});
       let deleteArmed = false;
       button.addEventListener('click', async () => {
         if (!deleteArmed) {
@@ -767,8 +772,32 @@ function previewDeleteScript(slug, locale) {
     `;
 }
 
-export function renderFormulaPage(link, locale = 'zh-Hant') {
+// Quiet, visually secondary owner section reused by the Formula and Card
+// content pages. Rendered only when the server already verified that the
+// request's own session account manages this PureLink.
+function contentManageSection(locale) {
   const m = getMessages(locale);
+  return `
+          <section class="content-manage">
+            <p class="content-manage-title">${m.manage.youManage}</p>
+            <button class="danger-button" id="owner-delete" type="button">${m.manage.delete}</button>
+            <p class="notice" id="owner-delete-status" role="status" hidden></p>
+          </section>`;
+}
+
+// The Formula content page stays public and unchanged for every viewer. The
+// optional `management` argument is passed only after the server has verified
+// that the request itself carries management access (account ownership via its
+// session cookie), so anonymous viewers and unrelated signed-in accounts never
+// receive owner markup or its script. The rendered Delete action is purely a
+// convenience affordance: the existing DELETE /api/links/<slug> endpoint
+// independently re-verifies management access, CSRF origin, and account
+// ownership on every deletion request.
+export function renderFormulaPage(link, locale = 'zh-Hant', management = null) {
+  const m = getMessages(locale);
+  const manages = Boolean(management);
+  const manageNonce = manages ? String(management.nonce || '') : '';
+  const manageSection = manages ? contentManageSection(locale) : '';
   return documentShell({
     title: `${m.common.formula} — PureLink`,
     description: m.page.formulaDescription,
@@ -799,16 +828,24 @@ export function renderFormulaPage(link, locale = 'zh-Hant') {
           <textarea id="raw-content" hidden>${escapeHtml(link.content)}</textarea>
           <p class="notice">${escapeHtml(m.content.platformNotice)}</p>
           <a class="report-link" href="${localizedHref(locale, `report/${link.slug}`)}">${m.content.report}</a>
+          ${manageSection}
           ${languageSwitcher(locale, `/${link.slug}`)}
         </article>
       </main>
     `,
+    script: manages ? ownerDeleteScript(link.slug, locale, { button: 'owner-delete', status: 'owner-delete-status' }) : '',
+    nonce: manageNonce,
     externalScript: '/assets/content-actions.js',
   });
 }
 
-export function renderCardPage(link, locale = 'zh-Hant', nonce = '') {
+// Same ownership rule as the Formula content page: the optional `management`
+// argument is passed only after the server verified session-account ownership,
+// so the quiet owner section never reaches anonymous viewers or strangers.
+export function renderCardPage(link, locale = 'zh-Hant', nonce = '', management = null) {
   const m = getMessages(locale);
+  const manages = Boolean(management);
+  const manageSection = manages ? contentManageSection(locale) : '';
   const signature = link.signature ? `<p class="signature">— ${escapeHtml(link.signature)}</p>` : '';
   const cardContentId = `card-content-${Math.random().toString(36).slice(2, 9)}`;
   return documentShell({
@@ -838,6 +875,7 @@ export function renderCardPage(link, locale = 'zh-Hant', nonce = '') {
           <textarea id="raw-content" hidden>${escapeHtml(link.content)}</textarea>
           <p class="notice">${escapeHtml(m.content.platformNotice)}</p>
           <a class="report-link" href="${localizedHref(locale, `report/${link.slug}`)}">${m.content.report}</a>
+          ${manageSection}
           ${languageSwitcher(locale, `/${link.slug}`)}
         </article>
       </main>
@@ -884,6 +922,7 @@ export function renderCardPage(link, locale = 'zh-Hant', nonce = '') {
         });
         resizeObserver.observe(msg);
       });
+    ${manages ? ownerDeleteScript(link.slug, locale, { button: 'owner-delete', status: 'owner-delete-status' }) : ''}
     `,
     externalScript: '/assets/content-actions.js',
   });
@@ -1275,8 +1314,13 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
 export function renderAccountPage(user, links, creditBalance = 0, providers = {}, purchaseStatus = '', nonce = '', locale = 'zh-Hant') {
   const m = getMessages(locale);
   const enabledProviders = [providers.ecpay ? ['ecpay', m.billing.providerEcpay] : null, providers.lemon ? ['lemon', m.billing.providerLemon] : null].filter(Boolean);
+  // Account owners manage Formula and Card content directly on the shared
+  // content page (which carries their owner-only controls), and URL content
+  // through the existing /<slug>+ destination preview. URLs stay free of locale
+  // prefixes, which are never routes to shared content.
+  const manageHref = (link) => `/${escapeHtml(link.slug)}${link.content_type === 'url' ? '+' : ''}`;
   const rows = links.length
-    ? links.map((link) => `<li><div><span>${escapeHtml(({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content)}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">${m.common.view}</a><a href="${localizedHref(locale, `manage/${link.slug}`)}">${m.common.manage}</a></li>`).join('')
+    ? links.map((link) => `<li><div><span>${escapeHtml(({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content)}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">${m.common.view}</a><a href="${manageHref(link)}">${m.common.manage}</a></li>`).join('')
     : `<li class="empty-account">${m.account.empty}</li>`;
   const purchaseNotice = purchaseStatus === 'success'
     ? `<p class="auth-notice" role="status"><strong>${m.billing.returned}</strong><span>${m.billing.returnedHelp}</span></p>`
@@ -1862,6 +1906,9 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .preview-manage { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); display: grid; gap: .75rem; justify-items: start; }
     .preview-manage .preview-manage-title { margin: 0; color: var(--muted); font-size: .8rem; font-weight: 650; }
     .preview-manage .danger-button { width: auto; margin-top: 0; padding: .6rem 1rem; font-size: .8rem; }
+    .content-manage { margin: 1.25rem 0 0; padding-top: 1.25rem; border-top: 1px solid var(--line); display: grid; gap: .75rem; justify-items: start; }
+    .content-manage .content-manage-title { margin: 0; color: var(--muted); font-size: .8rem; font-weight: 650; }
+    .content-manage .danger-button { width: auto; margin-top: 0; padding: .6rem 1rem; font-size: .8rem; }
     .facts { margin: 1.5rem 0 2rem; border-block: 1px solid var(--line); }
     .facts p { display: grid; grid-template-columns: minmax(7rem, .4fr) 1fr; gap: 1rem; margin: 0; padding: 1rem 0; border-bottom: 1px solid var(--line); }
     .facts p:last-child { border-bottom: 0; }

@@ -783,6 +783,144 @@ describe('PureLink worker', () => {
     expect(db.links.has('gated-delete')).toBe(true);
   });
 
+  it('renders formula and card owner controls for the account owner only', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'owned-formula' }, { cookie: `purelink_session=${ownerSession}` });
+    await createLink(env, { contentType: 'card', content: 'Owned card', slug: 'owned-card' }, { cookie: `purelink_session=${ownerSession}` });
+
+    for (const slug of ['owned-formula', 'owned-card']) {
+      // Anonymous viewers receive the plain public content page.
+      const anonymous = await worker.fetch(new Request(`https://pure.test/${slug}`), env);
+      expect(anonymous.status).toBe(200);
+      const anonymousBody = await anonymous.text();
+      expect(anonymousBody).not.toContain('You manage this PureLink');
+      expect(anonymousBody).not.toContain('Delete this PureLink');
+      expect(anonymousBody).not.toContain('owner-delete');
+      expect(anonymous.headers.get('cache-control')).toBeNull();
+
+      // Unrelated signed-in accounts receive the same public page.
+      const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+      const stranger = await worker.fetch(new Request(`https://pure.test/${slug}`, { headers: { cookie: `purelink_session=${otherSession}` } }), env);
+      expect(stranger.status).toBe(200);
+      const strangerBody = await stranger.text();
+      expect(strangerBody).not.toContain('You manage this PureLink');
+      expect(strangerBody).not.toContain('Delete this PureLink');
+      expect(strangerBody).not.toContain('owner-delete');
+      expect(stranger.headers.get('cache-control')).toBeNull();
+
+      // The verified owner receives the quiet management section.
+      const owner = await worker.fetch(new Request(`https://pure.test/${slug}`, { headers: { cookie: `purelink_session=${ownerSession}` } }), env);
+      expect(owner.status).toBe(200);
+      const ownerBody = await owner.text();
+      expect(ownerBody).toContain('You manage this PureLink');
+      expect(ownerBody).toContain('Delete this PureLink');
+      expect(ownerBody).toContain('owner-delete');
+      expect(owner.headers.get('cache-control')).toBe('no-store');
+      expect(owner.headers.get('content-security-policy')).toMatch(/script-src 'self' 'nonce-[^']+'/);
+    }
+
+    // The formula owner page keeps its shared content actions and OG image.
+    const ownerFormula = await (await worker.fetch(new Request('https://pure.test/owned-formula', { headers: { cookie: `purelink_session=${ownerSession}` } }), env)).text();
+    expect(ownerFormula).toContain('og/formula/owned-formula.png');
+    expect(ownerFormula).toContain('data-download-png');
+    expect(ownerFormula).toContain('/assets/content-actions.js');
+  });
+
+  it('deletes owned formula and card content through the existing endpoint and inactivates it', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'deletable-formula' }, { cookie: `purelink_session=${ownerSession}` });
+    await createLink(env, { contentType: 'card', content: 'Deletable card', slug: 'deletable-card' }, { cookie: `purelink_session=${ownerSession}` });
+
+    // A stranger's session cannot delete either.
+    const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+    const strangerFormula = await worker.fetch(new Request('https://pure.test/api/links/deletable-formula', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${otherSession}` },
+    }), env);
+    expect(strangerFormula.status).toBe(404);
+    expect(db.links.has('deletable-formula')).toBe(true);
+
+    // Anonymous deletion still requires the management credential path.
+    const anonymousCard = await worker.fetch(new Request('https://pure.test/api/links/deletable-card', { method: 'DELETE' }), env);
+    expect(anonymousCard.status).toBe(401);
+    expect(db.links.has('deletable-card')).toBe(true);
+
+    // Cross-site deletion is rejected before any account lookup.
+    const foreignOrigin = await worker.fetch(new Request('https://pure.test/api/links/deletable-formula', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}`, origin: 'https://attacker.example' },
+    }), env);
+    expect(foreignOrigin.status).toBe(403);
+
+    // GET must never delete.
+    const getDeletion = await worker.fetch(new Request('https://pure.test/api/links/deletable-card'), env);
+    expect(getDeletion.status).not.toBe(204);
+    expect(db.links.has('deletable-card')).toBe(true);
+
+    // The owner deletes both through the unchanged endpoint.
+    const formulaDeletion = await worker.fetch(new Request('https://pure.test/api/links/deletable-formula', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}` },
+    }), env);
+    expect(formulaDeletion.status).toBe(204);
+    const cardDeletion = await worker.fetch(new Request('https://pure.test/api/links/deletable-card', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}` },
+    }), env);
+    expect(cardDeletion.status).toBe(204);
+
+    // The deleted pages stop resolving as active content.
+    const formulaAfter = await worker.fetch(new Request('https://pure.test/deletable-formula'), env);
+    expect(formulaAfter.status).toBe(404);
+    const cardAfter = await worker.fetch(new Request('https://pure.test/deletable-card'), env);
+    expect(cardAfter.status).toBe(404);
+    // …and the deleted Formula no longer reaches the dynamic OG endpoint.
+    const formulaOgAfter = await worker.fetch(new Request('https://pure.test/og/formula/deletable-formula.png'), env);
+    expect(formulaOgAfter.status).toBe(404);
+    expect(await formulaOgAfter.text()).not.toContain('E=mc');
+    // The management address for deleted content is gone as well.
+    const manageAfter = await worker.fetch(new Request('https://pure.test/en/manage/deletable-formula'), env);
+    expect(manageAfter.status).toBe(404);
+  });
+
+  it('keeps the standalone manage page working for anonymous and account owners', async () => {
+    const created = await createLink(env, { contentType: 'card', content: 'Recovery card', slug: 'compat-card' });
+
+    // Anonymous recovery: the manage address renders unchanged and its
+    // credential still deletes through the same endpoint.
+    const anonymousManage = await worker.fetch(new Request(created.body.managementUrl.replace(/#.*/, ''), env), env);
+    expect(anonymousManage.status).toBe(200);
+    const anonymousBody = await anonymousManage.text();
+    expect(anonymousBody).toContain('Manage your PureLink');
+    expect(anonymousBody).toContain('id="delete-link"');
+    expect(anonymousBody).toContain('compat-card');
+
+    const anonymousDeletion = await worker.fetch(new Request('https://pure.test/api/links/compat-card', {
+      method: 'DELETE', headers: { authorization: `Bearer ${created.body.managementToken}` },
+    }), env);
+    expect(anonymousDeletion.status).toBe(204);
+    expect((await worker.fetch(new Request('https://pure.test/compat-card'), env)).status).toBe(404);
+
+    // Account-owner compatibility: session-linked content still shows
+    // account access on the manage page and deletes with the session.
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'compat-formula' }, { cookie: `purelink_session=${ownerSession}` });
+    const accountManage = await worker.fetch(new Request('https://pure.test/en/manage/compat-formula', { headers: { cookie: `purelink_session=${ownerSession}` } }), env);
+    expect(accountManage.status).toBe(200);
+    expect(await accountManage.text()).toContain('You have management access through your Google account.');
+  });
+
+  it('routes My PureLinks management entries away from the standalone manage page', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, { contentType: 'url', content: 'https://example.com/nav', slug: 'nav-url' }, { cookie: `purelink_session=${ownerSession}` });
+    await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'nav-formula' }, { cookie: `purelink_session=${ownerSession}` });
+    await createLink(env, { contentType: 'card', content: 'Nav card', slug: 'nav-card' }, { cookie: `purelink_session=${ownerSession}` });
+
+    const account = await worker.fetch(new Request('https://pure.test/en/account', { headers: { cookie: `purelink_session=${ownerSession}` } }), env);
+    expect(account.status).toBe(200);
+    const body = await account.text();
+    expect(body).toContain('<a href="/nav-url+">Manage</a>');
+    expect(body).toContain('<a href="/nav-formula">Manage</a>');
+    expect(body).toContain('<a href="/nav-card">Manage</a>');
+    expect(body).not.toContain('/en/manage/nav-');
+  });
+
   it('escapes creator content rather than executing it', async () => {
     const created = await createLink(env, {
       contentType: 'card',
