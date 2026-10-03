@@ -81,7 +81,6 @@ export async function runAzureOpenAIFormulaProvider({
       },
     },
     max_output_tokens: 256,
-    temperature: 0,
     store: false,
   };
 

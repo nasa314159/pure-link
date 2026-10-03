@@ -38,9 +38,9 @@ describe('formula generation API image and privacy path', () => {
     expect(options.headers['content-type']).toBe('application/json');
     const body = JSON.parse(options.body);
     expect(body.model).toBe(AZURE_ENV.AZURE_OPENAI_DEPLOYMENT);
-    expect(body.temperature).toBe(0);
     expect(body.max_output_tokens).toBe(256);
     expect(body.store).toBe(false);
+    expect(body).not.toHaveProperty('temperature');
     expect(body.input[0]).toEqual({ type: 'message', role: 'system', content: FORMULA_SYSTEM_PROMPT });
     expect(body.input[1]).toEqual({ type: 'message', role: 'user', content: 'Lorentz force' });
     expect(body.text.format).toEqual({ type: 'json_schema', name: 'formula_draft', strict: true, schema: { ...FORMULA_OUTPUT_SCHEMA } });
