@@ -156,8 +156,11 @@ function azureResponsesUrl(endpoint) {
     throw new TypeError('Azure OpenAI endpoint is invalid.');
   }
   if (url.protocol !== 'https:' || url.search || url.hash) throw new TypeError('Azure OpenAI endpoint is invalid.');
-  const path = url.pathname.replace(/\/+$/, '');
-  if (path && !path.endsWith('/openai/v1')) throw new TypeError('Azure OpenAI endpoint must use the v1-compatible API path.');
+  let path = url.pathname.replace(/\/+$/, '');
+  if (path && !path.endsWith('/openai/v1') && !/\/api\/projects\/[^/]+$/.test(path)) {
+    throw new TypeError('Azure OpenAI endpoint must use the v1-compatible API path.');
+  }
+  if (path && !path.endsWith('/openai/v1')) path = `${path}/openai/v1`;
   url.pathname = path ? `${path}/responses` : '/openai/v1/responses';
   return url.toString();
 }

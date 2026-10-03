@@ -145,12 +145,31 @@ describe('runAzureOpenAIFormulaProvider', () => {
   it('rejects incomplete or insecure endpoint configuration', async () => {
     await expect(runAzureOpenAIFormulaProvider({ ...CONFIG, endpoint: ' http://formula-test.openai.azure.com ', description: 'x', fetchImplementation: respond(DRAFT) }))
       .rejects.toBeInstanceOf(TypeError);
-    await expect(runAzureOpenAIFormulaProvider({ ...CONFIG, endpoint: 'https://formula-test.openai.azure.com/?api-version=v1', description: 'x', fetchImplementation: respond(DRAFT) }))
+    await expect(runAzureOpenAIFormulaProvider({ ...CONFIG, endpoint: ' https://formula-test.openai.azure.com/?api-version=v1#frag ', description: 'x', fetchImplementation: respond(DRAFT) }))
+      .rejects.toBeInstanceOf(TypeError);
+    await expect(runAzureOpenAIFormulaProvider({ ...CONFIG, endpoint: ' https://formula-test.services.ai.azure.com/api/projects/purelink-formula/other ', description: 'x', fetchImplementation: respond(DRAFT) }))
       .rejects.toBeInstanceOf(TypeError);
     await expect(runAzureOpenAIFormulaProvider({ ...CONFIG, apiKey: ' ', description: 'x', fetchImplementation: respond(DRAFT) }))
       .rejects.toThrow('Azure OpenAI configuration is incomplete.');
     await expect(runAzureOpenAIFormulaProvider({ ...CONFIG, deployment: undefined, description: 'x', fetchImplementation: respond(DRAFT) }))
       .rejects.toThrow('Azure OpenAI configuration is incomplete.');
+  });
+
+  it('builds the Responses URL for both Azure OpenAI and Foundry Project endpoints', async () => {
+    const cases = [
+      ['https://formula-test.openai.azure.com', 'https://formula-test.openai.azure.com/openai/v1/responses'],
+      ['https://formula-test.openai.azure.com/', 'https://formula-test.openai.azure.com/openai/v1/responses'],
+      ['https://formula-test.openai.azure.com/openai/v1', 'https://formula-test.openai.azure.com/openai/v1/responses'],
+      ['https://formula-test.openai.azure.com/openai/v1/', 'https://formula-test.openai.azure.com/openai/v1/responses'],
+      ['https://formula-test.services.ai.azure.com/api/projects/purelink-formula', 'https://formula-test.services.ai.azure.com/api/projects/purelink-formula/openai/v1/responses'],
+      ['https://formula-test.services.ai.azure.com/api/projects/purelink-formula/', 'https://formula-test.services.ai.azure.com/api/projects/purelink-formula/openai/v1/responses'],
+      ['https://formula-test.services.ai.azure.com/api/projects/purelink-formula/openai/v1', 'https://formula-test.services.ai.azure.com/api/projects/purelink-formula/openai/v1/responses'],
+    ];
+    for (const [endpoint, expected] of cases) {
+      const fetchImpl = vi.fn(async () => new Response(JSON.stringify(responsesBody(DRAFT)), { status: 200, headers: { 'content-type': 'application/json' } }));
+      await runAzureOpenAIFormulaProvider({ ...CONFIG, endpoint, description: 'x', fetchImplementation: fetchImpl });
+      expect(fetchImpl.mock.calls[0][0], endpoint).toBe(expected);
+    }
   });
 });
 
