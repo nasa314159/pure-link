@@ -41,8 +41,8 @@ describe('formula generation API image and privacy path', () => {
     expect(body.temperature).toBe(0);
     expect(body.max_output_tokens).toBe(256);
     expect(body.store).toBe(false);
-    expect(body.input[0]).toEqual({ role: 'system', content: FORMULA_SYSTEM_PROMPT });
-    expect(body.input[1]).toEqual({ role: 'user', content: 'Lorentz force' });
+    expect(body.input[0]).toEqual({ type: 'message', role: 'system', content: FORMULA_SYSTEM_PROMPT });
+    expect(body.input[1]).toEqual({ type: 'message', role: 'user', content: 'Lorentz force' });
     expect(body.text.format).toEqual({ type: 'json_schema', name: 'formula_draft', strict: true, schema: { ...FORMULA_OUTPUT_SCHEMA } });
     expect(db.requestCount).toBe(2);
     expect(db.boundValues.flat()).not.toContain('Lorentz force');
@@ -67,6 +67,8 @@ describe('formula generation API image and privacy path', () => {
       await expect(response.json()).resolves.toMatchObject({ provider: AZURE_OPENAI_FORMULA_AI_PROVIDER, model: AZURE_ENV.AZURE_OPENAI_DEPLOYMENT });
       expect(fetchMock).toHaveBeenCalledTimes(1);
       const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+      expect(body.input[1].type).toBe('message');
+      expect(body.input[1].role).toBe('user');
       const userContent = body.input[1].content;
       expect(userContent[0].type).toBe('input_text');
       expect(userContent[0].text).toContain('continuity equation');

@@ -69,8 +69,8 @@ export async function runAzureOpenAIFormulaProvider({
   const request = {
     model: deployment,
     input: [
-      { role: 'system', content: FORMULA_SYSTEM_PROMPT },
-      { role: 'user', content: userContent },
+      { type: 'message', role: 'system', content: FORMULA_SYSTEM_PROMPT },
+      { type: 'message', role: 'user', content: userContent },
     ],
     text: {
       format: {

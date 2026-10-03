@@ -52,8 +52,8 @@ describe('runAzureOpenAIFormulaProvider', () => {
     expect(body.temperature).toBe(0);
     expect(body.max_output_tokens).toBe(256);
     expect(body.store).toBe(false);
-    expect(body.input[0]).toEqual({ role: 'system', content: FORMULA_SYSTEM_PROMPT });
-    expect(body.input[1]).toEqual({ role: 'user', content: 'E equals mc squared' });
+    expect(body.input[0]).toEqual({ type: 'message', role: 'system', content: FORMULA_SYSTEM_PROMPT });
+    expect(body.input[1]).toEqual({ type: 'message', role: 'user', content: 'E equals mc squared' });
     expect(body.text.format).toEqual({
       type: 'json_schema',
       name: 'formula_draft',
@@ -83,6 +83,8 @@ describe('runAzureOpenAIFormulaProvider', () => {
       fetchImplementation: fetchImpl,
     });
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.input[1].type).toBe('message');
+    expect(body.input[1].role).toBe('user');
     const userContent = body.input[1].content;
     expect(userContent[0].type).toBe('input_text');
     expect(userContent[0].text).toContain('一維無熱源熱傳導方程');
