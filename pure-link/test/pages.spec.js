@@ -54,7 +54,7 @@ describe('interactive pages', () => {
     expect(script).toContain('sessionStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify(draft))');
     expect(script).toContain('sessionStorage.removeItem(CREATE_DRAFT_KEY)');
     expect(script).not.toContain('localStorage.setItem(CREATE_DRAFT_KEY');
-    expect(script).toContain("const CREATE_DRAFT_TEXT_FIELDS = ['content', 'signature', 'slug', 'trackingRemove', 'trackingKeep', 'formulaAiDescription']");
+    expect(script).toContain("const CREATE_DRAFT_TEXT_FIELDS = ['content', 'signature', 'slug', 'trackingRemove', 'trackingKeep']");
     expect(script).toContain("const CREATE_DRAFT_CHECKBOXES = ['cleanTracking', 'isAffiliate']");
     expect(script).toContain('draft.contentType');
     expect(script).toContain('input[name="theme"]:checked');
@@ -74,7 +74,6 @@ describe('interactive pages', () => {
       slug: { value: 'my-slug_1' },
       trackingRemove: { value: 'utm_source' },
       trackingKeep: { value: 'q' },
-      formulaAiDescription: { value: 'a formula about circles' },
     };
     const documentStub = { getElementById: (id) => elements[id] || null };
     const formStub = {
@@ -91,7 +90,7 @@ describe('interactive pages', () => {
 
     api.saveCreateDraft();
     const saved = JSON.parse(storage.get('purelink.createDraft.v1'));
-    expect(Object.keys(saved).sort()).toEqual(['cleanTracking', 'content', 'contentType', 'formulaAiDescription', 'isAffiliate', 'signature', 'slug', 'theme', 'trackingKeep', 'trackingRemove'].sort());
+    expect(Object.keys(saved).sort()).toEqual(['cleanTracking', 'content', 'contentType', 'isAffiliate', 'signature', 'slug', 'theme', 'trackingKeep', 'trackingRemove'].sort());
     expect(saved).toMatchObject({ contentType: 'formula', theme: 'mist', content: 'https://example.com/watch?v=x', cleanTracking: true, isAffiliate: false, slug: 'my-slug_1' });
 
     storage.set('purelink.createDraft.v1', '{not json');
@@ -107,14 +106,14 @@ describe('interactive pages', () => {
       managementToken: 'secret-token', managementUrl: 'https://no-no.uk/manage/x', url: 'https://no-no.uk/k1', turnstileToken: 'tok', user: 'attacker',
     }));
     const restored = api.readCreateDraft();
-    expect(restored).toEqual({ contentType: 'card', theme: 'night', content: 'card text', signature: 'sig', slug: 'k1', trackingRemove: 'fbclid', trackingKeep: 'id', cleanTracking: true, isAffiliate: true, formulaAiDescription: 'd' });
+    expect(restored).toEqual({ contentType: 'card', theme: 'night', content: 'card text', signature: 'sig', slug: 'k1', trackingRemove: 'fbclid', trackingKeep: 'id', cleanTracking: true, isAffiliate: true });
     expect(JSON.stringify(restored)).not.toContain('secret-token');
 
     const calls = [];
     const selectSpy = (type) => calls.push(type);
     const api2 = factory({ getItem: () => null, setItem: () => {}, removeItem: () => {} }, documentStub, formStub, elements.content, { value: 'url' }, selectSpy, () => {}, () => {});
     for (const type of ['url', 'formula', 'card']) {
-      api2.restoreCreateDraft({ contentType: type, theme: null, content: 'draft body', signature: '', slug: '', trackingRemove: '', trackingKeep: '', cleanTracking: false, isAffiliate: false, formulaAiDescription: '' });
+      api2.restoreCreateDraft({ contentType: type, theme: null, content: 'draft body', signature: '', slug: '', trackingRemove: '', trackingKeep: '', cleanTracking: false, isAffiliate: false });
     }
     expect(calls).toEqual(['formula', 'card']);
     expect(elements.content.value).toBe('draft body');
@@ -297,14 +296,15 @@ describe('interactive pages', () => {
     expect(html).toContain('<pre class="formula-source">x² + y² = z²</pre>');
     expect(html).toContain('<textarea id="raw-content" hidden>x² + y² = z²</textarea>');
     const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
-    // The outer wrapper owns overflow; the inner wrapper holds the untouched
-    // render and is scaled through the layout-participating zoom property.
+    // The outer wrapper owns overflow (scrolling stays available on every
+    // browser path); the inner wrapper holds the untouched render and is
+    // scaled through the layout-participating zoom property.
     expect(css.match(/\.formula-fit \{([^}]*)\}/)[1]).toContain('overflow-x: auto');
     const boxRule = css.match(/\.formula-box \{([^}]*)\}/)[1];
     expect(boxRule).toContain('width: max-content');
     expect(boxRule).toContain('margin-inline: auto');
     // KaTeX keeps its natural internal size: no font-size scaling, no
-    // transform wrapper compensation, no overrides of KaTeX's own rules.
+    // transform scaling, no overrides of KaTeX's own rules.
     expect(css).not.toContain('--formula-scale');
     expect(css).not.toContain('transform');
     expect(css).not.toContain('formula-stretch');
@@ -312,7 +312,41 @@ describe('interactive pages', () => {
     expect(css).not.toContain('.formula-fit .katex');
   });
 
-  it('zooms the rendered formula to a readability floor with scroll fallback, without affecting cards', () => {
+  it('gates shared formula scaling to engines that render zoomed KaTeX correctly', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const detectorSource = contentActions.match(/function isProblematicWebKitFormulaRendering\(\) \{[\s\S]*?\n\}/)?.[0];
+    expect(detectorSource).toBeTruthy();
+    const detector = new Function('navigator', `${detectorSource}\nreturn isProblematicWebKitFormulaRendering();`);
+    const decide = (ua, maxTouchPoints = 0) => detector({ userAgent: ua, maxTouchPoints });
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
+    const WEBKIT = 'AppleWebKit/605.1.15 (KHTML, like Gecko)';
+    const CHROMIUM = 'AppleWebKit/537.36 (KHTML, like Gecko)';
+    // Desktop Safari takes the no-scaling WebKit fallback.
+    expect(decide(`${MAC} ${WEBKIT} Version/18.4 Safari/605.1.15`)).toBe(true);
+    // Desktop Chromium-family browsers keep scaling.
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36`)).toBe(false);
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0`)).toBe(false);
+    // Android Chrome keeps scaling.
+    expect(decide('Mozilla/5.0 (Linux; Android 14; Pixel 8) ' + CHROMIUM + ' Chrome/140.0.0.0 Mobile Safari/537.36')).toBe(false);
+    // iOS/iPadOS: platform no longer implies WebKit (Apple allows entitled
+    // alternative engines in the EU iOS 17.4+ / Japan iOS 26.2+). Only the
+    // unambiguous WebKit Safari identity (Version token) falls back on
+    // engine evidence; the detector never encodes "iPhone == WebKit".
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) ' + WEBKIT;
+    expect(decide(`${IPHONE} Version/18.5 Mobile/15E148 Safari/604.1`)).toBe(true);
+    // Third-party iOS UAs (CriOS/FxiOS…) cannot prove a non-WebKit engine;
+    // they conservatively fall back (wrong scaling would corrupt the render,
+    // a needless fallback only forgoes the scaling UX), not because their
+    // platform is assumed to be WebKit.
+    expect(decide(`${IPHONE} CriOS/140.0.7339.60 Mobile/15E148 Safari/604.1`)).toBe(true);
+    expect(decide(`${IPHONE} FxiOS/141.0 Mobile/15E148 Safari/605.1.15`)).toBe(true);
+    // iPadOS desktop-site UAs masquerade as Macs; touch points reveal them.
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36`, 5)).toBe(true);
+    // Desktop Firefox is not targeted by the WebKit gate.
+    expect(decide(`${MAC} Gecko/20100101 Firefox/141.0`)).toBe(false);
+  });
+
+  it('zooms the rendered formula to a readability floor on scaling engines with a WebKit fallback, without affecting cards', () => {
     const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
     expect(contentActions).toContain('const FORMULA_MIN_SCALE = 0.7');
     expect(contentActions).toMatch(/Math\.max\(FORMULA_MIN_SCALE, Math\.min\(1, availableWidth \/ naturalWidth\)\)/);
@@ -325,11 +359,15 @@ describe('interactive pages', () => {
     expect(contentActions).toContain("removeProperty('zoom')");
     expect(contentActions).toMatch(/const formulaResizeObserver = new ResizeObserver/);
     expect(contentActions).toContain('formulaResizeObserver.observe(formulaFit)');
+    // The WebKit fallback runs before any measurement and never scales.
+    expect(contentActions).toMatch(/if \(formulaScalingBlocked\) \{\n[\s\S]*?formulaBox\.style\.removeProperty\('zoom'\);\n[\s\S]*?return;/);
+    expect(contentActions).toMatch(/typeof ResizeObserver === 'function' && !formulaScalingBlocked/);
     expect(contentActions).not.toContain('setInterval');
     expect(contentActions).not.toContain('MutationObserver');
-    // No font-size or transform scaling is left over.
+    // No font-size or transform scaling is introduced on any path.
     expect(contentActions).not.toContain('--formula-scale');
     expect(contentActions).not.toContain('style.transform');
+    expect(contentActions).not.toContain('style.fontSize');
     // PNG capture neutralizes the zoom before capture and re-fits after.
     const exportIndex = contentActions.indexOf("querySelector('[data-download-png]')");
     const captureIndex = contentActions.indexOf('toPng(captureTarget');
@@ -338,6 +376,7 @@ describe('interactive pages', () => {
     expect(resetIndex).toBeGreaterThan(-1);
     expect(resetIndex).toBeLessThan(captureIndex);
     expect(reFitIndex).toBeGreaterThan(captureIndex);
+    expect(contentActions).toContain("removeProperty('zoom')");
     // Card shared pages carry no formula scaler markup; the shared-page
     // behavior lives in the bundle's [data-formula-scale] guard.
     const card = renderCardPage({ slug: 'kind', content: 'hello', theme: 'paper' }, 'en', 'test-nonce');
@@ -407,8 +446,17 @@ describe('interactive pages', () => {
     expect(html).toContain('id="formula-ai-description"');
     expect(html).toContain('id="generate-formula-ai"');
     expect(html).toContain('id="use-formula-ai"');
-    expect(html).toContain('Cloudflare Workers AI');
-    expect(html).toContain('PureLink 不儲存描述或生成結果');
+    expect(html).toContain('id="formula-ai-image"');
+    expect(html).toContain('accept="image/png,image/jpeg"');
+    expect(html).toContain('id="remove-formula-ai-image"');
+    expect(html).toContain('AI 供應商');
+    expect(html).toContain('不會將描述、圖片或草稿保存為 AI 歷程');
+    expect(html).toContain('若你選擇建立，提交的公式會依一般分享功能保存為分享內容');
+    expect(html).not.toContain('Cloudflare Workers AI');
+    const english = renderHomePage('test-nonce', '', true, '', { id: 'user-1', email: 'person@example.com' }, 'en');
+    expect(english).toContain('＋ Add reference image (optional)');
+    expect(english).toContain('if you choose Create, the selected formula is saved as shared content');
+    expect(english).not.toContain('Cloudflare Workers AI');
   });
 
   it('shows the administrator formula allowance without changing regular accounts', () => {
@@ -443,11 +491,15 @@ describe('interactive pages', () => {
     const chineseHome = renderHomePage('test-nonce', '', false, '', null, 'zh-Hant');
     const englishHome = renderHomePage('test-nonce', '', false, '', null, 'en');
     const chinesePrivacy = renderLegalPage('privacy', 'zh-Hant');
+    const englishPrivacy = renderLegalPage('privacy', 'en');
     const englishCredits = renderLegalPage('ai-credits', 'en');
 
     expect(chineseHome).toContain('href="/en/"');
     expect(englishHome).toContain('href="/zh-Hant/"');
     expect(chinesePrivacy).toContain('href="/en/privacy"');
+    expect(chinesePrivacy).toContain('若使用者選擇建立');
+    expect(englishPrivacy).toContain('If the customer chooses Create');
+    expect(englishPrivacy).toContain('provider’s retention terms apply');
     expect(englishCredits).toContain('href="/zh-Hant/ai-credits"');
     expect(chineseHome).not.toContain('<form method="post" action="/locale">');
   });
@@ -497,19 +549,22 @@ describe('interactive pages', () => {
     expect(credits).toContain('<html lang="en">');
     expect(credits).toContain('Last updated: September 1, 2026');
     expect(credits).toContain('PureLink AI Formula Credits');
-    expect(credits).toContain('Small: 150 AI formula drafts — NT$150');
-    expect(credits).toContain('Standard: 400 AI formula drafts — NT$300');
-    expect(credits).toContain('Large: 1,000 AI formula drafts — NT$600');
-    expect(credits).toContain('one-time purchases, not subscriptions');
+    expect(credits).toContain('Paid AI credit purchases are currently unavailable during the public beta');
+    expect(credits).toContain('Five free AI formula generations remain available daily');
+    expect(credits).not.toContain('Small: 150 AI formula drafts');
+    expect(credits).not.toContain('Standard: 400 AI formula drafts');
+    expect(credits).not.toContain('Large: 1,000 AI formula drafts');
+    expect(credits).not.toContain('legal-purchase');
+    expect(credits).not.toContain('Sign in to purchase AI formula credits');
     expect(credits).toContain('No payment rail is enabled in this deployment');
     expect(credits).not.toMatch(/US\$5|US\$10|US\$20|300 AI formula generations|800 generations|2,000 generations|Creem/);
     expect(chineseCredits).toContain('<html lang="zh-Hant">');
     expect(chineseCredits).toContain('MVP 說明版本：2026-09-01');
     expect(chineseCredits).toContain('PureLink AI 公式額度');
-    expect(chineseCredits).toContain('小型方案：150 次 AI 公式草稿，NT$150');
-    expect(chineseCredits).toContain('標準方案：400 次 AI 公式草稿，NT$300');
-    expect(chineseCredits).toContain('大型方案：1,000 次 AI 公式草稿，NT$600');
-    expect(chineseCredits).toContain('一次性購買，不是訂閱');
+    expect(chineseCredits).toContain('公開測試期間暫不開放付費 AI 公式額度購買；每日仍有 5 次免費 AI 公式生成');
+    expect(chineseCredits).not.toContain('小型方案：150 次 AI 公式草稿');
+    expect(chineseCredits).not.toContain('標準方案：400 次 AI 公式草稿');
+    expect(chineseCredits).not.toContain('大型方案：1,000 次 AI 公式草稿');
     expect(chineseCredits).toContain('此部署尚未啟用任何付款方式；啟用前不會收款');
     expect(chineseCredits).toContain('href="/zh-Hant/refund-policy"');
     expect(chineseCredits).toContain('mailto:nasa3.14159@gmail.com');
@@ -527,12 +582,11 @@ describe('interactive pages', () => {
     const chineseEcpay = renderLegalPage('ai-credits', 'zh-Hant', { ecpay: true });
     expect(englishDisabled).not.toContain('ECPay');
     expect(englishDisabled).not.toContain('legal-purchase');
-    expect(englishEcpay).toContain('Credit card / Apple Pay / TWQR and more');
     expect(englishEcpay).not.toContain('ECPay');
-    expect(englishEcpay).toContain('Sign in to purchase AI formula credits');
+    expect(englishEcpay).not.toContain('Sign in to purchase AI formula credits');
     expect(chineseEcpay).toContain('信用卡 / Apple Pay / TWQR 等');
     expect(chineseEcpay).not.toContain('ECPay');
-    expect(chineseEcpay).toContain('登入購買 AI 公式額度');
+    expect(chineseEcpay).not.toContain('ECPay');
     expect(englishEcpay).not.toContain('信用卡 / Apple Pay / TWQR 等');
     expect(chineseEcpay).not.toContain('Credit card / Apple Pay / TWQR and more');
   });
@@ -542,20 +596,26 @@ describe('interactive pages', () => {
     const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, { ecpay: true, lemon: true }, 'success', 'billing-nonce', 'en');
     expect(disabled).toContain('可用購買額度：12 次');
     expect(disabled).not.toContain('data-billing-checkout');
-    expect(enabled).toContain('data-provider="ecpay" data-pack-id="small"');
-    expect(enabled).toContain('data-provider="lemon" data-pack-id="large"');
-    expect(enabled).toContain('Small: 150 AI formula drafts — NT$150');
+    expect(enabled).not.toContain('data-provider="ecpay"');
+    expect(enabled).not.toContain('data-pack-id');
+    expect(enabled).not.toContain('data-billing-checkout');
+    expect(enabled).not.toContain('NT$150');
+    expect(enabled).toContain('Paid AI credit purchases are currently unavailable during the public beta');
+    expect(enabled).toContain('Five free AI formula generations remain available daily');
     expect(enabled).toContain('The payment flow has returned to PureLink');
-    expect(enabled).toContain('nonce="billing-nonce"');
-    expect(() => new Function(extractScript(enabled))).not.toThrow();
+  });
+
+  it('replaces the buying area with the neutral public-beta message in both locales', () => {
+    const english = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'en');
+    const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'zh-Hant');
+    expect(english).toContain('Paid AI credit purchases are currently unavailable during the public beta');
+    expect(chinese).toContain('公開測試期間暫不開放付費 AI 公式額度購買；每日仍有 5 次免費 AI 公式生成');
   });
 
   it('keeps account billing copy localized when ECPay is enabled', () => {
     const english = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'en');
     const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'zh-Hant');
-    expect(english).toContain('Credit card / Apple Pay / TWQR and more');
     expect(english).not.toContain('台灣一次性付款');
-    expect(chinese).toContain('信用卡 / Apple Pay / TWQR 等');
     expect(chinese).not.toContain('Credit card / Apple Pay / TWQR and more');
   });
 

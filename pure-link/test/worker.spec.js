@@ -34,6 +34,19 @@ describe('PureLink worker', () => {
     expect(body).toContain('href="/auth/google?returnTo=%2Fen%2F"');
   });
 
+  it('allows blob images only for the signed-in ephemeral formula-image preview', async () => {
+    const signedOut = await worker.fetch(new Request('https://pure.test/en/'), env);
+    expect(signedOut.headers.get('content-security-policy')).toContain("img-src 'self' data:");
+    expect(signedOut.headers.get('content-security-policy')).not.toContain('blob:');
+
+    const sessionToken = await authenticateTestUser(env);
+    const signedIn = await worker.fetch(new Request('https://pure.test/en/', {
+      headers: { cookie: `purelink_session=${sessionToken}` },
+    }), env);
+    expect(signedIn.headers.get('content-security-policy')).toContain("img-src 'self' data: blob:");
+    expect(signedIn.headers.get('content-security-policy')).not.toContain('https:');
+  });
+
   it('resolves locale routes without touching shared-content semantics', async () => {
     const chinese = await worker.fetch(new Request('https://pure.test/', { headers: { 'accept-language': 'zh-TW' }, redirect: 'manual' }), env);
     expect(chinese.headers.get('location')).toBe('/zh-Hant/');
@@ -274,6 +287,35 @@ describe('PureLink worker', () => {
     }), env);
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ error: 'Sign in before purchasing AI formula credits.' });
+  });
+
+  it('refuses paid AI credit checkout for signed-in users during the public beta', async () => {
+    Object.assign(env, {
+      APP_ENV: 'production',
+      RATE_LIMIT_SECRET: 'rate-limit-test-secret',
+      LEMON_SQUEEZY_CHECKOUT_ENABLED: 'true',
+      LEMON_SQUEEZY_API_KEY: 'lemon-api-key',
+      LEMON_SQUEEZY_WEBHOOK_SECRET: 'webhook-secret',
+      LEMON_SQUEEZY_STORE_ID: '1',
+      LEMON_SQUEEZY_VARIANT_SMALL_ID: '101',
+      LEMON_SQUEEZY_VARIANT_STANDARD_ID: '102',
+      LEMON_SQUEEZY_VARIANT_LARGE_ID: '103',
+      ECPAY_MERCHANT_ID: '2000132',
+      ECPAY_HASH_KEY: 'test-hash-key',
+      ECPAY_HASH_IV: 'test-hash-iv',
+      ECPAY_ENVIRONMENT: 'stage',
+      ECPAY_CHECKOUT_ENABLED: 'true',
+    });
+    const sessionToken = await authenticateTestUser(env);
+    const response = await worker.fetch(new Request('https://pure.test/api/billing/checkout', {
+      method: 'POST',
+      headers: { origin: 'https://pure.test', 'content-type': 'application/json', cookie: `purelink_session=${sessionToken}`, 'x-purelink-locale': 'en' },
+      body: JSON.stringify({ provider: 'ecpay', packId: 'small' }),
+    }), env);
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'AI credit checkout is not available yet.',
+    });
   });
 
   it('logs out an authenticated user with a normal same-origin Origin', async () => {

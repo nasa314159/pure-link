@@ -15,6 +15,22 @@
 		"PUBLIC_ORIGIN": "https://no-no.uk",
 		"CREEM_PRODUCT_300_ID": "prod_4UdvN9knG2AzhhktS3Nwj9"
 	},
+	// Binary module import rules (imported in src/index.js) for the Formula OG
+	// image feature (src/formula-og.js): the wordmark font is imported as Data
+	// and resvg's compiled WASM uses wrangler's default CompiledWasm rule.
+	"rules": [
+		{
+			"type": "Data",
+			"globs": ["**/*.ttf"],
+			"fallthrough": true
+		}
+	],
+	// mathjax-full reads its own package version through a require() fallback
+	// unless this is defined at bundle time; workerd would crash on that
+	// eval'd require without the define.
+	"define": {
+		"PACKAGE_VERSION": "\"3.2.1\""
+	},
 	"routes": [
 		{
 			"pattern": "no-no.uk",

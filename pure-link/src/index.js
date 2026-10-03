@@ -1,10 +1,16 @@
 import { normalizeCreateInput, ValidationError } from './content.js';
 import { finishGoogleAuth, getCurrentUser, isGoogleAuthConfigured, logout, requireSameOrigin, requireSameOriginForFormPost, startGoogleAuth } from './auth.js';
-import { consumeAuthenticatedCheckoutRateLimit, enforceWriteProtection, isPublicWriteProtectionConfigured } from './abuse.js';
+import { consumeAuthenticatedCheckoutRateLimit, consumeRateLimit, enforceWriteProtection, isPublicWriteProtectionConfigured } from './abuse.js';
 import { recordAggregateMetric } from './analytics.js';
 import { html, json, noContent, redirect, text, xml } from './http.js';
 import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderSocialPreviewPage, renderStartPage, renderSupportPage, renderUrlPreview } from './pages.js';
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
+import { normalizeFormulaImage, MAX_FORMULA_IMAGE_BYTES } from './formula-image.js';
+// Static data imports for the Formula OG image feature (src/formula-og.js).
+// CompiledWasm / Data module rules are configured in wrangler.jsonc.
+import { renderFormulaOgImage, FormulaRenderError } from './formula-og.js';
+import resvgWasm from '@resvg/resvg-wasm/index_bg.wasm';
+import brandFont from 'katex/dist/fonts/KaTeX_SansSerif-Regular.ttf';
 import { createLinkRepository } from './repository.js';
 import { createReport as storeReport, normalizeReportInput } from './reports.js';
 import { sendReportNotification } from './discord.js';
@@ -65,7 +71,7 @@ export async function routeRequest(request, env, context) {
     const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '';
     const googleAuthConfigured = isGoogleAuthConfigured(env);
     const user = googleAuthConfigured ? await getCurrentUser(request, env) : null;
-    return publicReadResponse(request, html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user, locale, env.GOOGLE_SITE_VERIFICATION || ''), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey) }));
+    return publicReadResponse(request, html(renderHomePage(nonce, turnstileSiteKey, googleAuthConfigured, requestUrl.searchParams.get('auth'), user, locale, env.GOOGLE_SITE_VERIFICATION || ''), {}, { scriptNonce: nonce, turnstile: Boolean(turnstileSiteKey), blobImages: Boolean(user) }));
   }
   if (request.method === 'GET' && originalPath === 'native/verify') {
     const nonce = createSlug() + createSlug();
@@ -133,6 +139,13 @@ export async function routeRequest(request, env, context) {
   if (isPublicRead && (path.startsWith('assets/') || ['favicon.svg', 'og.png'].includes(path))) {
     if (!env.ASSETS) return text('Asset not found.', { status: 404 });
     return env.ASSETS.fetch(request);
+  }
+
+  // Dynamic Open Graph / Twitter preview image for formula PureLinks.
+  // Locale-prefixed variants are not links to shared content (see below), so
+  // only the plain /og/formula/<slug>.png path resolves the stored formula.
+  if (isPublicRead && !localeRoute && path.startsWith('og/formula/') && path.endsWith('.png')) {
+    return publicReadResponse(request, await formulaOgImage(request, path.slice('og/formula/'.length, -'.png'.length), repository, env));
   }
 
   if (request.method === 'GET' && path === 'auth/google') return startGoogleAuth(request, env);
@@ -219,7 +232,7 @@ export async function routeRequest(request, env, context) {
   }
 
   if (request.method === 'POST' && path === 'api/formulas/generate') {
-    return generateFormula(request, env);
+    return generateFormula(request, env, context);
   }
 
   if (request.method === 'POST' && path === 'api/reports') {
@@ -407,7 +420,43 @@ async function createNativeCard(request, requestUrl, repository, env, context) {
   return json({ error: messages.api.uniqueLinkFailed }, { status: 503 });
 }
 
-async function generateFormula(request, env) {
+// Serves the formula-specific OG/Twitter preview image. Only formulas resolve;
+// unknown/non-formula slugs 404, and a formula that cannot render fails safely
+// to the generic static OG image.
+async function formulaOgImage(request, rawSlug, repository, env) {
+  const locale = resolveLocale(request);
+  const slug = String(rawSlug || '');
+  if (!slug || slug.includes('/') || slug.length > 30) {
+    return html(renderNotFoundPage(locale), { status: 404 });
+  }
+
+  const link = await repository.findBySlug(slug);
+  if (!isAvailable(link) || link.content_type !== 'formula') {
+    return html(renderNotFoundPage(locale), { status: 404 });
+  }
+
+  try {
+    const { png } = await renderFormulaOgImage(resvgWasm, link.content, brandFont);
+    return pngResponse(png);
+  } catch (error) {
+    if (error instanceof FormulaRenderError) {
+      console.error('Formula OG render failed', { name: error.name, message: error.message });
+      return redirect('/og.png', 302, { headers: { 'cache-control': 'no-store' } });
+    }
+    throw error;
+  }
+}
+
+function pngResponse(pngBytes) {
+  const headers = new Headers();
+  headers.set('content-type', 'image/png');
+  headers.set('cache-control', 'public, max-age=3600');
+  headers.set('referrer-policy', 'no-referrer');
+  headers.set('x-content-type-options', 'nosniff');
+  return new Response(pngBytes, { headers });
+}
+
+async function generateFormula(request, env, context) {
   const messages = getMessages(resolveResponseLocale(request));
   if (!request.headers.get('origin') || !requireSameOrigin(request, env)) {
     return json({ error: messages.api.invalidRequest }, { status: 403 });
@@ -418,13 +467,36 @@ async function generateFormula(request, env) {
     return json({ error: messages.api.formulaSignIn, loginUrl: `/auth/google?returnTo=${encodeURIComponent(`${localizedPath(locale)}#formula-ai`)}` }, { status: 401 });
   }
 
+  if (env.RATE_LIMIT_SECRET) {
+    const rateLimit = await consumeRateLimit({
+      request,
+      env,
+      db: env.pure_link_db,
+      action: 'formula-ai',
+      clientIdentity: `user:${user.id}`,
+      context,
+    });
+    if (!rateLimit.allowed) {
+      return json({ error: messages.api.formulaRateLimited }, {
+        status: 429,
+        headers: { 'retry-after': String(rateLimit.retryAfterSeconds) },
+      });
+    }
+  }
+
   try {
-    const input = await readCreateInput(request);
+    const input = await readFormulaGenerationInput(request, messages.api);
+    const image = input.image ? await normalizeFormulaImage(input.image, messages.api) : null;
     return json(await generateFormulaDraft({
       description: input.description,
+      image,
       userId: user.id,
       db: env.pure_link_db,
-      ai: env.AI,
+      azureOpenAI: {
+        endpoint: env.AZURE_OPENAI_ENDPOINT,
+        apiKey: env.AZURE_OPENAI_API_KEY,
+        deployment: env.AZURE_OPENAI_DEPLOYMENT,
+      },
       dailyLimit: Number(user.is_admin) === 1 ? 100 : 5,
       isAdmin: Number(user.is_admin) === 1,
       errorMessages: messages.api,
@@ -494,6 +566,83 @@ async function readCreateInput(request) {
   if (contentType.includes('application/json')) return request.json();
   if (contentType.includes('form')) return Object.fromEntries(await request.formData());
   throw new ValidationError('Use JSON or form data for this request.');
+}
+
+const MAX_FORMULA_REQUEST_BYTES = MAX_FORMULA_IMAGE_BYTES + 16 * 1024;
+
+async function readFormulaGenerationInput(request, errorMessages) {
+  const contentType = (request.headers.get('content-type') || '').toLowerCase();
+  const contentLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_FORMULA_REQUEST_BYTES) {
+    throw new ValidationError(errorMessages.formulaImageTooLarge, 'image');
+  }
+
+  const body = await readBoundedBody(request, MAX_FORMULA_REQUEST_BYTES, errorMessages);
+  if (contentType.includes('application/json')) {
+    let input;
+    try { input = JSON.parse(new TextDecoder().decode(body)); }
+    catch { throw new ValidationError(errorMessages.formulaRequestInvalid, 'request'); }
+    if (!input || typeof input !== 'object' || Array.isArray(input)
+      || Object.keys(input).some((key) => key !== 'description')) {
+      throw new ValidationError(errorMessages.formulaRequestInvalid, 'request');
+    }
+    return input;
+  }
+
+  if (!contentType.startsWith('multipart/form-data;')) {
+    throw new ValidationError(errorMessages.formulaRequestInvalid, 'request');
+  }
+
+  let form;
+  try {
+    const parseRequest = new Request(request.url, {
+      method: 'POST',
+      headers: { 'content-type': request.headers.get('content-type') },
+      body,
+    });
+    form = await parseRequest.formData();
+  } catch {
+    throw new ValidationError(errorMessages.formulaRequestInvalid, 'request');
+  }
+
+  const allowedFields = new Set(['description', 'image']);
+  if ([...form.keys()].some((key) => !allowedFields.has(key))) {
+    throw new ValidationError(errorMessages.formulaRequestInvalid, 'request');
+  }
+  const descriptions = form.getAll('description');
+  const images = form.getAll('image');
+  if (descriptions.length !== 1 || typeof descriptions[0] !== 'string' || images.length > 1) {
+    throw new ValidationError(errorMessages.formulaRequestInvalid, 'request');
+  }
+  if (images.length && (!images[0] || typeof images[0].arrayBuffer !== 'function')) {
+    throw new ValidationError(errorMessages.formulaImageInvalid, 'image');
+  }
+  return { description: descriptions[0], image: images[0] || null };
+}
+
+async function readBoundedBody(request, maxBytes, errorMessages) {
+  if (!request.body) throw new ValidationError(errorMessages.formulaRequestInvalid, 'request');
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw new ValidationError(errorMessages.formulaImageTooLarge, 'image');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.length; }
+  return body;
 }
 
 function isAvailable(link) {
