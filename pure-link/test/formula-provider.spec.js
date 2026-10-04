@@ -99,6 +99,45 @@ describe('FORMULA_SYSTEM_PROMPT contract', () => {
     expect(FORMULA_SYSTEM_PROMPT).toMatch(/one appropriate formula follows from the description and image exactly as given/i);
   });
 
+  it('answers clearly named canonical formulas with their conventional standard form', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/clearly names a standard, widely recognized equation or law/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/choose the conventional standard textbook form for that name and return it directly with needs_context false/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/heat equation/);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/wave equation/);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/ideal gas law/);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/Lorentz force/);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/time-independent Schrödinger equation/);
+  });
+
+  it('does not treat generalized variants as a sufficient reason for needs_context', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/do not require extra context solely because more general variants exist/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/because coefficients, boundary conditions, source terms, or conventions could vary/i);
+  });
+
+  it('specialized or modified canonical variants must be explicitly requested', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/unless the wording explicitly asks for a specialized, generalized, source-driven, boundary-value, variable-coefficient, relativistic, quantum, or otherwise modified version/i);
+  });
+
+  it('keeps the external-referent guard for underspecified "this system" requests', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/refers to an external setup such as "this system", "this circuit", or "the setup above"/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/without an image or sufficient textual description/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/return latex as an empty string with needs_context true/i);
+  });
+
+  it('keeps the coupled-system policy intact alongside the canonical-name rule', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/multiple coupled equations never imply needs_context/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/driven by missing information or ambiguity, never by the number of equations/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/never force a single canonical equation onto a multi-state circuit, mechanical, field, or dynamical-system setup/i);
+  });
+
+  it('keeps the no-invention and topology-preservation rules intact alongside the canonical-name rule', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/never invent equivalent components/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/do not invent its law/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/do not add unstated dimensions, sources, boundary conditions/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/simplification would discard the shown topology/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/Never recognize a canonical textbook system merely because some familiar components appear/i);
+  });
+
   it('treats reference images as structural evidence, not decoration', () => {
     expect(IMAGE_CONTEXT_INSTRUCTION).toMatch(/structural evidence/i);
     expect(IMAGE_CONTEXT_INSTRUCTION).toMatch(/do not replace several visible elements with an equivalent simplified system/i);
