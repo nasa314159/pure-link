@@ -37,6 +37,49 @@ function respond(text, { status = 200 } = {}) {
   return vi.fn(async () => new Response(JSON.stringify(responsesBody(text)), { status, headers: { 'content-type': 'application/json' } }));
 }
 
+describe('FORMULA_SYSTEM_PROMPT contract', () => {
+  it('asks for needs_context instead of forcing one formula on ambiguous input', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/needs_context true/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/no single formula is well determined/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/needs_context false only when/i);
+  });
+
+  it('forbids forcing a single equation onto systems needing coupled equations', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/never force a single canonical equation/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/coupled equations/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/state variables/i);
+  });
+
+  it('requires preserving the topology and state variables shown in diagrams', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/structural evidence/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/topology/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/keep the structure, components, and state variables shown/i);
+  });
+
+  it('forbids inventing equivalent reductions, components, constitutive laws, or assumptions', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/never invent equivalent components/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/state reductions/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/do not invent its law/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/constitutive relation is missing/i);
+  });
+
+  it('keeps the established strengths of the prompt', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/mathematically correct expression first/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/valid LaTeX/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/no reasoning or prose in latex/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/Return only the required JSON object/i);
+  });
+
+  it('still directs well-specified requests to produce one formula', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/one appropriate formula follows from the description and image exactly as given/i);
+  });
+
+  it('treats reference images as structural evidence, not decoration', () => {
+    expect(IMAGE_CONTEXT_INSTRUCTION).toMatch(/structural evidence/i);
+    expect(IMAGE_CONTEXT_INSTRUCTION).toMatch(/do not replace several visible elements with an equivalent simplified system/i);
+  });
+});
+
 describe('runAzureOpenAIFormulaProvider', () => {
   it('posts to the v1-compatible Responses endpoint with the deployment as model', async () => {
     const fetchImpl = respond(DRAFT);
