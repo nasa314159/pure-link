@@ -35,15 +35,23 @@ export const FORMULA_SYSTEM_PROMPT = [
   'For diagrams, model the whole visible setup, not just one component, and keep the structure, components, and state variables shown. Never recognize a canonical textbook system merely because some familiar components appear.',
   'For a pipe control volume use general mass continuity and do not assume steady flow unless stated; include a rod source only when internal generation is clearly marked; a bare mass–spring has no damping or forcing unless drawn; use all visible circuit components together.',
   'Choose the dominant conventional textbook form when clear; otherwise use the most general canonical form. Preserve stated variables and do not solve unless asked.',
-  'Never force a single canonical equation onto a system that naturally requires several coupled equations or multiple interacting state variables, such as a circuit, mechanical, field, or dynamical-system diagram with more than one state variable.',
-  'Never invent equivalent components, reduced or simplified stand-ins, missing constitutive relations, source terms, boundary conditions, or state reductions merely to produce one formula; if a component is nonlinear or otherwise unspecified, do not invent its law.',
+  'Return the simplest mathematically faithful representation, not the simplest-looking equation.',
+  'One formula is one latex string, which may hold either a single equation or a complete system of several coupled equations written with \\begin{cases}, aligned, or another appropriate mathematical structure when the system naturally requires multiple interacting state variables.',
+  'Never force a single canonical equation onto a multi-state circuit, mechanical, field, or dynamical-system setup with more than one state variable; preserve the distinct state variables and shown topology, and never collapse such a system into one invented scalar equation that combines unrelated state variables merely because the user asks for "the governing equation".',
+  'Never invent equivalent components, reduced or simplified stand-ins, missing constitutive relations, source terms, boundary conditions, or state reductions merely to produce one formula; if a component is nonlinear or otherwise unspecified, do not invent its law — keep it symbolically as a named constitutive term when that keeps the representation faithful, and set needs_context true only when that materially prevents a faithful representation.',
   'Do not add unstated dimensions, sources, boundary conditions, coordinates, constitutive laws, material properties, or special cases.',
   'Choose the mathematically correct expression first, then encode it as valid LaTeX. Return exactly one formula and no reasoning or prose in latex.',
-  'Return latex as an empty string with needs_context true whenever no single formula is well determined without materially adding assumptions — for example when the input is ambiguous, coupled equations would be needed, simplification would discard the shown topology, a constitutive relation is missing, or several materially different interpretations are plausible. Return needs_context false only when one appropriate formula follows from the description and image exactly as given.',
+  'Return latex as an empty string with needs_context true whenever no single formula is well determined without materially adding assumptions — for example when the input is ambiguous, a constitutive relation is missing, an essential geometry, source, or state definition is unstated, simplification would discard the shown topology, or several materially different interpretations are plausible. Return needs_context false only when one appropriate formula follows from the description and image exactly as given.',
+  'Multiple coupled equations never imply needs_context, which is driven by missing information or ambiguity, never by the number of equations; a scalar reduction is allowed only when the user asks for one or when it follows from the stated assumptions.',
   'Return only the required JSON object. Never use Markdown fences or dollar delimiters.',
 ].join(' ');
 
-export const IMAGE_CONTEXT_INSTRUCTION = 'Use the image as structural evidence, not as a transcription task or decoration. For multi-component setups, infer the equation for the whole visible system and keep the structure and state variables shown; do not replace several visible elements with an equivalent simplified system. Include a source only when it is clearly shown or stated; do not infer steady state, damping, forcing, or hidden components.';
+export const IMAGE_CONTEXT_INSTRUCTION = [
+  'Use the image as structural evidence, not as a transcription task or decoration.',
+  'For multi-component setups, model the whole visible system and keep the structure, distinct state variables, and shown topology; do not replace several visible elements with an equivalent simplified system, and do not infer a simpler textbook system just because familiar components appear.',
+  'Keep an unnamed, nonlinear, or otherwise unspecified element symbolically as a named term when that stays mathematically meaningful.',
+  'Include a source only when it is clearly shown or stated; do not infer steady state, damping, forcing, or hidden components.',
+].join(' ');
 
 /** Call the Azure OpenAI v1 Responses API using the configured deployment name. */
 export async function runAzureOpenAIFormulaProvider({

@@ -44,23 +44,48 @@ describe('FORMULA_SYSTEM_PROMPT contract', () => {
     expect(FORMULA_SYSTEM_PROMPT).toMatch(/needs_context false only when/i);
   });
 
-  it('forbids forcing a single equation onto systems needing coupled equations', () => {
+  it('allows coupled equation systems as one latex string', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/may hold either a single equation or a complete system of several coupled equations/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/cases/);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/aligned/);
+  });
+
+  it('distinguishes multiple equations from insufficient context', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/multiple coupled equations never imply needs_context/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/driven by missing information or ambiguity, never by the number of equations/i);
+  });
+
+  it('forbids forcing a single equation onto systems needing coupled equations and forbids invented scalar collapse', () => {
     expect(FORMULA_SYSTEM_PROMPT).toMatch(/never force a single canonical equation/i);
-    expect(FORMULA_SYSTEM_PROMPT).toMatch(/coupled equations/i);
-    expect(FORMULA_SYSTEM_PROMPT).toMatch(/state variables/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/multi-state circuit, mechanical, field, or dynamical-system setup/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/never collapse such a system into one invented scalar equation/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/combines unrelated state variables/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/merely because the user asks for "the governing equation"/i);
   });
 
   it('requires preserving the topology and state variables shown in diagrams', () => {
     expect(FORMULA_SYSTEM_PROMPT).toMatch(/structural evidence/i);
     expect(FORMULA_SYSTEM_PROMPT).toMatch(/topology/i);
     expect(FORMULA_SYSTEM_PROMPT).toMatch(/keep the structure, components, and state variables shown/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/preserve the distinct state variables and shown topology/i);
   });
 
   it('forbids inventing equivalent reductions, components, constitutive laws, or assumptions', () => {
     expect(FORMULA_SYSTEM_PROMPT).toMatch(/never invent equivalent components/i);
     expect(FORMULA_SYSTEM_PROMPT).toMatch(/state reductions/i);
     expect(FORMULA_SYSTEM_PROMPT).toMatch(/do not invent its law/i);
-    expect(FORMULA_SYSTEM_PROMPT).toMatch(/constitutive relation is missing/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/a constitutive relation is missing/i);
+  });
+
+  it('directs faithful symbolic retention of unspecified elements before needs_context', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/keep it symbolically as a named constitutive term when that keeps the representation faithful/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/set needs_context true only when that materially prevents a faithful representation/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/an essential geometry, source, or state definition is unstated/i);
+  });
+
+  it('prefers the faithful representation over the simplest-looking equation', () => {
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/return the simplest mathematically faithful representation, not the simplest-looking equation/i);
+    expect(FORMULA_SYSTEM_PROMPT).toMatch(/a scalar reduction is allowed only when the user asks for one or when it follows from the stated assumptions/i);
   });
 
   it('keeps the established strengths of the prompt', () => {
@@ -77,6 +102,12 @@ describe('FORMULA_SYSTEM_PROMPT contract', () => {
   it('treats reference images as structural evidence, not decoration', () => {
     expect(IMAGE_CONTEXT_INSTRUCTION).toMatch(/structural evidence/i);
     expect(IMAGE_CONTEXT_INSTRUCTION).toMatch(/do not replace several visible elements with an equivalent simplified system/i);
+  });
+
+  it('keeps image guidance on state variables, symbolic unspecified elements, and familiar-component traps', () => {
+    expect(IMAGE_CONTEXT_INSTRUCTION).toMatch(/keep the structure, distinct state variables, and shown topology/i);
+    expect(IMAGE_CONTEXT_INSTRUCTION).toMatch(/do not infer a simpler textbook system just because familiar components appear/i);
+    expect(IMAGE_CONTEXT_INSTRUCTION).toMatch(/keep an unnamed, nonlinear, or otherwise unspecified element symbolically as a named term/i);
   });
 });
 
