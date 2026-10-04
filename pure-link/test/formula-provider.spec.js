@@ -249,6 +249,90 @@ describe('runAzureOpenAIFormulaProvider', () => {
   });
 });
 
+describe('runAzureOpenAIFormulaProvider dual-model routing', () => {
+  const IMAGE_CONFIG = {
+    ...CONFIG,
+    imageDeployment: 'formula-test-image-deployment',
+  };
+  const IMAGE = { mimeType: 'image/png', bytes: new Uint8Array([1, 2, 3]) };
+
+  it('routes text-only requests to the primary deployment with the unchanged request shape', async () => {
+    const fetchImpl = respond(DRAFT);
+    const result = await runAzureOpenAIFormulaProvider({ ...IMAGE_CONFIG, description: 'mass energy equivalence', fetchImplementation: fetchImpl });
+
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.model).toBe(CONFIG.deployment);
+    expect(body.model).not.toBe(IMAGE_CONFIG.imageDeployment);
+    expect(body).not.toHaveProperty('reasoning');
+    expect(body.max_output_tokens).toBe(256);
+    expect(body.input[1]).toEqual({ type: 'message', role: 'user', content: 'mass energy equivalence' });
+    expect(JSON.stringify(body.input)).not.toContain('input_image');
+    expect(result.model).toBe(CONFIG.deployment);
+  });
+
+  it('routes image requests to the image deployment with a medium reasoning effort and larger output budget', async () => {
+    const fetchImpl = respond(DRAFT);
+    const result = await runAzureOpenAIFormulaProvider({
+      ...IMAGE_CONFIG,
+      description: 'governing equation for this system',
+      image: IMAGE,
+      fetchImplementation: fetchImpl,
+    });
+
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.model).toBe(IMAGE_CONFIG.imageDeployment);
+    expect(body.reasoning).toEqual({ effort: 'medium' });
+    expect(body.max_output_tokens).toBe(512);
+    // The existing image serialization is preserved exactly.
+    expect(body.input[1].type).toBe('message');
+    expect(body.input[1].role).toBe('user');
+    const userContent = body.input[1].content;
+    expect(userContent[0].type).toBe('input_text');
+    expect(userContent[0].text).toContain('governing equation for this system');
+    expect(userContent[0].text).toContain(IMAGE_CONTEXT_INSTRUCTION);
+    expect(userContent[1]).toEqual({ type: 'input_image', image_url: 'data:image/png;base64,AQID', detail: 'high' });
+    // The structured-output contract, store flag, and temperature omission are unchanged.
+    expect(body.store).toBe(false);
+    expect(body).not.toHaveProperty('temperature');
+    expect(body.text.format).toEqual({
+      type: 'json_schema',
+      name: 'formula_draft',
+      strict: true,
+      schema: { ...FORMULA_OUTPUT_SCHEMA },
+    });
+    expect(result.model).toBe(IMAGE_CONFIG.imageDeployment);
+  });
+
+  it('falls back to the primary deployment and the unchanged text request shape when the image deployment is not configured', async () => {
+    const fetchImpl = respond(DRAFT);
+    const result = await runAzureOpenAIFormulaProvider({
+      ...CONFIG,
+      imageDeployment: undefined,
+      description: 'equivalent resistance of this circuit',
+      image: IMAGE,
+      fetchImplementation: fetchImpl,
+    });
+
+    const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(body.model).toBe(CONFIG.deployment);
+    expect(body).not.toHaveProperty('reasoning');
+    expect(body.max_output_tokens).toBe(256);
+    expect(body.input[1].content[1].type).toBe('input_image');
+    expect(result.model).toBe(CONFIG.deployment);
+  });
+
+  it('treats a blank image deployment as unconfigured', async () => {
+    for (const imageDeployment of ['', '   ']) {
+      const fetchImpl = respond(DRAFT);
+      await runAzureOpenAIFormulaProvider({ ...CONFIG, imageDeployment, description: 'x', image: IMAGE, fetchImplementation: fetchImpl });
+      const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
+      expect(body.model).toBe(CONFIG.deployment);
+      expect(body).not.toHaveProperty('reasoning');
+      expect(body.max_output_tokens).toBe(256);
+    }
+  });
+});
+
 describe('unwrapAzureResponsesOutput', () => {
   it('parses the assistant output_text as the formula JSON', () => {
     expect(unwrapAzureResponsesOutput(responsesBody(DRAFT))).toEqual({ latex: 'E=mc^2', needs_context: false });

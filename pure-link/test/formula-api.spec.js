@@ -84,6 +84,39 @@ describe('formula generation API image and privacy path', () => {
     }
   });
 
+  it('routes text-only and image requests to their configured deployments', async () => {
+    const { env, db } = await setupAzure();
+    env.AZURE_OPENAI_IMAGE_DEPLOYMENT = 'formula-test-image-deployment';
+    const fetchMock = stubAzureResponse();
+
+    const textResponse = await submitJson(env, { description: 'mass energy equivalence' }, 'en');
+    expect(textResponse.status).toBe(200);
+    await expect(textResponse.json()).resolves.toMatchObject({ model: AZURE_ENV.AZURE_OPENAI_DEPLOYMENT });
+
+    const png = makePng();
+    const form = new FormData();
+    form.append('description', 'governing equation for this system');
+    form.append('image', new Blob([png], { type: 'image/png' }), 'chua.png');
+    const imageResponse = await worker.fetch(new Request('https://pure.test/api/formulas/generate', {
+      method: 'POST', headers: { origin: 'https://pure.test', cookie: `purelink_session=${SESSION}`, 'x-purelink-locale': 'en' }, body: form,
+    }), env);
+    expect(imageResponse.status).toBe(200);
+    await expect(imageResponse.json()).resolves.toMatchObject({ model: env.AZURE_OPENAI_IMAGE_DEPLOYMENT });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const textBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(textBody.model).toBe(AZURE_ENV.AZURE_OPENAI_DEPLOYMENT);
+    expect(textBody).not.toHaveProperty('reasoning');
+    expect(textBody.max_output_tokens).toBe(256);
+    expect(JSON.stringify(textBody.input)).not.toContain('input_image');
+    const imageBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(imageBody.model).toBe(env.AZURE_OPENAI_IMAGE_DEPLOYMENT);
+    expect(imageBody.reasoning).toEqual({ effort: 'medium' });
+    expect(imageBody.max_output_tokens).toBe(512);
+    expect(imageBody.input[1].content[1].type).toBe('input_image');
+    expect(db.requestCount).toBe(2);
+  });
+
   it('rejects unsupported MIME, malformed images, unknown JSON fields, and empty descriptions before quota use', async () => {
     const { env, db } = await setupAzure();
     stubAzureResponse();

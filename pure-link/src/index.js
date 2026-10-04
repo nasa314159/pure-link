@@ -496,6 +496,7 @@ async function generateFormula(request, env, context) {
         endpoint: env.AZURE_OPENAI_ENDPOINT,
         apiKey: env.AZURE_OPENAI_API_KEY,
         deployment: env.AZURE_OPENAI_DEPLOYMENT,
+        imageDeployment: env.AZURE_OPENAI_IMAGE_DEPLOYMENT,
       },
       dailyLimit: Number(user.is_admin) === 1 ? 100 : 5,
       isAdmin: Number(user.is_admin) === 1,

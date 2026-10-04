@@ -2,6 +2,9 @@ export const FORMULA_AI_PROVIDER = 'Cloudflare Workers AI';
 export const FORMULA_AI_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 export const AZURE_OPENAI_FORMULA_AI_PROVIDER = 'Microsoft Foundry / Azure OpenAI';
 export const AZURE_OPENAI_REQUEST_TIMEOUT_MS = 30_000;
+export const AZURE_OPENAI_TEXT_MAX_OUTPUT_TOKENS = 256;
+export const AZURE_OPENAI_IMAGE_MAX_OUTPUT_TOKENS = 512;
+export const AZURE_OPENAI_IMAGE_REASONING_EFFORT = 'medium';
 
 export class FormulaProviderResponseError extends Error {
   constructor() {
@@ -58,6 +61,7 @@ export async function runAzureOpenAIFormulaProvider({
   endpoint,
   apiKey,
   deployment,
+  imageDeployment = null,
   description,
   image = null,
   fetchImplementation = fetch,
@@ -77,8 +81,13 @@ export async function runAzureOpenAIFormulaProvider({
       { type: 'input_image', image_url: `data:${image.mimeType};base64,${bytesToBase64(image.bytes)}`, detail: 'high' },
     ]
     : description;
+  // Routing is deterministic and modality-based only: a reference image routes
+  // to the image deployment when one is configured, everything else keeps the
+  // primary deployment. Prompt content never influences the choice.
+  const useImageRouting = Boolean(image) && typeof imageDeployment === 'string' && Boolean(imageDeployment.trim());
+  const routedDeployment = useImageRouting ? imageDeployment.trim() : deployment;
   const request = {
-    model: deployment,
+    model: routedDeployment,
     input: [
       { type: 'message', role: 'system', content: FORMULA_SYSTEM_PROMPT },
       { type: 'message', role: 'user', content: userContent },
@@ -91,9 +100,13 @@ export async function runAzureOpenAIFormulaProvider({
         schema: FORMULA_OUTPUT_SCHEMA,
       },
     },
-    max_output_tokens: 256,
+    max_output_tokens: useImageRouting ? AZURE_OPENAI_IMAGE_MAX_OUTPUT_TOKENS : AZURE_OPENAI_TEXT_MAX_OUTPUT_TOKENS,
     store: false,
   };
+  // Image-routed reasoning models spend reasoning tokens from the same output
+  // budget, so they carry an explicit reasoning effort and a larger budget.
+  // Text-only requests keep the proven shape with no reasoning object.
+  if (useImageRouting) request.reasoning = { effort: AZURE_OPENAI_IMAGE_REASONING_EFFORT };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -133,7 +146,7 @@ export async function runAzureOpenAIFormulaProvider({
   return {
     output,
     provider: AZURE_OPENAI_FORMULA_AI_PROVIDER,
-    model: deployment,
+    model: routedDeployment,
   };
 }
 
