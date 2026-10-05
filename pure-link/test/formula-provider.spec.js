@@ -309,7 +309,7 @@ describe('runAzureOpenAIFormulaProvider dual-model routing', () => {
     expect(result.model).toBe(CONFIG.deployment);
   });
 
-  it('routes image requests to the image deployment with a medium reasoning effort and larger output budget', async () => {
+  it('routes image requests to the image deployment with a larger output budget and no reasoning parameter', async () => {
     const fetchImpl = respond(DRAFT);
     const result = await runAzureOpenAIFormulaProvider({
       ...IMAGE_CONFIG,
@@ -320,7 +320,7 @@ describe('runAzureOpenAIFormulaProvider dual-model routing', () => {
 
     const body = JSON.parse(fetchImpl.mock.calls[0][1].body);
     expect(body.model).toBe(IMAGE_CONFIG.imageDeployment);
-    expect(body.reasoning).toEqual({ effort: 'medium' });
+    expect(body).not.toHaveProperty('reasoning');
     expect(body.max_output_tokens).toBe(512);
     // The existing image serialization is preserved exactly.
     expect(body.input[1].type).toBe('message');

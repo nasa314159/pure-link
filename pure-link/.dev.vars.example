@@ -31,7 +31,7 @@ DISCORD_REPORT_WEBHOOK_URL=
 # endpoint. The endpoint/secret trio is mirrored into Wrangler secrets in
 # production (`npx wrangler secret put AZURE_OPENAI_ENDPOINT|..._API_KEY|..._DEPLOYMENT|..._IMAGE_DEPLOYMENT`).
 # Requests with a reference image route to AZURE_OPENAI_IMAGE_DEPLOYMENT (a
-# multimodal reasoning model); text-only requests keep AZURE_OPENAI_DEPLOYMENT.
+# multimodal deployment); text-only requests keep AZURE_OPENAI_DEPLOYMENT.
 # Both deployments live in the same Foundry resource, so no second key or
 # endpoint is needed. When the image deployment is unset, image requests fall
 # back to the primary deployment with the unchanged text request shape.

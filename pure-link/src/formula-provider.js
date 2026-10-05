@@ -6,7 +6,6 @@ export const AZURE_OPENAI_FORMULA_AI_PROVIDER = 'Microsoft Foundry / Azure OpenA
 export const AZURE_OPENAI_REQUEST_TIMEOUT_MS = 30_000;
 export const AZURE_OPENAI_TEXT_MAX_OUTPUT_TOKENS = 256;
 export const AZURE_OPENAI_IMAGE_MAX_OUTPUT_TOKENS = 512;
-export const AZURE_OPENAI_IMAGE_REASONING_EFFORT = 'medium';
 
 export class FormulaProviderResponseError extends Error {
   constructor() {
@@ -103,6 +102,8 @@ export async function runAzureOpenAIFormulaProvider({
     imageDeploymentConfigured,
     endpointPath,
   });
+  // Neither request shape carries a reasoning parameter: image-routed
+  // deployments use the same minimal Responses contract as text-only requests.
   const request = {
     model: routedDeployment,
     input: [
@@ -120,10 +121,6 @@ export async function runAzureOpenAIFormulaProvider({
     max_output_tokens: useImageRouting ? AZURE_OPENAI_IMAGE_MAX_OUTPUT_TOKENS : AZURE_OPENAI_TEXT_MAX_OUTPUT_TOKENS,
     store: false,
   };
-  // Image-routed reasoning models spend reasoning tokens from the same output
-  // budget, so they carry an explicit reasoning effort and a larger budget.
-  // Text-only requests keep the proven shape with no reasoning object.
-  if (useImageRouting) request.reasoning = { effort: AZURE_OPENAI_IMAGE_REASONING_EFFORT };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);

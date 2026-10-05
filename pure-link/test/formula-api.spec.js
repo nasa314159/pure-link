@@ -111,7 +111,7 @@ describe('formula generation API image and privacy path', () => {
     expect(JSON.stringify(textBody.input)).not.toContain('input_image');
     const imageBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(imageBody.model).toBe(env.AZURE_OPENAI_IMAGE_DEPLOYMENT);
-    expect(imageBody.reasoning).toEqual({ effort: 'medium' });
+    expect(imageBody).not.toHaveProperty('reasoning');
     expect(imageBody.max_output_tokens).toBe(512);
     expect(imageBody.input[1].content[1].type).toBe('input_image');
     expect(db.requestCount).toBe(2);
