@@ -6,6 +6,7 @@ import { html, json, noContent, redirect, text, xml } from './http.js';
 import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderNativeVerificationPage, renderNotFoundPage, renderReportPage, renderSocialPreviewPage, renderStartPage, renderSupportPage, renderUrlPreview } from './pages.js';
 import { FormulaAiError, generateFormulaDraft } from './formula-ai.js';
 import { normalizeFormulaImage, MAX_FORMULA_IMAGE_BYTES } from './formula-image.js';
+import { debugErrorName, debugImageMime, logFormulaAiDebug } from './formula-debug.js';
 // Static data imports for the Formula OG image feature (src/formula-og.js).
 // CompiledWasm / Data module rules are configured in wrangler.jsonc.
 import { renderFormulaOgImage, FormulaRenderError } from './formula-og.js';
@@ -486,7 +487,24 @@ async function generateFormula(request, env, context) {
 
   try {
     const input = await readFormulaGenerationInput(request, messages.api);
+    // TEMPORARY diagnostics: whether multipart parsing actually yielded an
+    // image field, plus its size and declared MIME type only.
+    if (input.image) {
+      logFormulaAiDebug('request_received', {
+        hasImage: true,
+        imageFieldBytes: typeof input.image.size === 'number' ? input.image.size : null,
+        imageFieldMime: debugImageMime(input.image.type) || 'unrecognized',
+      });
+    } else {
+      logFormulaAiDebug('request_received', { hasImage: false });
+    }
     const image = input.image ? await normalizeFormulaImage(input.image, messages.api) : null;
+    logFormulaAiDebug('image_normalized', {
+      hasImage: Boolean(image),
+      imageMime: image ? image.mimeType : null,
+      imageBytes: image ? image.bytes.byteLength : null,
+      imageDeploymentConfigured: Boolean(String(env.AZURE_OPENAI_IMAGE_DEPLOYMENT ?? '').trim()),
+    });
     return json(await generateFormulaDraft({
       description: input.description,
       image,
@@ -504,6 +522,12 @@ async function generateFormula(request, env, context) {
     }));
   } catch (error) {
     if (error instanceof FormulaAiError) return json({ error: error.message }, { status: error.status });
+    // TEMPORARY diagnostics: request-level rejection (multipart parse failure,
+    // oversized body, or image validation) never reaches inference.
+    logFormulaAiDebug('request_rejected', {
+      errorName: debugErrorName(error),
+      field: ['image', 'description', 'request'].includes(error?.field) ? error.field : null,
+    });
     throw error;
   }
 }

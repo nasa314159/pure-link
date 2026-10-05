@@ -1,3 +1,5 @@
+import { debugImageMime, debugIncompleteReason, debugResponseStatus, logFormulaAiDebug } from './formula-debug.js';
+
 export const FORMULA_AI_PROVIDER = 'Cloudflare Workers AI';
 export const FORMULA_AI_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 export const AZURE_OPENAI_FORMULA_AI_PROVIDER = 'Microsoft Foundry / Azure OpenAI';
@@ -76,6 +78,8 @@ export async function runAzureOpenAIFormulaProvider({
   if (typeof fetchImplementation !== 'function') throw new TypeError('A fetch implementation is required.');
 
   const url = azureResponsesUrl(endpoint);
+  const debugStartedAt = Date.now();
+  const endpointPath = new URL(url).pathname;
   const userContent = image
     ? [
       { type: 'input_text', text: `${description}\n${IMAGE_CONTEXT_INSTRUCTION}` },
@@ -85,8 +89,20 @@ export async function runAzureOpenAIFormulaProvider({
   // Routing is deterministic and modality-based only: a reference image routes
   // to the image deployment when one is configured, everything else keeps the
   // primary deployment. Prompt content never influences the choice.
-  const useImageRouting = Boolean(image) && typeof imageDeployment === 'string' && Boolean(imageDeployment.trim());
+  const imageDeploymentConfigured = typeof imageDeployment === 'string' && Boolean(imageDeployment.trim());
+  const useImageRouting = Boolean(image) && imageDeploymentConfigured;
   const routedDeployment = useImageRouting ? imageDeployment.trim() : deployment;
+  // TEMPORARY diagnostics: routing decision and image metadata only. Never the
+  // prompt, never the image payload, and never credentials or query secrets.
+  logFormulaAiDebug('provider_request', {
+    hasImage: Boolean(image),
+    imageMime: image ? debugImageMime(image.mimeType) : null,
+    imageBytes: image?.bytes instanceof Uint8Array ? image.bytes.byteLength : null,
+    routedDeployment,
+    imageRouting: useImageRouting,
+    imageDeploymentConfigured,
+    endpointPath,
+  });
   const request = {
     model: routedDeployment,
     input: [
@@ -123,18 +139,44 @@ export async function runAzureOpenAIFormulaProvider({
       signal: controller.signal,
     });
   } catch (error) {
-    throw new FormulaProviderRequestError(controller.signal.aborted || error?.name === 'AbortError' ? 'timeout' : 'network_error');
+    const category = controller.signal.aborted || error?.name === 'AbortError' ? 'timeout' : 'network_error';
+    // TEMPORARY diagnostics: transport-level failure reaches the mapped
+    // 'provider_failure' response the UI shows; status is never HTTP-derived.
+    logFormulaAiDebug('provider_error', {
+      status: null,
+      category,
+      errorName: 'FormulaProviderRequestError',
+      elapsedMs: Date.now() - debugStartedAt,
+    });
+    throw new FormulaProviderRequestError(category);
   } finally {
     clearTimeout(timeout);
   }
 
   if (!response || typeof response.ok !== 'boolean') throw new FormulaProviderResponseError();
-  if (!response.ok) throw new FormulaProviderRequestError(providerErrorCategory(response.status), response.status);
+  if (!response.ok) {
+    const category = providerErrorCategory(response.status);
+    // TEMPORARY diagnostics: HTTP failure with sanitized category only.
+    logFormulaAiDebug('provider_error', {
+      status: response.status,
+      category,
+      errorName: 'FormulaProviderRequestError',
+      elapsedMs: Date.now() - debugStartedAt,
+    });
+    throw new FormulaProviderRequestError(category, response.status);
+  }
 
   let payload;
   try {
     payload = await response.json();
   } catch {
+    // TEMPORARY diagnostics: provider returned HTTP 200 but a non-JSON body.
+    logFormulaAiDebug('provider_parse_error', {
+      status: 200,
+      structuredOutput: false,
+      errorName: 'FormulaProviderResponseError',
+      elapsedMs: Date.now() - debugStartedAt,
+    });
     throw new FormulaProviderResponseError();
   }
 
@@ -142,6 +184,16 @@ export async function runAzureOpenAIFormulaProvider({
   try {
     output = unwrapAzureResponsesOutput(payload);
   } catch {
+    // TEMPORARY diagnostics: provider returned HTTP 200 but no usable
+    // structured output; report envelope status and incomplete reason only.
+    logFormulaAiDebug('provider_parse_error', {
+      status: 200,
+      responseStatus: debugResponseStatus(payload),
+      incompleteReason: debugIncompleteReason(payload),
+      structuredOutput: false,
+      errorName: 'FormulaProviderResponseError',
+      elapsedMs: Date.now() - debugStartedAt,
+    });
     throw new FormulaProviderResponseError();
   }
   return {

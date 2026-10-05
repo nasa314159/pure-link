@@ -2,6 +2,7 @@ import { ValidationError } from './content.js';
 import { consumeFormulaAllowance, restoreFormulaAllowance } from './billing.js';
 import { isValidFormulaExpression } from './formula.js';
 import { FormulaProviderResponseError, runAzureOpenAIFormulaProvider } from './formula-provider.js';
+import { debugErrorCategory, debugErrorName, debugErrorStatus, logFormulaAiDebug } from './formula-debug.js';
 
 export const FORMULA_AI_DAILY_LIMIT = 5;
 export const FORMULA_AI_ADMIN_DAILY_LIMIT = 100;
@@ -29,6 +30,7 @@ export async function generateFormulaDraft({
   isAdmin = dailyLimit > FORMULA_AI_DAILY_LIMIT,
   errorMessages = null,
 }) {
+  const debugStartedAt = Date.now();
   const prompt = normalizeDescription(description, errorMessages);
   validateNormalizedImage(image, errorMessages);
   if (!db || !azureOpenAI?.endpoint?.trim() || !azureOpenAI?.apiKey?.trim() || !azureOpenAI?.deployment?.trim()) {
@@ -42,6 +44,15 @@ export async function generateFormulaDraft({
   try {
     result = await inferenceProvider({ ...azureOpenAI, description: prompt, image, fetchImplementation });
   } catch (error) {
+    // TEMPORARY diagnostics: log the mapped terminal failure before the
+    // allowance rollback so a rollback failure cannot hide the root cause.
+    logFormulaAiDebug('mapped_failure', {
+      category: error instanceof FormulaProviderResponseError ? 'unexpected_response' : 'provider_failure',
+      providerErrorName: debugErrorName(error),
+      providerStatus: debugErrorStatus(error),
+      providerCategory: debugErrorCategory(error),
+      elapsedMs: Date.now() - debugStartedAt,
+    });
     await restoreAllowanceAfterFailure(db, userId, allowance, errorMessages);
     if (error instanceof FormulaProviderResponseError) throw unexpectedResponseError(errorMessages);
     throw new FormulaAiError(
@@ -55,10 +66,23 @@ export async function generateFormulaDraft({
   try {
     normalized = extractFormulaResult(result.output, errorMessages);
   } catch (error) {
+    // TEMPORARY diagnostics: structured-output validation rejected the draft.
+    logFormulaAiDebug('mapped_failure', {
+      category: debugErrorCategory(error),
+      errorName: debugErrorName(error),
+      elapsedMs: Date.now() - debugStartedAt,
+    });
     await restoreAllowanceAfterFailure(db, userId, allowance, errorMessages);
     throw error;
   }
   if (normalized.ambiguity === 'needs_context') {
+    // TEMPORARY diagnostics: provider succeeded but returned an ambiguity
+    // (e.g. a visible setup it declined to model rather than a known error).
+    logFormulaAiDebug('outcome', {
+      outcome: 'needs_context',
+      needsContext: true,
+      elapsedMs: Date.now() - debugStartedAt,
+    });
     await restoreAllowanceAfterFailure(db, userId, allowance, errorMessages);
     throw new FormulaAiError(
       errorMessages?.formulaNeedContext || 'Please add a little more context so PureLink can choose the right formula.',
@@ -66,6 +90,11 @@ export async function generateFormulaDraft({
       'needs_context',
     );
   }
+  logFormulaAiDebug('outcome', {
+    outcome: 'success',
+    needsContext: false,
+    elapsedMs: Date.now() - debugStartedAt,
+  });
   return {
     latex: normalized.latex,
     remaining: allowance.remaining,
