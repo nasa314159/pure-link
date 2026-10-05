@@ -26,6 +26,19 @@ const KNOWN_RESPONSE_STATUSES = new Set([
 const KNOWN_INCOMPLETE_REASONS = new Set(['max_output_tokens', 'content_filter']);
 const KNOWN_IMAGE_MIME = /^image\/[a-z0-9][a-z0-9.+-]{0,31}$/;
 
+// One value per real branch in extractFormulaResult (src/formula-ai.js), in
+// validator order. Never contains formula or prompt content.
+const KNOWN_VALIDATION_REASONS = new Set([
+  'invalid_result_shape',
+  'missing_required_field',
+  'needs_context_with_nonempty_latex',
+  'empty_latex',
+  'latex_too_long',
+  'invalid_latex',
+  'prose_in_latex',
+  'unsupported_expression',
+]);
+
 export function logFormulaAiDebug(stage, fields = {}) {
   console.log(`${DEBUG_PREFIX} ${JSON.stringify({ stage, ...fields })}`);
 }
@@ -53,4 +66,27 @@ export function debugResponseStatus(payload) {
 export function debugIncompleteReason(payload) {
   const reason = payload !== null && typeof payload === 'object' ? payload.incomplete_details?.reason : null;
   return KNOWN_INCOMPLETE_REASONS.has(reason) ? reason : null;
+}
+
+// Safe reason for a draft-validation failure: the validator attaches a fixed
+// internal reason to its errors; anything unrecognized falls back to a
+// non-sensitive catch-all instead of leaking error text.
+export function debugValidationReason(error) {
+  return error !== null && typeof error === 'object' && KNOWN_VALIDATION_REASONS.has(error.validationReason)
+    ? error.validationReason
+    : 'other_validation_failure';
+}
+
+// Length/shape metadata of the provider draft used by the validator. Counts
+// and booleans only — never the latex text itself.
+export function debugDraftShape(output) {
+  if (output === null || typeof output !== 'object' || Array.isArray(output)) {
+    return { needsContext: null, latexPresent: false, latexLength: null };
+  }
+  const latexLength = typeof output.latex === 'string' ? output.latex.trim().length : null;
+  return {
+    needsContext: typeof output.needs_context === 'boolean' ? output.needs_context : null,
+    latexPresent: latexLength !== null && latexLength > 0,
+    latexLength,
+  };
 }

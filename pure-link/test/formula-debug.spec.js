@@ -4,12 +4,14 @@ import {
   runAzureOpenAIFormulaProvider,
 } from '../src/formula-provider.js';
 import {
+  debugDraftShape,
   debugErrorCategory,
   debugErrorName,
   debugErrorStatus,
   debugImageMime,
   debugIncompleteReason,
   debugResponseStatus,
+  debugValidationReason,
   logFormulaAiDebug,
 } from '../src/formula-debug.js';
 
@@ -42,6 +44,30 @@ function emittedLines(log) {
 
 describe('formula debug diagnostics', () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it('maps draft validation failures to the fixed safe reason whitelist', () => {
+    const errorWith = (reason) => ({ name: 'FormulaAiError', validationReason: reason });
+    for (const reason of [
+      'invalid_result_shape', 'missing_required_field', 'needs_context_with_nonempty_latex',
+      'empty_latex', 'latex_too_long', 'invalid_latex', 'prose_in_latex', 'unsupported_expression',
+    ]) {
+      expect(debugValidationReason(errorWith(reason))).toBe(reason);
+    }
+    expect(debugValidationReason({ name: 'FormulaAiError', validationReason: 'katex said: \\notACommand' })).toBe('other_validation_failure');
+    expect(debugValidationReason({ name: 'FormulaAiError' })).toBe('other_validation_failure');
+    expect(debugValidationReason(undefined)).toBe('other_validation_failure');
+  });
+
+  it('reports draft shape as booleans and a length only, never latex text', () => {
+    expect(debugDraftShape({ latex: '  E=mc^2  ', needs_context: false })).toEqual({ needsContext: false, latexPresent: true, latexLength: 6 });
+    expect(debugDraftShape({ latex: '   ', needs_context: false })).toEqual({ needsContext: false, latexPresent: false, latexLength: 0 });
+    expect(debugDraftShape({ latex: '', needs_context: true })).toEqual({ needsContext: true, latexPresent: false, latexLength: 0 });
+    expect(debugDraftShape({ needs_context: false })).toEqual({ needsContext: false, latexPresent: false, latexLength: null });
+    expect(debugDraftShape({ latex: 42, needs_context: 'maybe' })).toEqual({ needsContext: null, latexPresent: false, latexLength: null });
+    expect(debugDraftShape('not an object')).toEqual({ needsContext: null, latexPresent: false, latexLength: null });
+    expect(debugDraftShape(null)).toEqual({ needsContext: null, latexPresent: false, latexLength: null });
+    expect(debugDraftShape([])).toEqual({ needsContext: null, latexPresent: false, latexLength: null });
+  });
 
   it('emits one compact prefixed JSON line per stage', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});

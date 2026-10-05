@@ -42,6 +42,28 @@ describe('formula AI', () => {
     expect(() => extractFormulaResult({ latex: 'x=1', needs_context: false, extra: true })).toThrow(expect.objectContaining({ category: 'unexpected_response' }));
   });
 
+  it('attaches the safe validation reason matching each real validator branch', () => {
+    expect(() => extractFormulaResult('not an object')).toThrow(expect.objectContaining({ validationReason: 'invalid_result_shape' }));
+    expect(() => extractFormulaResult({ latex: 42, needs_context: false })).toThrow(expect.objectContaining({ validationReason: 'missing_required_field' }));
+    expect(() => extractFormulaResult({ latex: 'x=1', needs_context: false, extra: true })).toThrow(expect.objectContaining({ validationReason: 'missing_required_field' }));
+    expect(() => extractFormulaResult({ latex: 'x=1', needs_context: true })).toThrow(expect.objectContaining({ validationReason: 'needs_context_with_nonempty_latex' }));
+    expect(() => extractFormulaResult({ latex: '   ', needs_context: false })).toThrow(expect.objectContaining({ validationReason: 'empty_latex' }));
+    expect(() => extractFormulaResult({ latex: `x=${'1'.repeat(2000)}`, needs_context: false })).toThrow(expect.objectContaining({ validationReason: 'latex_too_long' }));
+    expect(() => extractFormulaResult({ latex: '<b>x=1</b>', needs_context: false })).toThrow(expect.objectContaining({ validationReason: 'invalid_latex' }));
+    expect(() => extractFormulaResult({ latex: '```x=1```', needs_context: false })).toThrow(expect.objectContaining({ validationReason: 'invalid_latex' }));
+    expect(() => extractFormulaResult({ latex: '$x=1$', needs_context: false })).toThrow(expect.objectContaining({ validationReason: 'invalid_latex' }));
+    expect(() => extractFormulaResult({ latex: 'The governing equation is x=1', needs_context: false })).toThrow(expect.objectContaining({ validationReason: 'prose_in_latex' }));
+    expect(() => extractFormulaResult({ latex: '\\notACommand{x}', needs_context: false })).toThrow(expect.objectContaining({ validationReason: 'unsupported_expression' }));
+  });
+
+  it('keeps valid drafts and the needs_context result behavior unchanged', () => {
+    expect(extractLatex({ latex: 'E=mc^2', needs_context: false })).toBe('E=mc^2');
+    expect(extractFormulaResult({ latex: '', needs_context: true })).toEqual({ latex: '', ambiguity: 'needs_context' });
+    // Valid drafts never carry a validation reason.
+    const valid = extractFormulaResult({ latex: 'E=mc^2', needs_context: false });
+    expect(valid).toEqual({ latex: 'E=mc^2' });
+  });
+
   it('returns an explicit localized-context path instead of an invented equation', () => {
     expect(extractFormulaResult({ latex: '', needs_context: true })).toEqual({ latex: '', ambiguity: 'needs_context' });
     expect(() => extractFormulaResult({ latex: 'x=1', needs_context: true }))
@@ -201,6 +223,40 @@ describe('formula AI', () => {
     await expect(generateFormulaDraft({ description: 'x equals one', userId: 'user-1', db, azureOpenAI: AZURE_OPENAI, inferenceProvider }))
       .rejects.toMatchObject({ category: 'invalid_draft' });
     expect(db.count).toBe(0);
+  });
+
+  it('logs a sanitized validation reason without any formula or prompt contents', async () => {
+    const db = new UsageDb();
+    const inferenceProvider = vi.fn().mockResolvedValue({
+      output: { latex: '  \\notACommand{SECRET_MARKER}  ', needs_context: false },
+      provider: AZURE_OPENAI_FORMULA_AI_PROVIDER,
+      model: AZURE_OPENAI.deployment,
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(generateFormulaDraft({ description: 'mass energy equivalence', userId: 'user-1', db, azureOpenAI: AZURE_OPENAI, inferenceProvider }))
+        .rejects.toMatchObject({ category: 'invalid_draft', message: 'AI did not return a valid editable LaTeX formula. Your allowance was restored; please try a different description.' });
+      expect(db.count).toBe(0);
+      const events = logSpy.mock.calls.map((call) => call[0])
+        .filter((line) => line.startsWith('[formula-ai-debug] '))
+        .map((line) => JSON.parse(line.slice('[formula-ai-debug] '.length)));
+      expect(events).toContainEqual({
+        stage: 'mapped_failure',
+        validationReason: 'unsupported_expression',
+        category: 'invalid_draft',
+        needsContext: false,
+        latexPresent: true,
+        latexLength: 27,
+        errorName: 'FormulaAiError',
+        elapsedMs: expect.any(Number),
+      });
+      const rendered = logSpy.mock.calls.map((call) => call[0]).join('\n');
+      expect(rendered).not.toContain('SECRET_MARKER');
+      expect(rendered).not.toContain('notACommand');
+      expect(rendered).not.toContain('mass energy equivalence');
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it('restores a purchased credit and daily count once when purchased generation fails', async () => {

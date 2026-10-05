@@ -2,7 +2,7 @@ import { ValidationError } from './content.js';
 import { consumeFormulaAllowance, restoreFormulaAllowance } from './billing.js';
 import { isValidFormulaExpression } from './formula.js';
 import { FormulaProviderResponseError, runAzureOpenAIFormulaProvider } from './formula-provider.js';
-import { debugErrorCategory, debugErrorName, debugErrorStatus, logFormulaAiDebug } from './formula-debug.js';
+import { debugDraftShape, debugErrorCategory, debugErrorName, debugErrorStatus, debugValidationReason, logFormulaAiDebug } from './formula-debug.js';
 
 export const FORMULA_AI_DAILY_LIMIT = 5;
 export const FORMULA_AI_ADMIN_DAILY_LIMIT = 100;
@@ -66,9 +66,12 @@ export async function generateFormulaDraft({
   try {
     normalized = extractFormulaResult(result.output, errorMessages);
   } catch (error) {
-    // TEMPORARY diagnostics: structured-output validation rejected the draft.
+    // TEMPORARY diagnostics: sanitized validation metadata only — reason enum,
+    // booleans, and a length. Never the latex text, prompt, or provider body.
     logFormulaAiDebug('mapped_failure', {
+      validationReason: debugValidationReason(error),
       category: debugErrorCategory(error),
+      ...debugDraftShape(result.output),
       errorName: debugErrorName(error),
       elapsedMs: Date.now() - debugStartedAt,
     });
@@ -128,26 +131,27 @@ export function normalizeDescription(value, errorMessages = null) {
 
 export function extractFormulaResult(result, errorMessages = null) {
   const payload = result;
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw unexpectedResponseError(errorMessages);
+  // The checks below are the pre-existing validator branches in the original
+  // order; the only change is the sanitized internal validationReason attached
+  // to each error for temporary diagnostics. External behavior is unchanged.
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw unexpectedResponseError(errorMessages, 'invalid_result_shape');
   const keys = Object.keys(payload);
   if (keys.length !== 2 || !keys.includes('latex') || !keys.includes('needs_context')
     || typeof payload.latex !== 'string' || typeof payload.needs_context !== 'boolean') {
-    throw unexpectedResponseError(errorMessages);
+    throw unexpectedResponseError(errorMessages, 'missing_required_field');
   }
 
   const latex = payload.latex.trim();
   if (payload.needs_context) {
-    if (latex) throw invalidDraftError(errorMessages);
+    if (latex) throw invalidDraftError(errorMessages, 'needs_context_with_nonempty_latex');
     return { latex: '', ambiguity: 'needs_context' };
   }
 
-  if (!latex || latex.length > MAX_LATEX_LENGTH || /<\/?[A-Za-z][^>]*>|```/.test(latex)
-    || /^\$|\$$/.test(latex) || containsProse(latex)) {
-    throw invalidDraftError(errorMessages);
-  }
-  if (!isValidFormulaExpression(latex)) {
-    throw invalidDraftError(errorMessages);
-  }
+  if (!latex) throw invalidDraftError(errorMessages, 'empty_latex');
+  if (latex.length > MAX_LATEX_LENGTH) throw invalidDraftError(errorMessages, 'latex_too_long');
+  if (/<\/?[A-Za-z][^>]*>|```/.test(latex) || /^\$|\$$/.test(latex)) throw invalidDraftError(errorMessages, 'invalid_latex');
+  if (containsProse(latex)) throw invalidDraftError(errorMessages, 'prose_in_latex');
+  if (!isValidFormulaExpression(latex)) throw invalidDraftError(errorMessages, 'unsupported_expression');
   return { latex };
 }
 
@@ -182,18 +186,22 @@ function needsContextError(errorMessages) {
   );
 }
 
-function unexpectedResponseError(errorMessages) {
-  return new FormulaAiError(
+function unexpectedResponseError(errorMessages, validationReason = null) {
+  const error = new FormulaAiError(
     errorMessages?.formulaResponseInvalid || 'Formula generation returned an unreadable response. Your allowance was restored; please try again.',
     502,
     'unexpected_response',
   );
+  error.validationReason = validationReason;
+  return error;
 }
 
-function invalidDraftError(errorMessages) {
-  return new FormulaAiError(
+function invalidDraftError(errorMessages, validationReason = null) {
+  const error = new FormulaAiError(
     errorMessages?.formulaInvalidDraft || 'AI did not return a valid editable LaTeX formula. Your allowance was restored; please try a different description.',
     502,
     'invalid_draft',
   );
+  error.validationReason = validationReason;
+  return error;
 }
