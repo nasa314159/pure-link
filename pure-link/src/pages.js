@@ -1295,7 +1295,6 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
       // key every other part of the design reads. The fragment is never
       // sent anywhere and never rendered.
       const fragmentToken = location.hash.slice(1);
-      if (fragmentToken) localStorage.setItem(storageKey, fragmentToken);
       const token = fragmentToken || localStorage.getItem(storageKey) || '';
       const accountAccess = ${accountAccess};
       const actions = document.getElementById('manage-actions');
@@ -1305,32 +1304,56 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
       const canonicalAddress = location.origin + '/manage/' + encodeURIComponent(slug) + '#' + token;
       const canonicalDestination = ${JSON.stringify(canonicalHandoffUrl).replaceAll('<', '\u003c')};
 
-      copyManagement.hidden = !token;
-      downloadRecovery.hidden = !token;
       const publicFingerprint = ${JSON.stringify(ownerFingerprint).replaceAll('<', '\\u003c')};
-      if (token || accountAccess) {
-        actions.hidden = false;
-        status.textContent = accountAccess ? manageMessages.accountAccess : manageMessages.anonymousAccess;
-      } else {
-        status.textContent = manageMessages.missingCredential;
-      }
 
       // Canonical handoff gate (async IIFE — the manage script runs as a
       // classic inline script, so top-level await is unavailable). The
-      // locally stored credential — already persisted by this same script at
-      // fragment-recovery time — must re-derive the page's public
-      // fingerprint (first 16 base64url characters of the stored management
-      // hash). This deciding check is composed with the localStorage hit:
-      // the item value itself is never trusted as authority, and no
-      // credential value is ever logged, rendered, or re-embedded.
-      //   - Verified: location.replace(canonicalDestination) — the content
-      //     type's canonical surface, handoff-flagged so the canonical page
-      //     renders the same hidden owner-allowlisted section; the fragment
-      //     disappears from the address because the new URL carries none.
-      //   - Wrong credential/404/no-JS-hash-mismatch: no redirect — the
-      //     visitor stays on this fallback page with the existing recovery
-      //     actions and status visible instead.
+      // explicit fragment credential is authoritative for this navigation
+      // and is verified against the page's public fingerprint before
+      // anything is persisted, revealed, or handed off:
+      //   - Present and verified: persisted under the same
+      //     'purelink:management:<slug>' key every other part reads, then
+      //     the deciding check composes the hash-derived fingerprint with
+      //     the localStorage hit — the item value itself is never trusted
+      //     as authority, and no credential value is ever logged,
+      //     rendered, or re-embedded.
+      //   - Present and wrong (shortened, mutated, unrelated): fails
+      //     closed. No redirect, no owner UI, an explicit
+      //     invalid-credential status, and no localStorage fallback — a
+      //     valid previously stored credential is left untouched for
+      //     later recovery.
+      //   - No-JS-hash-mismatch / 404 / absent fragment: the visitor
+      //     keeps this fallback page with its recovery status as before.
       (async () => {
+        if (fragmentToken) {
+          let explicitCredentialValid = false;
+          try {
+            const observedFragmentHash = (await hashManagementToken(fragmentToken)).slice(0, 16);
+            explicitCredentialValid = Boolean(publicFingerprint) && observedFragmentHash === publicFingerprint;
+          } catch { explicitCredentialValid = false; }
+          if (!explicitCredentialValid) {
+            // Fail closed: the presented credential is invalid. Stay on
+            // this recovery page with an explicit state; any locally
+            // stored credential is never consulted, never substituted,
+            // and never overwritten.
+            copyManagement.hidden = true;
+            downloadRecovery.hidden = true;
+            actions.hidden = true;
+            status.textContent = manageMessages.invalidCredential;
+            return;
+          }
+          try {
+            if (localStorage.getItem(storageKey) !== fragmentToken) localStorage.setItem(storageKey, fragmentToken);
+          } catch { /* storage unavailable: the fragment itself still works */ }
+        }
+        copyManagement.hidden = !token;
+        downloadRecovery.hidden = !token;
+        if (token || accountAccess) {
+          actions.hidden = false;
+          status.textContent = accountAccess ? manageMessages.accountAccess : manageMessages.anonymousAccess;
+        } else {
+          status.textContent = manageMessages.missingCredential;
+        }
         let fingerprintMatches = false;
         try {
           const storedCredential = localStorage.getItem('purelink:management:' + slug) || '';

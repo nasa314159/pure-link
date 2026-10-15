@@ -1217,12 +1217,15 @@ describe('interactive pages', () => {
     const formulaLink = { slug: 'handoff-formula', content: 'x² + y²', content_type: 'formula', created_at: '2026-09-01 00:00:00' };
     const cardLink = { slug: 'handoff-card', content: 'a quiet note', signature: '', theme: 'paper', content_type: 'card', created_at: '2026-09-01 00:00:00' };
 
-    it('keeps the recovery URL fragment-based and persists the credential unchanged', () => {
+    it('keeps the recovery URL fragment-based and persists verified credentials', () => {
       const html = renderManagePage(urlLink, 'manage-nonce', null, false, 'en');
       const script = extractScript(html);
       // The fragment stays the credential transport (never query, path, or server-visible state).
       expect(script).toContain("location.hash.slice(1)");
+      // Persistence happens only after the fragment re-verifies against the
+      // page's public fingerprint; an invalid credential is never stored.
       expect(script).toContain("localStorage.setItem(storageKey, fragmentToken)");
+      expect(script).toContain("explicitCredentialValid = Boolean(publicFingerprint) && observedFragmentHash === publicFingerprint");
       // The copied management address keeps the recovery-file format.
       expect(script).toContain("'/manage/' + encodeURIComponent(slug) + '#' + token");
       expect(html).toContain('Copy management address');
@@ -1259,6 +1262,113 @@ describe('interactive pages', () => {
       // visitor keeps the fallback page and its recovery status.
       expect(html).toContain('No anonymous management credential was found');
       expect(script).toContain("status.textContent = manageMessages.missingCredential");
+    });
+
+    it('fails closed on an explicitly wrong fragment credential, in every corrupted variant', async () => {
+      const { createHash } = await import('node:crypto');
+      const clientHash = (token) => createHash('sha256').update(token, 'utf8').digest('base64url');
+      const CRED = 'recovered-management-credential';
+      const credHash = clientHash(CRED);
+      const link = { slug: 'fp-gate', content: 'E=mc²', content_type: 'formula', owner_user_id: null, management_token_hash: credHash };
+      const html = renderManagePage(link, 'gate-nonce', null, false, 'en');
+      const script = extractScript(html);
+      // Exercise the exact inline script: replace only the asset-loader
+      // boundary with the same SHA-256 base64url primitive the client uses.
+      const runnable = script.replaceAll("import('/assets/hash-credential.js')", '__hashModule()');
+
+      const run = async (fragment, storedItems = {}) => {
+        const store = new Map(Object.entries(storedItems));
+        const storageStub = { getItem: (key) => (store.has(key) ? store.get(key) : null), setItem: (key, value) => { store.set(key, String(value)); } };
+        const replacements = [];
+        const elements = new Map();
+        const element = () => ({ hidden: false, textContent: '', disabled: false, addEventListener() {} });
+        const documentStub = { getElementById: () => element() };
+        const locationStub = { hash: fragment, origin: 'https://no-no.uk', pathname: '/manage/fp-gate', search: '', replace: (target) => replacements.push(target) };
+        const factory = new Function('__hashModule', 'document', 'localStorage', 'location', 'navigator', runnable);
+        factory(() => Promise.resolve({ hashManagementToken: clientHash }), documentStub, storageStub, locationStub, { clipboard: {} });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return { store, replacements };
+      };
+
+      // 1. Correct explicit credential: succeeds and hands off to the
+      // canonical surface (unchanged CASE A behavior).
+      const valid = await run(`#${CRED}`, { 'purelink:management:fp-gate': 'stale-previous-value' });
+      expect(valid.replacements).toEqual(['/fp-gate?handoff=1']);
+      expect(valid.store.get('purelink:management:fp-gate')).toBe(CRED);
+      // 1b. No stored credential either: handoff still happens.
+      const fresh = await run(`#${CRED}`);
+      expect(fresh.replacements).toEqual(['/fp-gate?handoff=1']);
+      expect(fresh.store.get('purelink:management:fp-gate')).toBe(CRED);
+
+      // 2-4. Wrong / one-character-short / one-character-mutated explicit
+      // credentials all fail closed: no handoff, explicit invalid state,
+      // and the previously stored credential is preserved, never clobbered.
+      const variants = {
+        wrong: `${CRED}-not`,
+        short: CRED.slice(0, -1),
+        mutated: `${CRED.slice(0, -1)}X`,
+      };
+      for (const [label, fragment] of Object.entries(variants)) {
+        const result = await run(`#${fragment}`);
+        expect(result.replacements, label).toEqual([]);
+        expect(result.store.get('purelink:management:fp-gate'), label).toBeUndefined();
+        const resultWithStored = await run(`#${fragment}`, { 'purelink:management:fp-gate': CRED });
+        // 5. Explicit fragment is authoritative: a valid stored credential
+        // is NEVER substituted for the failed verification, and is left
+        // untouched so a later correct recovery still works.
+        expect(resultWithStored.replacements, label).toEqual([]);
+        expect(resultWithStored.store.get('purelink:management:fp-gate'), label).toBe(CRED);
+      }
+
+      // 6. Missing fragment + valid localStorage credential: the existing
+      // recovery semantics still hand off (missing never means invalid).
+      const storedOnly = await run('', { 'purelink:management:fp-gate': CRED });
+      expect(storedOnly.replacements).toEqual(['/fp-gate?handoff=1']);
+      // 7. Missing fragment + no stored credential: explicit missing state.
+      const missing = await run('');
+      expect(missing.replacements).toEqual([]);
+      // 8. Localized invalid message is wired for both locales.
+      expect(html).toContain('This management credential is invalid.');
+      const zhHtml = renderManagePage(link, 'gate-nonce', null, false, 'zh-Hant');
+      expect(zhHtml).toContain('此管理憑證無效。');
+    });
+
+    it('keeps signed-in owner behavior unchanged while failing closed on a corrupted fragment', async () => {
+      const { createHash } = await import('node:crypto');
+      const clientHash = (token) => createHash('sha256').update(token, 'utf8').digest('base64url');
+      const CRED = 'owner-session-credential';
+      const credHash = clientHash(CRED);
+      const owner = { id: 'user-1', email: 'owner@example.com' };
+      const link = { slug: 'fp-owner', content: 'E=mc²', content_type: 'formula', owner_user_id: 'user-1', management_token_hash: credHash };
+      const script = extractScript(renderManagePage(link, 'n1', owner, true, 'en')).replaceAll("import('/assets/hash-credential.js')", '__hashModule()');
+
+      const run = async (fragment, storedItems = {}) => {
+        const store = new Map(Object.entries(storedItems));
+        const storageStub = { getItem: (key) => (store.has(key) ? store.get(key) : null), setItem: (key, value) => { store.set(key, String(value)); } };
+        const replacements = [];
+        const elements = new Map();
+        const element = () => ({ hidden: false, textContent: '', disabled: false, addEventListener() {} });
+        const locationStub = { hash: fragment, origin: 'https://no-no.uk', pathname: '/manage/fp-owner', search: '', replace: (target) => replacements.push(target) };
+        const factory = new Function('__hashModule', 'document', 'localStorage', 'location', 'navigator', script);
+        factory(() => Promise.resolve({ hashManagementToken: clientHash }), { getElementById: () => element() }, storageStub, locationStub, { clipboard: {} });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return { store, replacements };
+      };
+
+      // Verified fragment + session: unchanged handoff for the owner.
+      const valid = await run(`#${CRED}`);
+      expect(valid.replacements).toEqual(['/fp-owner?handoff=1']);
+      // Bare session owner (no fragment) stays on the fallback page,
+      // unchanged.
+      const bare = await run('');
+      expect(bare.replacements).toEqual([]);
+      // An explicitly WRONG fragment fails closed even for the session
+      // owner: no auto-handoff during this navigation attempt (the owner
+      // keeps every session-based management surface; only the corrupt
+      // credential's silent auto-redirect is removed).
+      const corrupted = await run('#deliberately-corrupted-credential');
+      expect(corrupted.replacements).toEqual([]);
+      expect(corrupted.store.get('purelink:management:fp-owner')).toBeUndefined();
     });
 
     it('keeps credentials out of markup, scripts, and noscript fallbacks', () => {
