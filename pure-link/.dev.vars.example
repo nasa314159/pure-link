@@ -27,3 +27,15 @@ ECPAY_HASH_IV=replace-with-ecpay-hash-iv
 CREEM_LIVE_CHECKOUT_ENABLED=false
 # Discord webhook for report notifications. Leave empty or use a safe test URL.
 DISCORD_REPORT_WEBHOOK_URL=
+# AI formula inference uses the Microsoft Foundry / Azure OpenAI v1-compatible
+# endpoint. The endpoint/secret trio is mirrored into Wrangler secrets in
+# production (`npx wrangler secret put AZURE_OPENAI_ENDPOINT|..._API_KEY|..._DEPLOYMENT|..._IMAGE_DEPLOYMENT`).
+# Requests with a reference image route to AZURE_OPENAI_IMAGE_DEPLOYMENT (a
+# multimodal deployment); text-only requests keep AZURE_OPENAI_DEPLOYMENT.
+# Both deployments live in the same Foundry resource, so no second key or
+# endpoint is needed. When the image deployment is unset, image requests fall
+# back to the primary deployment with the unchanged text request shape.
+AZURE_OPENAI_ENDPOINT=https://REPLACE-WITH-RESOURCE-NAME.openai.azure.com/openai/v1/
+AZURE_OPENAI_API_KEY=replace-with-azure-openai-api-key
+AZURE_OPENAI_DEPLOYMENT=replace-with-deployment-name
+AZURE_OPENAI_IMAGE_DEPLOYMENT=replace-with-image-deployment-name

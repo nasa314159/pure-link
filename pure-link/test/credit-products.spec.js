@@ -13,11 +13,12 @@ describe('canonical AI credit catalog', () => {
     expect(listAiCreditPacks().map((pack) => pack.credits)).toEqual([150, 400, 1000]);
   });
 
-  it('renders public product information directly from the canonical catalog', () => {
+  it('keeps the canonical catalog intact but does not advertise purchasable packs publicly', () => {
     const page = renderLegalPage('ai-credits', 'en');
     for (const pack of listAiCreditPacks()) {
-      expect(page).toContain(`${AI_CREDIT_PACKS[pack.id].credits.toLocaleString('en-US')} AI formula drafts — NT$${AI_CREDIT_PACKS[pack.id].priceTwd}`);
+      expect(page).not.toContain(`${AI_CREDIT_PACKS[pack.id].credits.toLocaleString('en-US')} AI formula drafts — NT$${AI_CREDIT_PACKS[pack.id].priceTwd}`);
     }
+    expect(page).toContain('Paid AI credit purchases are currently unavailable during the public beta');
     expect(page).toContain('No payment rail is enabled in this deployment');
     expect(page).not.toContain('Creem');
   });

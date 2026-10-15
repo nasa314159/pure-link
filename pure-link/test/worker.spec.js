@@ -34,6 +34,19 @@ describe('PureLink worker', () => {
     expect(body).toContain('href="/auth/google?returnTo=%2Fen%2F"');
   });
 
+  it('allows blob images only for the signed-in ephemeral formula-image preview', async () => {
+    const signedOut = await worker.fetch(new Request('https://pure.test/en/'), env);
+    expect(signedOut.headers.get('content-security-policy')).toContain("img-src 'self' data:");
+    expect(signedOut.headers.get('content-security-policy')).not.toContain('blob:');
+
+    const sessionToken = await authenticateTestUser(env);
+    const signedIn = await worker.fetch(new Request('https://pure.test/en/', {
+      headers: { cookie: `purelink_session=${sessionToken}` },
+    }), env);
+    expect(signedIn.headers.get('content-security-policy')).toContain("img-src 'self' data: blob:");
+    expect(signedIn.headers.get('content-security-policy')).not.toContain('https:');
+  });
+
   it('resolves locale routes without touching shared-content semantics', async () => {
     const chinese = await worker.fetch(new Request('https://pure.test/', { headers: { 'accept-language': 'zh-TW' }, redirect: 'manual' }), env);
     expect(chinese.headers.get('location')).toBe('/zh-Hant/');
@@ -274,6 +287,35 @@ describe('PureLink worker', () => {
     }), env);
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ error: 'Sign in before purchasing AI formula credits.' });
+  });
+
+  it('refuses paid AI credit checkout for signed-in users during the public beta', async () => {
+    Object.assign(env, {
+      APP_ENV: 'production',
+      RATE_LIMIT_SECRET: 'rate-limit-test-secret',
+      LEMON_SQUEEZY_CHECKOUT_ENABLED: 'true',
+      LEMON_SQUEEZY_API_KEY: 'lemon-api-key',
+      LEMON_SQUEEZY_WEBHOOK_SECRET: 'webhook-secret',
+      LEMON_SQUEEZY_STORE_ID: '1',
+      LEMON_SQUEEZY_VARIANT_SMALL_ID: '101',
+      LEMON_SQUEEZY_VARIANT_STANDARD_ID: '102',
+      LEMON_SQUEEZY_VARIANT_LARGE_ID: '103',
+      ECPAY_MERCHANT_ID: '2000132',
+      ECPAY_HASH_KEY: 'test-hash-key',
+      ECPAY_HASH_IV: 'test-hash-iv',
+      ECPAY_ENVIRONMENT: 'stage',
+      ECPAY_CHECKOUT_ENABLED: 'true',
+    });
+    const sessionToken = await authenticateTestUser(env);
+    const response = await worker.fetch(new Request('https://pure.test/api/billing/checkout', {
+      method: 'POST',
+      headers: { origin: 'https://pure.test', 'content-type': 'application/json', cookie: `purelink_session=${sessionToken}`, 'x-purelink-locale': 'en' },
+      body: JSON.stringify({ provider: 'ecpay', packId: 'small' }),
+    }), env);
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'AI credit checkout is not available yet.',
+    });
   });
 
   it('logs out an authenticated user with a normal same-origin Origin', async () => {
@@ -677,6 +719,250 @@ describe('PureLink worker', () => {
     expect(preview.headers.get('referrer-policy')).toBe('no-referrer');
   });
 
+  it('shows the stored destination on the URL management page and only there', async () => {
+    const created = await createLink(env, { contentType: 'url', content: 'https://example.com/shop?ref=friend', slug: 'manage-dest' });
+    const management = await worker.fetch(new Request(created.body.managementUrl), env);
+    const managementHtml = await management.text();
+    expect(managementHtml).toContain('class="managed-destination"');
+    expect(managementHtml).toContain('Destination');
+    expect(managementHtml).toContain('https://example.com/shop?ref=friend');
+
+    // Formula and card management presentation is deliberately unchanged.
+    const formula = await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'manage-formula' });
+    const formulaManagement = await (await worker.fetch(new Request(formula.body.managementUrl), env)).text();
+    expect(formulaManagement).not.toContain('class="managed-destination"');
+    expect(formulaManagement).not.toContain('>Destination<');
+
+    const card = await createLink(env, { contentType: 'card', content: 'A quiet card', slug: 'manage-card' });
+    const cardManagement = await (await worker.fetch(new Request(card.body.managementUrl), env)).text();
+    expect(cardManagement).not.toContain('class="managed-destination"');
+  });
+
+  it('keeps the destination preview public and management-free for strangers', async () => {
+    const created = await createLink(env, { contentType: 'url', content: 'https://example.com/shop', slug: 'stranger-preview' });
+    const previewResponse = await worker.fetch(new Request('https://pure.test/stranger-preview+'), env);
+    expect(previewResponse.status).toBe(200);
+    const previewHtml = await previewResponse.text();
+    expect(previewHtml).toContain('example.com');
+    expect(previewHtml).toContain('example.com/shop');
+    expect(previewHtml).not.toContain('You manage this PureLink');
+    expect(previewHtml).not.toContain('Delete this PureLink');
+    expect(previewHtml).not.toContain('preview-delete');
+    expect(previewResponse.headers.get('content-security-policy')).not.toContain('nonce-');
+
+    // The anonymous management credential is never presented by a plain preview
+    // navigation (the browser does not send fragments or headers to the server),
+    // so no management markup can be produced for it on this page either.
+    const previewWithCredential = await worker.fetch(new Request('https://pure.test/stranger-preview+', {
+      headers: { authorization: `Bearer ${created.body.managementToken}` },
+    }), env);
+    expect((await previewWithCredential.text())).not.toContain('You manage this PureLink');
+  });
+
+  it('renders preview deletion for the account owner only, then invalidates the link', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    const created = await createLink(env, {
+      contentType: 'url', content: 'https://example.com/owned', slug: 'owned-preview',
+    }, { cookie: `purelink_session=${ownerSession}` });
+    expect(created.body.ownerLinked).toBe(true);
+
+    const stranger = await worker.fetch(new Request('https://pure.test/owned-preview+'), env);
+    expect((await stranger.text())).not.toContain('You manage this PureLink');
+
+    const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+    const other = await worker.fetch(new Request('https://pure.test/owned-preview+', { headers: { cookie: `purelink_session=${otherSession}` } }), env);
+    expect((await other.text())).not.toContain('You manage this PureLink');
+
+    const owner = await worker.fetch(new Request('https://pure.test/owned-preview+', { headers: { cookie: `purelink_session=${ownerSession}` } }), env);
+    const ownerHtml = await owner.text();
+    expect(ownerHtml).toContain('You manage this PureLink');
+    expect(ownerHtml).toContain('Delete this PureLink');
+    expect(ownerHtml).toContain("method: 'DELETE'");
+    expect(owner.headers.get('content-security-policy')).toMatch(/script-src 'self' 'nonce-[^']+'/);
+
+    // Deleting from the preview request re-verifies authorization server-side.
+    const deletion = await worker.fetch(new Request('https://pure.test/api/links/owned-preview', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}` },
+    }), env);
+    expect(deletion.status).toBe(204);
+
+    // The deleted URL stops resolving and its preview exposes nothing.
+    const redirectAfter = await worker.fetch(new Request('https://pure.test/owned-preview', { redirect: 'manual' }), env);
+    expect(redirectAfter.status).toBe(404);
+    const previewAfter = await worker.fetch(new Request('https://pure.test/owned-preview+'), env);
+    expect(previewAfter.status).toBe(404);
+    expect(await previewAfter.text()).not.toContain('example.com/owned');
+    const manageAfter = await worker.fetch(new Request('https://pure.test/en/manage/owned-preview'), env);
+    expect(manageAfter.status).toBe(404);
+  });
+
+  it('rejects preview deletion without ownership, a valid session, or a same-origin request', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, {
+      contentType: 'url', content: 'https://example.com/gated', slug: 'gated-delete',
+    }, { cookie: `purelink_session=${ownerSession}` });
+
+    // Anonymous deletion needs a management credential along its existing path.
+    const anonymous = await worker.fetch(new Request('https://pure.test/api/links/gated-delete', { method: 'DELETE' }), env);
+    expect(anonymous.status).toBe(401);
+
+    // Another signed-in account is a stranger: the ownership predicate changes no rows.
+    const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+    const strangerOwner = await worker.fetch(new Request('https://pure.test/api/links/gated-delete', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${otherSession}` },
+    }), env);
+    expect(strangerOwner.status).toBe(404);
+
+    // Cross-site deletion attempts are rejected before any account lookup.
+    const foreignOrigin = await worker.fetch(new Request('https://pure.test/api/links/gated-delete', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}`, origin: 'https://attacker.example' },
+    }), env);
+    expect(foreignOrigin.status).toBe(403);
+
+    // GET must never delete; the owner record is untouched.
+    const getDeletion = await worker.fetch(new Request('https://pure.test/api/links/gated-delete'), env);
+    expect(getDeletion.status).not.toBe(204);
+    expect(db.links.has('gated-delete')).toBe(true);
+  });
+
+  it('renders formula and card owner controls for the account owner only', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'owned-formula' }, { cookie: `purelink_session=${ownerSession}` });
+    await createLink(env, { contentType: 'card', content: 'Owned card', slug: 'owned-card' }, { cookie: `purelink_session=${ownerSession}` });
+
+    for (const slug of ['owned-formula', 'owned-card']) {
+      // Anonymous viewers receive the plain public content page.
+      const anonymous = await worker.fetch(new Request(`https://pure.test/${slug}`), env);
+      expect(anonymous.status).toBe(200);
+      const anonymousBody = await anonymous.text();
+      expect(anonymousBody).not.toContain('You manage this PureLink');
+      expect(anonymousBody).not.toContain('Delete this PureLink');
+      expect(anonymousBody).not.toContain('owner-delete');
+      expect(anonymous.headers.get('cache-control')).toBeNull();
+
+      // Unrelated signed-in accounts receive the same public page.
+      const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+      const stranger = await worker.fetch(new Request(`https://pure.test/${slug}`, { headers: { cookie: `purelink_session=${otherSession}` } }), env);
+      expect(stranger.status).toBe(200);
+      const strangerBody = await stranger.text();
+      expect(strangerBody).not.toContain('You manage this PureLink');
+      expect(strangerBody).not.toContain('Delete this PureLink');
+      expect(strangerBody).not.toContain('owner-delete');
+      expect(stranger.headers.get('cache-control')).toBeNull();
+
+      // The verified owner receives the quiet management section.
+      const owner = await worker.fetch(new Request(`https://pure.test/${slug}`, { headers: { cookie: `purelink_session=${ownerSession}` } }), env);
+      expect(owner.status).toBe(200);
+      const ownerBody = await owner.text();
+      expect(ownerBody).toContain('You manage this PureLink');
+      expect(ownerBody).toContain('Delete this PureLink');
+      expect(ownerBody).toContain('owner-delete');
+      expect(owner.headers.get('cache-control')).toBe('no-store');
+      expect(owner.headers.get('content-security-policy')).toMatch(/script-src 'self' 'nonce-[^']+'/);
+    }
+
+    // The formula owner page keeps its shared content actions and OG image.
+    const ownerFormula = await (await worker.fetch(new Request('https://pure.test/owned-formula', { headers: { cookie: `purelink_session=${ownerSession}` } }), env)).text();
+    expect(ownerFormula).toContain('og/formula/owned-formula.png');
+    expect(ownerFormula).toContain('data-download-png');
+    expect(ownerFormula).toContain('/assets/content-actions.js');
+  });
+
+  it('deletes owned formula and card content through the existing endpoint and inactivates it', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'deletable-formula' }, { cookie: `purelink_session=${ownerSession}` });
+    await createLink(env, { contentType: 'card', content: 'Deletable card', slug: 'deletable-card' }, { cookie: `purelink_session=${ownerSession}` });
+
+    // A stranger's session cannot delete either.
+    const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+    const strangerFormula = await worker.fetch(new Request('https://pure.test/api/links/deletable-formula', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${otherSession}` },
+    }), env);
+    expect(strangerFormula.status).toBe(404);
+    expect(db.links.has('deletable-formula')).toBe(true);
+
+    // Anonymous deletion still requires the management credential path.
+    const anonymousCard = await worker.fetch(new Request('https://pure.test/api/links/deletable-card', { method: 'DELETE' }), env);
+    expect(anonymousCard.status).toBe(401);
+    expect(db.links.has('deletable-card')).toBe(true);
+
+    // Cross-site deletion is rejected before any account lookup.
+    const foreignOrigin = await worker.fetch(new Request('https://pure.test/api/links/deletable-formula', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}`, origin: 'https://attacker.example' },
+    }), env);
+    expect(foreignOrigin.status).toBe(403);
+
+    // GET must never delete.
+    const getDeletion = await worker.fetch(new Request('https://pure.test/api/links/deletable-card'), env);
+    expect(getDeletion.status).not.toBe(204);
+    expect(db.links.has('deletable-card')).toBe(true);
+
+    // The owner deletes both through the unchanged endpoint.
+    const formulaDeletion = await worker.fetch(new Request('https://pure.test/api/links/deletable-formula', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}` },
+    }), env);
+    expect(formulaDeletion.status).toBe(204);
+    const cardDeletion = await worker.fetch(new Request('https://pure.test/api/links/deletable-card', {
+      method: 'DELETE', headers: { cookie: `purelink_session=${ownerSession}` },
+    }), env);
+    expect(cardDeletion.status).toBe(204);
+
+    // The deleted pages stop resolving as active content.
+    const formulaAfter = await worker.fetch(new Request('https://pure.test/deletable-formula'), env);
+    expect(formulaAfter.status).toBe(404);
+    const cardAfter = await worker.fetch(new Request('https://pure.test/deletable-card'), env);
+    expect(cardAfter.status).toBe(404);
+    // …and the deleted Formula no longer reaches the dynamic OG endpoint.
+    const formulaOgAfter = await worker.fetch(new Request('https://pure.test/og/formula/deletable-formula.png'), env);
+    expect(formulaOgAfter.status).toBe(404);
+    expect(await formulaOgAfter.text()).not.toContain('E=mc');
+    // The management address for deleted content is gone as well.
+    const manageAfter = await worker.fetch(new Request('https://pure.test/en/manage/deletable-formula'), env);
+    expect(manageAfter.status).toBe(404);
+  });
+
+  it('keeps the standalone manage page working for anonymous and account owners', async () => {
+    const created = await createLink(env, { contentType: 'card', content: 'Recovery card', slug: 'compat-card' });
+
+    // Anonymous recovery: the manage address renders unchanged and its
+    // credential still deletes through the same endpoint.
+    const anonymousManage = await worker.fetch(new Request(created.body.managementUrl.replace(/#.*/, ''), env), env);
+    expect(anonymousManage.status).toBe(200);
+    const anonymousBody = await anonymousManage.text();
+    expect(anonymousBody).toContain('Manage your PureLink');
+    expect(anonymousBody).toContain('id="delete-link"');
+    expect(anonymousBody).toContain('compat-card');
+
+    const anonymousDeletion = await worker.fetch(new Request('https://pure.test/api/links/compat-card', {
+      method: 'DELETE', headers: { authorization: `Bearer ${created.body.managementToken}` },
+    }), env);
+    expect(anonymousDeletion.status).toBe(204);
+    expect((await worker.fetch(new Request('https://pure.test/compat-card'), env)).status).toBe(404);
+
+    // Account-owner compatibility: session-linked content still shows
+    // account access on the manage page and deletes with the session.
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'compat-formula' }, { cookie: `purelink_session=${ownerSession}` });
+    const accountManage = await worker.fetch(new Request('https://pure.test/en/manage/compat-formula', { headers: { cookie: `purelink_session=${ownerSession}` } }), env);
+    expect(accountManage.status).toBe(200);
+    expect(await accountManage.text()).toContain('You have management access through your Google account.');
+  });
+
+  it('routes My PureLinks management entries away from the standalone manage page', async () => {
+    const ownerSession = await authenticateTestUser(env);
+    await createLink(env, { contentType: 'url', content: 'https://example.com/nav', slug: 'nav-url' }, { cookie: `purelink_session=${ownerSession}` });
+    await createLink(env, { contentType: 'formula', content: 'E=mc^2', slug: 'nav-formula' }, { cookie: `purelink_session=${ownerSession}` });
+    await createLink(env, { contentType: 'card', content: 'Nav card', slug: 'nav-card' }, { cookie: `purelink_session=${ownerSession}` });
+
+    const account = await worker.fetch(new Request('https://pure.test/en/account', { headers: { cookie: `purelink_session=${ownerSession}` } }), env);
+    expect(account.status).toBe(200);
+    const body = await account.text();
+    expect(body).toContain('<a href="/nav-url+">Manage</a>');
+    expect(body).toContain('<a href="/nav-formula">Manage</a>');
+    expect(body).toContain('<a href="/nav-card">Manage</a>');
+    expect(body).not.toContain('/en/manage/nav-');
+  });
+
   it('escapes creator content rather than executing it', async () => {
     const created = await createLink(env, {
       contentType: 'card',
@@ -699,6 +985,139 @@ describe('PureLink worker', () => {
     expect(created.body.previewUrl).toBe(created.body.url);
     expect(created.body.previewLabel).toBe('View formula');
     expect(created.body.contentType).toBe('formula');
+  });
+
+  describe('anonymous recovery handoff', () => {
+    async function createAnonymousLink(body) {
+      return createLink(env, body);
+    }
+
+    it('marks the hidden owner section on canonical pages through the handoff signal only', async () => {
+      const url = await createAnonymousLink({ contentType: 'url', content: 'https://example.com/handoff', slug: 'anon-url' });
+      const formula = await createAnonymousLink({ contentType: 'formula', content: 'E=mc^2', slug: 'anon-formula' });
+      const card = await createAnonymousLink({ contentType: 'card', content: 'Anon card', slug: 'anon-card' });
+
+      // Handoff responses expose the hidden allowlisted section and its
+      // activation hook; nothing is visible to a viewer without the
+      // locally stored credential.
+      const urlHandoff = await worker.fetch(new Request('https://pure.test/anon-url+?handoff=1'), env);
+      expect(urlHandoff.status).toBe(200);
+      expect(urlHandoff.headers.get('cache-control')).toBe('no-store');
+      const urlBody = await urlHandoff.text();
+      expect(urlBody).toContain('hidden data-owner-section');
+      expect(urlBody).toContain("import('/assets/owner-activation.js')");
+
+      const formulaHandoff = await worker.fetch(new Request('https://pure.test/anon-formula?handoff=1'), env);
+      expect(formulaHandoff.status).toBe(200);
+      const formulaBody = await formulaHandoff.text();
+      expect(formulaBody).toContain('hidden data-owner-section');
+      expect(formulaBody).toContain("import('/assets/owner-activation.js')");
+
+      const cardHandoff = await worker.fetch(new Request('https://pure.test/anon-card?handoff=1'), env);
+      expect(cardHandoff.status).toBe(200);
+      const cardBody = await cardHandoff.text();
+      expect(cardBody).toContain('hidden data-owner-section');
+      expect(cardBody).toContain("import('/assets/owner-activation.js')");
+
+      // Plain canonical pages render nothing about management at all.
+      for (const address of ['https://pure.test/anon-url+', 'https://pure.test/anon-formula', 'https://pure.test/anon-card']) {
+        const plain = await worker.fetch(new Request(address), env);
+        expect(plain.status).toBe(200);
+        const plainBody = await plain.text();
+        expect(plainBody).not.toContain('data-owner-section');
+        expect(plainBody).not.toContain('You manage this PureLink');
+        expect(plainBody).not.toContain('owner-activation');
+      }
+
+      void url; void formula; void card;
+    });
+
+    it('allowlists the exact stored-management-hash fingerprint and never the credential', async () => {
+      const created = await createAnonymousLink({ contentType: 'card', content: 'Fingerprint card', slug: 'fp-card' });
+      const response = await worker.fetch(new Request('https://pure.test/fp-card?handoff=1'), env);
+      const body = await response.text();
+      const expectedFingerprint = (await hashManagementToken(created.body.managementToken)).slice(0, 16);
+      expect(body).toContain(`data-public-fingerprint="${expectedFingerprint}"`);
+      // The raw credential and any credential-storage key never appear in
+      // handoff markup; the fingerprint itself is public by design.
+      expect(body).not.toContain(created.body.managementToken);
+      expect(body).not.toContain('purelink:management:');
+      expect(body).not.toContain('Bearer ');
+    });
+
+    it('leaves handoff URLs on the canonical surface without the signal', async () => {
+      await createAnonymousLink({ contentType: 'card', content: 'Cleanup card', slug: 'cleanup-card' });
+      const response = await worker.fetch(new Request('https://pure.test/cleanup-card?handoff=1'), env);
+      const body = await response.text();
+      // The inline hook only wires the activation module, which drops the
+      // temporary ?handoff=1 continuity signal from the visible address.
+      expect(body).toContain("import('/assets/owner-activation.js')");
+      expect(body).not.toContain('?handoff=1');
+    });
+
+    it('keeps unrelated signed-in users and strangers management-free on handoff pages', async () => {
+      await createAnonymousLink({ contentType: 'formula', content: 'E=mc^2', slug: 'handoff-only' });
+      const otherSession = await authenticateTestUser(env, { id: 'user-2', email: 'other@example.com', display_name: 'Other', avatar_url: null, is_admin: 0 });
+      const signedIn = await worker.fetch(new Request('https://pure.test/handoff-only?handoff=1', { headers: { cookie: `purelink_session=${otherSession}` } }), env);
+      expect(signedIn.status).toBe(200);
+      const body = await signedIn.text();
+      // No server-rendered (unhidden) owner section for a non-owner: the
+      // hidden allowlisted section may exist, but it can only be revealed
+      // by the matching locally stored credential, and the DELETE endpoint
+      // re-verifies server-side regardless.
+      expect(body).not.toMatch(/<section class="content-manage">/);
+      expect(body).toContain('hidden data-owner-section');
+      // Strangers without the handoff signal never see the section at all.
+      const stranger = await worker.fetch(new Request('https://pure.test/handoff-only'), env);
+      expect(await stranger.text()).not.toContain('data-owner-section');
+    });
+
+    it('keeps the manage page redirect targets on the canonical surfaces', async () => {
+      const url = await createAnonymousLink({ contentType: 'url', content: 'https://example.com/redirect', slug: 'redirect-url' });
+      const formula = await createAnonymousLink({ contentType: 'formula', content: 'E=mc^2', slug: 'redirect-formula' });
+      const card = await createAnonymousLink({ contentType: 'card', content: 'Redirect card', slug: 'redirect-card' });
+      expect(url.body.url).toBe('https://pure.test/redirect-url');
+      void formula; void card;
+      // The manage markup embeds each content type's canonical handoff URL.
+      const urlManage = await (await worker.fetch(new Request('https://pure.test/manage/redirect-url'), env)).text();
+      expect(urlManage).toContain('/redirect-url+?handoff=1');
+      const formulaManage = await (await worker.fetch(new Request('https://pure.test/manage/redirect-formula'), env)).text();
+      expect(formulaManage).toContain('/redirect-formula?handoff=1');
+      const cardManage = await (await worker.fetch(new Request('https://pure.test/manage/redirect-card'), env)).text();
+      expect(cardManage).toContain('/redirect-card?handoff=1');
+    });
+
+    it('deletes each anonymous content type with its credential and inactivates every surface', async () => {
+      const url = await createAnonymousLink({ contentType: 'url', content: 'https://example.com/gone', slug: 'gone-url' });
+      const formula = await createAnonymousLink({ contentType: 'formula', content: 'E=mc^2', slug: 'gone-formula' });
+      const card = await createAnonymousLink({ contentType: 'card', content: 'Gone card', slug: 'gone-card' });
+
+      const unauthorizedFormula = await worker.fetch(new Request('https://pure.test/api/links/gone-formula', {
+        method: 'DELETE', headers: { authorization: `Bearer ${'x'.repeat(43)}` },
+      }), env);
+      expect(unauthorizedFormula.status).toBe(404);
+      expect(db.links.has('gone-formula')).toBe(true);
+
+      for (const [slug, token] of [['gone-url', url.body.managementToken], ['gone-formula', formula.body.managementToken], ['gone-card', card.body.managementToken]]) {
+        const deletion = await worker.fetch(new Request(`https://pure.test/api/links/${slug}`, {
+          method: 'DELETE', headers: { authorization: `Bearer ${token}` },
+        }), env);
+        expect(deletion.status).toBe(204);
+        expect((await worker.fetch(new Request(`https://pure.test/${slug}`), env)).status).toBe(404);
+        expect((await worker.fetch(new Request(`https://pure.test/${slug}+`), env)).status).toBe(404);
+      }
+
+      // The deleted Formula no longer reaches the dynamic OG endpoint either.
+      const formulaOg = await worker.fetch(new Request('https://pure.test/og/formula/gone-formula.png'), env);
+      expect(formulaOg.status).toBe(404);
+    });
+
+    it('keeps the redirect-only URL path intact for anonymous and signed-in visitors', async () => {
+      await createAnonymousLink({ contentType: 'url', content: 'https://example.com/redirect-only', slug: 'redirect-only' });
+      const redirect = await worker.fetch(new Request('https://pure.test/redirect-only', { redirect: 'manual' }), env);
+      expect(redirect.status).toBe(302);
+      expect(redirect.headers.get('location')).toBe('https://example.com/redirect-only');
+    });
   });
 
   it('deletes anonymous content only with its management token', async () => {
@@ -749,18 +1168,17 @@ describe('PureLink worker', () => {
   });
 });
 
-async function createLink(env, body) {
+async function createLink(env, body, headers = {}) {
   const response = await worker.fetch(new Request('https://pure.test/api/links', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
   }), env);
   return { response, body: await response.json() };
 }
 
-async function authenticateTestUser(env) {
-  const token = 'test-session-token';
-  const user = { id: 'user-1', email: 'person@example.com', display_name: 'Person', avatar_url: null, is_admin: 0 };
+async function authenticateTestUser(env, user = { id: 'user-1', email: 'person@example.com', display_name: 'Person', avatar_url: null, is_admin: 0 }) {
+  const token = `test-session-token-${user.id}`;
   env.GOOGLE_CLIENT_ID = 'test-client';
   env.GOOGLE_CLIENT_SECRET = 'test-secret';
   env.pure_link_db.users.set(user.id, user);
@@ -915,12 +1333,17 @@ class MemoryStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (this.sql.startsWith('DELETE FROM links')) {
-      const [slug, managementTokenHash] = this.values;
-      const row = this.db.links.get(slug);
-      if (!row || row.management_token_hash !== managementTokenHash) {
-        return { success: true, meta: { changes: 0 } };
+      const row = this.db.links.get(this.values[0]);
+      if (this.sql.includes('management_token_hash')) {
+        const [slug, managementTokenHash] = this.values;
+        const match = row && row.management_token_hash === managementTokenHash;
+        if (!match) return { success: true, meta: { changes: 0 } };
+      } else {
+        const [slug, ownerUserId] = this.values;
+        const match = row && row.owner_user_id === ownerUserId;
+        if (!match) return { success: true, meta: { changes: 0 } };
       }
-      this.db.links.delete(slug);
+      this.db.links.delete(this.values[0]);
       return { success: true, meta: { changes: 1 } };
     }
     if (this.sql.startsWith('INSERT INTO reports')) {

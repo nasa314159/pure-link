@@ -17,16 +17,62 @@ brandToggle?.addEventListener('change', () => {
 // with the layout-participating CSS zoom property on the rendered box, so the
 // outer wrapper needs no manual size compensation. offsetWidth/clientWidth
 // report the box in its own coordinate space and exclude the zoom effect, so
-// the natural width stays measurable while zoomed. Formulas still wider at
-// the readability floor fall back to horizontal scrolling instead of
-// shrinking further.
+// the natural width stays measurable while zoomed. WebKit renders KaTeX
+// incorrectly once zoom re-lays the formula out, so those browsers take the
+// fallback below instead: no scaling at all, natural 100% render, and the
+// outer wrapper's overflow-x scrolling for anything too wide.
 const formulaFit = /** @type {HTMLElement | null} */ (document.querySelector('[data-formula-scale]'));
 const formulaBox = /** @type {HTMLElement | null} */ (formulaFit?.querySelector('.formula-box') ?? null);
 const FORMULA_MIN_SCALE = 0.7;
 let formulaLastWidth = formulaFit?.clientWidth ?? 0;
 
+// KaTeX renders correctly at 100% in every engine, but re-laying the render
+// out at a smaller size misaligns radical/fraction internals in WebKit
+// (inherited font-size, transform: scale, and CSS zoom all break it, while
+// Chromium scales correctly). No capability check can distinguish a
+// rendering bug, so this narrow UA/engine gate decides where scaling is
+// allowed:
+// - Desktop and Android Chromium-family engines (Chrome, Chromium, Arc,
+//   Edge, Opera, Android Chrome) always keep the scaling path.
+// - Desktop Safari is the remaining desktop WebKit identity.
+// - Apple mobile platforms no longer imply WebKit: Apple grants entitled
+//   alternative engines in the EU (iOS 17.4+) and Japan (iOS 26.2+), but
+//   third-party iOS UAs (CriOS, FxiOS, EdgiOS, …) mimic Safari tokens while
+//   omitting the Version token that the real Safari identity carries, so
+//   they cannot prove their engine. See the ambiguity note below.
+function isProblematicWebKitFormulaRendering() {
+  const ua = navigator.userAgent;
+  const appleMobile = ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iPod') ||
+    (ua.includes('Macintosh') && navigator.maxTouchPoints > 1);
+  const chromiumFamily = ua.includes('Chrome/') || ua.includes('Chromium') || ua.includes('Edg/') || ua.includes('OPR/');
+
+  if (chromiumFamily && !appleMobile) return false;
+  if (!appleMobile) return ua.includes('Safari/');
+  if (ua.includes('Version/')) return true;
+
+  // iOS/iPadOS ambiguity: an alternative-engine entitlement build could be
+  // running Blink or Gecko, but its UA cannot prove it — and every shipped
+  // iOS identity still renders with WebKit (as of 2026 no non-WebKit engine
+  // has shipped). The failure modes are asymmetric: scaling a WebKit render
+  // corrupts the formula geometry, while a needless fallback only forgoes
+  // the scaling UX (the natural 100% render plus horizontal scrolling stays
+  // correct), so ambiguous Apple-mobile identities conservatively take the
+  // fallback until alternative-engine builds ship with distinguishable UAs.
+  return true;
+}
+
+const formulaScalingBlocked = isProblematicWebKitFormulaRendering();
+
 function fitFormulaToWidth() {
   if (!formulaFit || !formulaBox) return;
+  if (formulaScalingBlocked) {
+    // WebKit fallback: never scale (no zoom, no transform, no font-size
+    // change) and keep the natural 100% KaTeX render; the wrapper's
+    // overflow-x scrolling stays available for anything too wide. A zoom
+    // left over from an earlier session state is removed defensively.
+    formulaBox.style.removeProperty('zoom');
+    return;
+  }
   const naturalWidth = formulaBox.offsetWidth;
   const availableWidth = formulaFit.clientWidth;
   if (naturalWidth <= availableWidth) {
@@ -45,7 +91,9 @@ if (formulaFit && formulaBox) {
   formulaLastWidth = formulaFit.clientWidth;
   // Web fonts change KaTeX metrics after layout, so re-fit once they settle.
   document.fonts?.ready?.then(fitFormulaToWidth);
-  if (typeof ResizeObserver === 'function') {
+  // On the WebKit fallback there is nothing to re-fit (the fit call is a
+  // no-op), so the observer is only needed on the scaling path.
+  if (typeof ResizeObserver === 'function' && !formulaScalingBlocked) {
     const formulaResizeObserver = new ResizeObserver(() => {
       // Zooming changes the box's layout contribution, never the observed
       // width; only genuine container-width changes (viewport, scrollbar)
@@ -116,7 +164,8 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
   // export must keep its known-good output exactly. html-to-image sizes the
   // capture from the live element's client box and copies each node's
   // computed style, so the zoom is removed for the capture (restoring the
-  // original natural rendering) and re-fit afterwards.
+  // original natural rendering) and re-fit afterwards. On the WebKit
+  // fallback no zoom was applied, so this is a no-op there.
   const scaledFormulas = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('[data-formula-scale]')]);
   scaledFormulas.forEach(resetFormulaDisplay);
 

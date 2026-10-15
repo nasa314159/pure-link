@@ -1,5 +1,6 @@
 import { escapeHtml } from './http.js';
-import { listAiCreditPacks } from './credit-products.js';
+import { hashManagementToken } from './security.js';
+
 import { renderFormulaContent } from './formula.js';
 import { getMessages, localizedPath } from './i18n.js';
 import { MESSAGE_LIMIT, countCodePoints, isOverLimit, overBy, interpolate as interpolateMessage, formatCounter, formatOverLimitMessage } from './support-message.js';
@@ -12,14 +13,6 @@ function clientMessagesMarkup(locale) {
 
 function localizedHref(locale, path = '') {
   return localizedPath(locale, path);
-}
-
-function creditPackSummary(locale) {
-  const billing = getMessages(locale).billing;
-  return listAiCreditPacks().map((pack) => billing.pack
-    .replace('{name}', billing.packNames[pack.id])
-    .replace('{credits}', Number(pack.credits).toLocaleString('en-US'))
-    .replace('{price}', Number(pack.priceTwd).toLocaleString('en-US'))).join(locale === 'en' ? '. ' : '。');
 }
 
 function languageSwitcher(locale, page = '') {
@@ -140,6 +133,13 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
         <div class="formula-ai-compose">
           <textarea id="formula-ai-description" maxlength="500" rows="3" placeholder="${escapeHtml(m.home.aiPlaceholder)}"></textarea>
           <button type="button" id="generate-formula-ai">${m.home.aiGenerate}</button>
+        </div>
+        <label class="formula-ai-image-label" for="formula-ai-image">${m.home.aiImageLabel}</label>
+        <input id="formula-ai-image" type="file" accept="image/png,image/jpeg" aria-describedby="formula-ai-image-help">
+        <small class="formula-ai-image-help" id="formula-ai-image-help">${m.home.aiImageHelp}</small>
+        <div class="formula-ai-image-preview" id="formula-ai-image-preview" hidden>
+          <img id="formula-ai-image-preview-image" alt="${escapeHtml(m.home.aiImagePreview)}">
+          <button type="button" id="remove-formula-ai-image">${m.home.aiImageRemove}</button>
         </div>
         <p class="formula-ai-status" id="formula-ai-status" role="status" hidden></p>
         <section class="formula-ai-result" id="formula-ai-result" aria-label="${escapeHtml(m.home.aiResult)}" hidden>
@@ -543,7 +543,7 @@ export function renderHomePage(nonce, turnstileSiteKey = '', googleAuthConfigure
       // credentials, and tokens are never written. Cleared on successful
       // creation; validation or network failures keep the draft.
       const CREATE_DRAFT_KEY = 'purelink.createDraft.v1';
-      const CREATE_DRAFT_TEXT_FIELDS = ['content', 'signature', 'slug', 'trackingRemove', 'trackingKeep', 'formulaAiDescription'];
+      const CREATE_DRAFT_TEXT_FIELDS = ['content', 'signature', 'slug', 'trackingRemove', 'trackingKeep'];
       const CREATE_DRAFT_CHECKBOXES = ['cleanTracking', 'isAffiliate'];
       function readCreateDraft() {
         try {
@@ -677,10 +677,33 @@ export function renderSocialPreviewPage(locale = 'zh-Hant') {
   });
 }
 
-export function renderUrlPreview(link, locale = 'zh-Hant') {
+// The destination preview stays public and informational. The optional
+// `management` argument is passed only after the server has verified that the
+// request itself carries management access (account ownership via its session
+// cookie), so strangers never receive management markup or its script. The
+// rendered Delete action is purely a convenience affordance: the existing
+// DELETE /api/links/<slug> endpoint independently re-verifies management
+// access, CSRF origin, and account ownership on every deletion request.
+export function renderUrlPreview(link, locale = 'zh-Hant', management = null) {
   const m = getMessages(locale);
+  const manages = Boolean(management?.nonce);
+  const nonce = manages ? String(management.nonce || '') : '';
   const destination = new URL(link.content);
   const affiliate = Number(link.is_affiliate) === 1;
+  // Only rendered when the request carries management context: visible for
+  // the verified session owner, hidden (allowlisted for the owner-activation
+  // module) for the anonymous handoff, and absent — byte-identical public
+  // page — for strangers. Visibility is decided exactly as released
+  // (request-only session check; deletion still re-verifies inside the
+  // unchanged DELETE /api/links/<slug> handler).
+  const manageSection = management
+    ? `
+          <section class="preview-manage"${manages ? '' : ' hidden data-owner-section'}${manages ? '' : ` data-public-fingerprint="${escapeHtml(management.publicFingerprint || '')}"`}${manages || !management.slug ? '' : ` data-purelink-slug="${escapeHtml(management.slug)}"`}>
+            <p class="preview-manage-title">${m.manage.youManage}</p>
+            <button class="danger-button" id="preview-delete" type="button"${manages ? '' : ' hidden'}>${manages ? m.manage.delete : m.manage.deleteThisLink}</button>
+            <p class="notice" id="preview-delete-status" role="status" hidden></p>
+          </section>`
+    : '';
   return documentShell({
     title: `${m.content.preview}: ${destination.hostname} — PureLink`,
     description: m.page.previewDescription,
@@ -700,22 +723,130 @@ export function renderUrlPreview(link, locale = 'zh-Hant') {
           </div>
           <a class="primary-link" href="${escapeHtml(destination.toString())}" rel="noreferrer">${m.content.continue}</a>
           <a class="report-link" href="${localizedHref(locale, `report/${link.slug}`)}">${m.content.report}</a>
+          ${manageSection}
           <p class="notice">${escapeHtml(m.content.platformNotice)} ${m.content.previewNotice}</p>
           ${languageSwitcher(locale, `/${link.slug}+`)}
         </article>
       </main>
     `,
+    script: manages ? ownerDeleteScript(link.slug, locale) : anonymousActivationScript(locale, management),
+    nonce,
   });
 }
 
-export function renderFormulaPage(link, locale = 'zh-Hant') {
+// Mirror of the management page's two-press confirmation and item deletion,
+// wired to the unchanged DELETE /api/links/<slug> endpoint. Deletion relies on
+// the account session (cookie) — no credential is ever embedded in this page.
+// Used by the URL destination preview (its preview-delete ids) and by the
+// Formula/Card content pages' quiet owner section (owner-delete ids), which the
+// server renders only for the verified session account that owns the link.
+// Inline bootstrap for the anonymous-record activation on canonical pages.
+// Emits nothing unless the server marked the section for allowlisting
+// (management.publicFingerprint); keeps every local value inside guarded
+// template fields and always guarded with double quotes.
+function anonymousActivationScript(locale, management = null) {
+  if (!management?.publicFingerprint) return '';
+  const bundle = JSON.stringify(getMessages(locale).manage).replaceAll('<', '\\u003c');
+  return `
+      (function () {
+        const localeMessages = ${bundle};
+        const activate = () => import('/assets/owner-activation.js')
+          .then((module) => module.activateCanonicalOwnerSection({ localeMessages }))
+          .catch(() => {});
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', activate);
+        else activate();
+      })();
+    `;
+}
+
+function ownerDeleteScript(slug, locale, ids = {}) {
+  const buttonId = JSON.stringify(ids.button || 'preview-delete');
+  const statusId = JSON.stringify(ids.status || 'preview-delete-status');
+  const safeSlug = JSON.stringify(slug).replaceAll('<', '\\u003c');
+  const messages = JSON.stringify({
+    deleteAgain: getMessages(locale).manage.deleteAgain,
+    delete: getMessages(locale).manage.deleteThisLink,
+    deleted: getMessages(locale).manage.deleted,
+    deleteFailed: getMessages(locale).manage.deleteFailed,
+  }).replaceAll('<', '\\u003c');
+  return `
+      const manageMessages = ${messages};
+      const slug = ${safeSlug};
+      const button = document.getElementById(${buttonId});
+      const status = document.getElementById(${statusId});
+      button.textContent = manageMessages.delete;
+      let deleteArmed = false;
+      button.addEventListener('click', async () => {
+        if (!deleteArmed) {
+          deleteArmed = true;
+          button.textContent = manageMessages.deleteAgain;
+          setTimeout(() => { deleteArmed = false; button.textContent = manageMessages.delete; }, 5000);
+          return;
+        }
+        button.disabled = true;
+        const response = await fetch('/api/links/' + encodeURIComponent(slug), { method: 'DELETE' });
+        if (response.ok) {
+          button.hidden = true;
+          status.hidden = false;
+          status.textContent = manageMessages.deleted;
+        } else {
+          button.disabled = false;
+          deleteArmed = false;
+          button.textContent = manageMessages.delete;
+          status.hidden = false;
+          status.textContent = manageMessages.deleteFailed;
+        }
+      });
+    `;
+}
+
+// Quiet, visually secondary owner section reused by the Formula and Card
+// content pages. Rendered only when the server already verified that the
+// request's own session account manages this PureLink, or — for anonymous
+// credential holders — hidden with an allowlisting fingerprint that the
+// owner-activation module can verify locally (the deciding call lives in
+// `anonymousActivationScript`, whose import triggers the activation module).
+function contentManageSection(locale, management = null) {
   const m = getMessages(locale);
+  // The `hidden` state + data-owner-section mark is the server render for
+  // anonymous management (fingerprint/slug attributes included); the
+  // account-owner render (management.nonce set) gets the section unhidden
+  // inline, so it displays exactly as released.
+  const managesServerSide = Boolean(management?.nonce);
+  const sectionTag = `${management && !managesServerSide ? ' hidden data-owner-section' : ''}`;
+  const stateTag = `${management && !managesServerSide ? ` data-public-fingerprint="${escapeHtml(management.publicFingerprint || '')}"` : ''}`;
+  const stateSlug = `${management && !managesServerSide && management.slug ? ` data-purelink-slug="${escapeHtml(management.slug)}"` : ''}`;
+  const buttonLabel = `${managesServerSide ? m.manage.delete : m.manage.deleteThisLink}`;
+  const buttonHidden = `${managesServerSide ? '' : ' hidden'}`;
+  return `
+          <section class="content-manage"${sectionTag}${stateTag}${stateSlug}>
+            <p class="content-manage-title">${m.manage.youManage}</p>
+            <button class="danger-button" id="owner-delete" type="button"${buttonHidden}>${buttonLabel}</button>
+            <p class="notice" id="owner-delete-status" role="status" hidden></p>
+          </section>`;
+}
+
+// The Formula content page stays public and unchanged for every viewer. The
+// optional `management` argument is passed only after the server has verified
+// that the request itself carries management access (account ownership via its
+// session cookie), so anonymous viewers and unrelated signed-in accounts never
+// receive owner markup or its script. The rendered Delete action is purely a
+// convenience affordance: the existing DELETE /api/links/<slug> endpoint
+// independently re-verifies management access, CSRF origin, and account
+// ownership on every deletion request.
+export function renderFormulaPage(link, locale = 'zh-Hant', management = null) {
+  const m = getMessages(locale);
+  const manages = Boolean(management?.nonce);
+  const manageNonce = manages ? String(management.nonce || '') : '';
+  const manageSection = management ? contentManageSection(locale, management) : '';
   return documentShell({
     title: `${m.common.formula} — PureLink`,
     description: m.page.formulaDescription,
     robots: 'noindex, nofollow, noarchive',
     canonicalPath: `/${link.slug}`,
     locale,
+    // Social previews show the rendered formula itself, not the generic image.
+    ogImage: `https://no-no.uk/og/formula/${encodeURIComponent(link.slug)}.png`,
     body: `
       <main class="page">
         <a class="wordmark" href="${localizedHref(locale)}">PureLink</a>
@@ -738,16 +869,24 @@ export function renderFormulaPage(link, locale = 'zh-Hant') {
           <textarea id="raw-content" hidden>${escapeHtml(link.content)}</textarea>
           <p class="notice">${escapeHtml(m.content.platformNotice)}</p>
           <a class="report-link" href="${localizedHref(locale, `report/${link.slug}`)}">${m.content.report}</a>
+          ${manageSection}
           ${languageSwitcher(locale, `/${link.slug}`)}
         </article>
       </main>
     `,
+    script: `${manages ? ownerDeleteScript(link.slug, locale, { button: 'owner-delete', status: 'owner-delete-status' }) : anonymousActivationScript(locale, management)}`,
+    nonce: manageNonce,
     externalScript: '/assets/content-actions.js',
   });
 }
 
-export function renderCardPage(link, locale = 'zh-Hant', nonce = '') {
+// Same ownership rule as the Formula content page: the optional `management`
+// argument is passed only after the server verified session-account ownership,
+// so the quiet owner section never reaches anonymous viewers or strangers.
+export function renderCardPage(link, locale = 'zh-Hant', nonce = '', management = null) {
   const m = getMessages(locale);
+  const manages = Boolean(management?.nonce);
+  const manageSection = management ? contentManageSection(locale, management) : '';
   const signature = link.signature ? `<p class="signature">— ${escapeHtml(link.signature)}</p>` : '';
   const cardContentId = `card-content-${Math.random().toString(36).slice(2, 9)}`;
   return documentShell({
@@ -777,11 +916,12 @@ export function renderCardPage(link, locale = 'zh-Hant', nonce = '') {
           <textarea id="raw-content" hidden>${escapeHtml(link.content)}</textarea>
           <p class="notice">${escapeHtml(m.content.platformNotice)}</p>
           <a class="report-link" href="${localizedHref(locale, `report/${link.slug}`)}">${m.content.report}</a>
+          ${manageSection}
           ${languageSwitcher(locale, `/${link.slug}`)}
         </article>
       </main>
     `,
-    script: `
+    script: `${manages ? ownerDeleteScript(link.slug, locale, { button: 'owner-delete', status: 'owner-delete-status' }) : anonymousActivationScript(locale, management)}
       // Mirrors the supporter-message collapse: 6-line clamp on long card
       // content, localized Show more / Show less, and ResizeObserver-based
       // re-evaluation while collapsed.
@@ -919,7 +1059,7 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, google
         ['最低限度統計', '只按日期、功能類型與國家或地區代碼累加總數，用來估計人數、成本與服務狀況；不保存原始 IP，也不建立個人瀏覽歷程。未知地區統一記為 ZZ。'],
         ['防止濫用', '公開寫入會使用 Turnstile 驗證，並以原始 IP、時間窗與伺服器密鑰產生不可逆的短期速率限制代碼。代碼只用於限制惡意大量請求，逾期後清除。'],
         ['自願登入', '完全不登入仍可建立與管理匿名內容。若你自願使用 Google 登入，PureLink 會保存 Google 提供的穩定帳號識別碼、電子郵件、顯示名稱，以及登入工作階段的不可逆雜湊，用來跨裝置顯示你主動連結的內容；不保存 Google 密碼或長期存取權杖。'],
-        ['可選的 AI 公式生成', '一般登入使用者可每日最多使用 5 次公式生成；維運管理員的測試上限為 100 次。你輸入的描述會傳送給 Cloudflare Workers AI，用來產生一個 LaTeX 草稿；PureLink 只在資料庫保存帳號、日期與當日次數，不保存描述或生成結果。AI 結果可能有誤，使用者必須先檢查與編輯。'],
+        ['可選的 AI 公式生成', '一般登入使用者每日最多可生成 5 次，維運管理員測試上限為 100 次。使用者主動送出時，描述與選填圖片會傳送給目前的 AI 供應商；PureLink 只在記憶體中處理，不會保存描述、圖片或獨立的 AI 草稿歷程，只保存帳號、日期與使用次數。若使用者選擇建立，提交的公式會依一般分享功能保存為分享內容。供應商的資料保留條款仍適用。草稿可能有誤，使用前請檢查與編輯。'],
         ['我們刻意不做的事', '不販售資料、不投放行為廣告、不做跨站追蹤、不建立個人興趣檔案，也不把使用內容拿去訓練模型。瀏覽器與網路供應商仍會在傳輸請求時接觸必要的網路資料。'],
         ['刪除與聯絡', '匿名建立者可用管理地址永久刪除內容；遺失管理憑證時無法驗證建立者身分。若內容涉及安全、隱私或權利問題，可從內容頁使用回報功能。'],
       ],
@@ -943,7 +1083,7 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, google
       sections: [
         ['目前的資料邊界', '內容資料庫保存分享內容、設定與匿名管理雜湊；自願登入者另保存最低限度 Google 帳號資料與工作階段雜湊；統計資料庫只保存每日聚合數字；速率限制只保存短期不可逆代碼；檢舉不要求姓名或電子郵件。'],
         ['人類驗證的定位', 'Turnstile 只保護建立與檢舉等公開寫入，不阻擋一般人閱讀內容。它是防止機器大量濫用的安全措施，不是建立會員身分或追蹤閱讀者。'],
-        ['AI 公式生成的邊界', '公式描述只在使用者主動按下生成時送往 Cloudflare Workers AI。PureLink 不儲存提示或回覆，只保存每日使用次數；草稿不會自動發布，必須由使用者插入、檢查後再建立 PureLink。'],
+        ['AI 公式生成的邊界', '只有在使用者主動請求生成時，描述與選填圖片才會傳送給目前的 AI 供應商。PureLink 不會保存描述、圖片或獨立的 AI 草稿歷程，只保存每日使用次數；若使用者選擇建立，提交的公式會依一般分享功能保存為分享內容。供應商自身的資料保留條款仍適用。草稿不會自動發布，必須由使用者插入、檢查後再建立 PureLink。'],
         ['開源與驗證', '正式發布時將公開程式、資料結構、部署說明與製作歷程，讓任何人能檢查承諾、提出問題或自行部署。版本與政策有實質變更時，也應在公開紀錄中留下痕跡。'],
         ['目前限制', '這是仍在驗證中的 MVP。自訂網域、正式監控、事件處理流程與定期透明度報告，會在正式上線前或依服務規模逐步完成。'],
       ],
@@ -954,7 +1094,7 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, google
       title: 'PureLink AI Formula Credits',
       intro: 'PureLink is free to use. These one-time purchases add AI formula drafts only; they are not subscriptions and do not make the core URL, manual formula, or card tools paid services.',
       sections: [
-        ['What the product does', 'A signed-in customer can describe a mathematical expression in natural language and receive an editable LaTeX draft with an immediate visual preview. The result is never published automatically, may contain mistakes, and must be reviewed by the customer before use.'],
+        ['What the product does', 'A signed-in customer can describe a mathematical expression and optionally provide one PNG or JPEG reference image, then receive an editable LaTeX draft with an immediate preview. The description and image are sent to the current AI provider only when generation is requested; PureLink does not retain them or a separate AI-draft history. If the customer chooses Create, the selected formula is stored as ordinary shared content. Provider retention terms apply. The draft is not published automatically, may be wrong, and must be reviewed before use.'],
         ['One-time plans', ''],
         ['Delivery and use', 'After payment is confirmed, credits are added to the PureLink account that started the purchase. Customers must be signed in before purchasing. The regular five free daily credits are used first. Purchased credits are only for the AI formula draft feature and are not shared between accounts.'],
         ['Payment status', 'No payment rail is enabled in this deployment. No payment is accepted until it is enabled.'],
@@ -985,7 +1125,7 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, google
     ? {
       ...baseContent,
       sections: baseContent.sections.map(([heading, copy]) => {
-        if (heading === 'One-time plans' || heading === '一次性方案') return [heading, `${creditPackSummary(locale)}${locale === 'en' ? '. These are one-time purchases, not subscriptions.' : '。這些都是一次性購買，不是訂閱。'}`];
+        if (heading === 'One-time plans' || heading === '一次性方案') return [heading, m.billing.betaUnavailable];
         if (heading === 'Payment status' || heading === '付款狀態') return [heading, paymentStatus];
         return [heading, copy];
       }),
@@ -1009,7 +1149,6 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, google
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
-          ${page === 'ai-credits' && paymentProviders.length ? `<p class="legal-purchase"><a href="${localizedHref(locale, 'account')}">${m.billing.purchase}</a></p>` : ''}
           ${page === 'ai-credits' ? `<p class="legal-contact"><a href="${localizedHref(locale, 'refund-policy')}">${locale === 'en' ? 'Refund policy' : '退款政策'}</a> · <a href="mailto:nasa3.14159@gmail.com">${locale === 'en' ? 'Support: nasa3.14159@gmail.com' : '支援：nasa3.14159@gmail.com'}</a></p>` : ''}
           <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'support')}">${m.support.button}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
           ${languageSwitcher(locale, page)}
@@ -1029,7 +1168,7 @@ function localizedLegalContent(page, locale, defaults) {
         ['Minimal analytics', 'We add daily totals by feature type and country or region code to estimate usage, cost, and service health. We do not retain raw IP addresses or individual browsing histories; unknown regions are recorded as ZZ.'],
         ['Abuse prevention', 'Public writes use Turnstile and a short-lived, one-way rate-limit identifier derived from IP address, time window, and a server secret. It is used only to limit automated abuse and expires.'],
         ['Optional sign-in', 'You can create and manage anonymous content without signing in. If you choose Google sign-in, PureLink stores the stable Google account identifier, email, display name, and a one-way session hash to show content you deliberately link across devices. It does not store Google passwords or long-lived access tokens.'],
-        ['Optional AI formula generation', 'Regular signed-in users can generate up to five formula drafts each day; the operator test limit is 100. A description is sent to Cloudflare Workers AI to create one LaTeX draft. PureLink stores only account, date, and count—not descriptions or results. Results can be wrong and must be reviewed.'],
+        ['Optional AI formula generation', 'Regular signed-in users can generate up to five formula drafts each day; the operator test limit is 100. When requested, the description and optional image are sent to the current AI provider. PureLink processes them in memory, does not keep request content or a separate AI-draft history, and stores only account, date, and usage count. If the customer chooses Create, the selected formula is stored as ordinary shared content. The provider’s retention terms apply. Drafts can be wrong and must be reviewed.'],
         ['What we deliberately do not do', 'PureLink does not sell data, serve behavioural ads, track people across sites, build interest profiles, or train models on shared content. Browsers and network providers still necessarily handle network data while requests are transmitted.'],
         ['Deletion and contact', 'Anonymous creators can permanently delete content with the management address. A lost credential cannot verify ownership. Use the report option on a content page for safety, privacy, or rights concerns.'],
       ]],
@@ -1043,14 +1182,14 @@ function localizedLegalContent(page, locale, defaults) {
       transparency: ['TRANSPARENCY', 'A promise not to track should be inspectable.', 'PureLink’s product design, data fields, and abuse controls are intended to be publicly reviewable rather than merely asserted.', [
         ['Current data boundary', 'The content database holds shared content, settings, and anonymous management hashes. Optional sign-in adds minimal Google account data and session hashes. Analytics stores only daily aggregates, rate limiting stores short-lived one-way identifiers, and reports do not require a name or email.'],
         ['Human verification', 'Turnstile protects public writes such as creation and reporting. It does not block ordinary reading and is an anti-automation measure, not membership or reader tracking.'],
-        ['AI formula boundary', 'A formula description is sent to Cloudflare Workers AI only after the user requests generation. PureLink does not retain prompts or responses; it records only daily usage. Drafts are never published automatically.'],
+        ['AI formula boundary', 'The description and optional image are sent to the current AI provider only after the user requests generation. PureLink does not keep request content or a separate AI-draft history; it records only daily usage. If a user chooses Create, the selected formula is stored as ordinary shared content. The provider’s retention terms apply. Drafts are never published automatically.'],
         ['Open source and verification', 'Source, data structures, deployment notes, and project history are public so people can inspect the promises, raise questions, or self-host. Material changes to versions or policies should leave a public record.'],
         ['Current limits', 'This is an MVP under validation. Custom domains, formal monitoring, incident processes, and regular transparency reports will mature before launch or as the service grows.'],
       ]],
     },
     'zh-Hant': {
       'ai-credits': ['PureLink AI 公式額度', '需要時才購買更多公式草稿。', 'PureLink 核心功能免費使用；可選的一次性額度只延伸 AI 公式功能，不會把網址、公式或小卡變成付費服務。', [
-        ['商品內容', '已登入的使用者可用自然語言描述數學式，取得可編輯、可立即預覽的 LaTeX 草稿。結果不會自動發布，可能有錯，使用前必須自行檢查。'],
+        ['商品內容', '已登入的使用者可描述數學式並選填一張 PNG 或 JPEG 參考圖片，取得可編輯且可立即預覽的 LaTeX 草稿。只有請求生成時，描述與圖片才會傳送給目前的 AI 供應商；PureLink 不保留描述、圖片或獨立的 AI 草稿歷程。若使用者選擇建立，提交的公式會依一般分享功能保存為分享內容。供應商的資料保留條款仍適用。草稿不會自動發布，可能有錯，使用前必須自行檢查。'],
         ['一次性方案', ''],
         ['交付與使用', '付款確認後，額度會加入發起購買的 PureLink 帳號。購買前必須登入。一般登入帳號每日免費額度仍優先使用。購買額度只用於 AI 公式草稿功能，且不在帳號間共用。'],
         ['付款狀態', '此部署尚未啟用任何付款方式；啟用前不會收款。'],
@@ -1071,12 +1210,41 @@ function localizedLegalContent(page, locale, defaults) {
   return { eyebrow, title, intro, sections, lang: locale };
 }
 
+// Compute the creation-time holder fingerprint — the fragment-free static
+// anchor passed to `ownershipRefreshOnLoad`. The hash is opaque to a
+// stranger, but a holder with the real credential can confirm a match
+// locally; verification is still primary, and any version bump degrades
+// safely back to the manage page with its credential intact.
+// A credential-free, always-served static anchor for the handoff gate: the
+// first 16 base64url characters of the link's stored management hash. It
+// proves nothing on its own; the deciding check is the client's
+// re-verification of the locally stored credential through the existing
+// anonymous-management mechanism. This helper is intentionally
+// synchronous and never sees the credential itself.
+function storedOwnerFingerprint(link) {
+  return String(link.management_token_hash || '').slice(0, 16);
+}
+
 export function renderManagePage(link, nonce, user = null, googleAuthConfigured = false, locale = 'zh-Hant') {
   const m = getMessages(locale);
   const slug = link.slug;
   const safeSlugScript = JSON.stringify(slug).replaceAll('<', '\\u003c');
   const accountAccess = Boolean(user && link.owner_user_id === user.id);
   const contentTypeName = ({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content;
+  // The canonical management surface for the handoff; the URL fragment does
+  // not exist server-side, so this redirect is only the destination of the
+  // client-side runtime check (which itself re-verifies through the existing
+  // anonymous-management mechanism). 'No JavaScript' fallback: nothing is
+  // revealed by this markup, just the fallback page.
+  const canonicalHandoffUrl = `/${escapeHtml(slug)}${link.content_type === 'url' ? '+' : ''}?handoff=1`;
+  const ownerFingerprint = storedOwnerFingerprint(link);
+  // URL links are identified by a slug alone, which says nothing about where
+  // they go. Show the stored destination, escaped as plain text; never fetch
+  // destination metadata or resolve redirects here.
+  const destinationMarkup = link.content_type === 'url' && link.content
+    ? `<span class="managed-destination"><span>${m.manage.destination}</span><code>${escapeHtml(link.content)}</code></span>`
+    : '';
+  const managementData = { slug, publicFingerprint: ownerFingerprint };
   const accountPanel = user
     ? `<div class="account-connect"><p>${m.page.signedIn}${m.page.labelSeparator}<strong>${escapeHtml(user.email)}</strong></p>${accountAccess ? `<p>${m.page.alreadyLinked}</p>` : `<button class="secondary-button" id="claim-link" type="button">${m.manage.claim}</button>`}<a href="${localizedHref(locale, 'account')}">${m.page.viewAccount}</a></div>`
     : googleAuthConfigured
@@ -1098,6 +1266,7 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
             <span>${escapeHtml(contentTypeName)}</span>
             <strong>/${escapeHtml(slug)}</strong>
             <a class="primary-link" href="/${escapeHtml(slug)}">${m.manage.view}</a>
+            ${destinationMarkup}
           </div>
           ${accountPanel}
           <div class="manage-actions" id="manage-actions" hidden>
@@ -1106,19 +1275,26 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
             <button class="danger-button" id="delete-link" type="button">${m.manage.delete}</button>
           </div>
           <p class="notice" id="management-status" role="status">${m.manage.checking}</p>
+          <noscript><p class="notice">${m.manage.noScriptBody}</p></noscript>
           ${languageSwitcher(locale, `manage/${slug}`)}
         </article>
       </main>
     `,
+    externalScripts: ['/assets/hash-credential.js'],
     script: `
       const manageMessages = ${JSON.stringify(m.manage).replaceAll('<', '\\u003c')};
       const homeMessages = ${JSON.stringify(m.home).replaceAll('<', '\\u003c')};
       const pageMessages = ${JSON.stringify(m.page).replaceAll('<', '\\u003c')};
+
+      const hashManagementToken = (credential) => import('/assets/hash-credential.js').then((mod) => mod.hashManagementToken(credential));
       const slug = ${safeSlugScript};
       const contentTypeName = ${JSON.stringify(contentTypeName).replaceAll('<', '\\u003c')};
       const storageKey = 'purelink:management:' + slug;
+      // Existing anonymous-management mechanism, unchanged: the fragment
+      // credential is persisted under the same 'purelink:management:<slug>'
+      // key every other part of the design reads. The fragment is never
+      // sent anywhere and never rendered.
       const fragmentToken = location.hash.slice(1);
-      if (fragmentToken) localStorage.setItem(storageKey, fragmentToken);
       const token = fragmentToken || localStorage.getItem(storageKey) || '';
       const accountAccess = ${accountAccess};
       const actions = document.getElementById('manage-actions');
@@ -1126,16 +1302,88 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
       const copyManagement = document.getElementById('copy-management');
       const downloadRecovery = document.getElementById('download-recovery');
       const canonicalAddress = location.origin + '/manage/' + encodeURIComponent(slug) + '#' + token;
+      const canonicalDestination = ${JSON.stringify(canonicalHandoffUrl).replaceAll('<', '\u003c')};
 
-      copyManagement.hidden = !token;
-      downloadRecovery.hidden = !token;
+      const publicFingerprint = ${JSON.stringify(ownerFingerprint).replaceAll('<', '\\u003c')};
 
-      if (token || accountAccess) {
-        actions.hidden = false;
-        status.textContent = accountAccess ? manageMessages.accountAccess : manageMessages.anonymousAccess;
-      } else {
-        status.textContent = manageMessages.missingCredential;
-      }
+      // Canonical handoff gate (async IIFE — the manage script runs as a
+      // classic inline script, so top-level await is unavailable). The
+      // explicit fragment credential is authoritative for this navigation
+      // and is verified against the page's public fingerprint before
+      // anything is persisted, revealed, or handed off:
+      //   - Present and verified: persisted under the same
+      //     'purelink:management:<slug>' key every other part reads, then
+      //     the deciding check composes the hash-derived fingerprint with
+      //     the localStorage hit — the item value itself is never trusted
+      //     as authority, and no credential value is ever logged,
+      //     rendered, or re-embedded.
+      //   - Present and wrong (shortened, mutated, unrelated): fails
+      //     closed. No redirect, no owner UI, an explicit
+      //     invalid-credential status, and no localStorage fallback — a
+      //     valid previously stored credential is left untouched for
+      //     later recovery.
+      //   - No-JS-hash-mismatch / 404 / absent fragment: the visitor
+      //     keeps this fallback page with its recovery status as before.
+      (async () => {
+        if (fragmentToken) {
+          let explicitCredentialValid = false;
+          try {
+            const observedFragmentHash = (await hashManagementToken(fragmentToken)).slice(0, 16);
+            explicitCredentialValid = Boolean(publicFingerprint) && observedFragmentHash === publicFingerprint;
+          } catch { explicitCredentialValid = false; }
+          if (!explicitCredentialValid) {
+            // Fail closed: the presented credential is invalid. Stay on
+            // this recovery page with an explicit state; any locally
+            // stored credential is never consulted, never substituted,
+            // and never overwritten.
+            copyManagement.hidden = true;
+            downloadRecovery.hidden = true;
+            actions.hidden = true;
+            status.textContent = manageMessages.invalidCredential;
+            return;
+          }
+          try {
+            if (localStorage.getItem(storageKey) !== fragmentToken) localStorage.setItem(storageKey, fragmentToken);
+          } catch { /* storage unavailable: the fragment itself still works */ }
+        }
+        copyManagement.hidden = !token;
+        downloadRecovery.hidden = !token;
+        if (token || accountAccess) {
+          actions.hidden = false;
+          status.textContent = accountAccess ? manageMessages.accountAccess : manageMessages.anonymousAccess;
+        } else {
+          status.textContent = manageMessages.missingCredential;
+        }
+        let fingerprintMatches = false;
+        try {
+          const storedCredential = localStorage.getItem('purelink:management:' + slug) || '';
+          if (storedCredential && publicFingerprint) {
+            const observedHash = await hashManagementToken(storedCredential);
+            fingerprintMatches = observedHash.slice(0, 16) === publicFingerprint;
+          }
+        } catch { fingerprintMatches = false; }
+        if (token && fingerprintMatches && !accountAccess) {
+          try { location.replace(canonicalDestination); } catch { /* keep the fallback page */ }
+          return;
+        }
+        if (accountAccess) {
+          // Session owners with an embedded credential also redirect; bare
+          // session owners (reopened without the fragment) stay on the
+          // fallback page — unchanged, since the anonymous mechanism is
+          // what this handoff is defined to verify.
+          if (token) {
+            try { location.replace(canonicalDestination); } catch { /* keep the fallback page */ }
+            return;
+          }
+          try {
+            const existed = localStorage.getItem('purelink:management:' + slug);
+            const observedHash = existed ? await hashManagementToken(existed) : '';
+            if (observedHash && publicFingerprint && observedHash.slice(0, 16) === publicFingerprint) {
+              try { location.replace(canonicalDestination); } catch { /* keep the fallback page */ }
+            }
+          } catch { /* stay on the fallback page; the session owner can always redirect from My PureLinks */ }
+        }
+      })();
 
       copyManagement.addEventListener('click', async (event) => {
         await navigator.clipboard.writeText(canonicalAddress);
@@ -1206,18 +1454,20 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
 
 export function renderAccountPage(user, links, creditBalance = 0, providers = {}, purchaseStatus = '', nonce = '', locale = 'zh-Hant') {
   const m = getMessages(locale);
-  const enabledProviders = [providers.ecpay ? ['ecpay', m.billing.providerEcpay] : null, providers.lemon ? ['lemon', m.billing.providerLemon] : null].filter(Boolean);
+  // Account owners manage Formula and Card content directly on the shared
+  // content page (which carries their owner-only controls), and URL content
+  // through the existing /<slug>+ destination preview. URLs stay free of locale
+  // prefixes, which are never routes to shared content.
+  const manageHref = (link) => `/${escapeHtml(link.slug)}${link.content_type === 'url' ? '+' : ''}`;
   const rows = links.length
-    ? links.map((link) => `<li><div><span>${escapeHtml(({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content)}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">${m.common.view}</a><a href="${localizedHref(locale, `manage/${link.slug}`)}">${m.common.manage}</a></li>`).join('')
+    ? links.map((link) => `<li><div><span>${escapeHtml(({ url: m.common.url, formula: m.common.formula, card: m.common.card })[link.content_type] || m.common.content)}</span><strong>/${escapeHtml(link.slug)}</strong></div><a href="/${escapeHtml(link.slug)}">${m.common.view}</a><a href="${manageHref(link)}">${m.common.manage}</a></li>`).join('')
     : `<li class="empty-account">${m.account.empty}</li>`;
   const purchaseNotice = purchaseStatus === 'success'
     ? `<p class="auth-notice" role="status"><strong>${m.billing.returned}</strong><span>${m.billing.returnedHelp}</span></p>`
     : purchaseStatus === 'pending'
       ? `<p class="auth-notice" role="status"><strong>${m.billing.pending}</strong><span>${m.billing.pendingHelp}</span></p>`
       : '';
-  const packActions = enabledProviders.length
-    ? `<div class="credit-pack-list">${listAiCreditPacks().map((pack) => `<section class="credit-pack"><strong>${escapeHtml(m.billing.packNames[pack.id])}</strong><span>${escapeHtml(m.billing.pack.replace('{name}', m.billing.packNames[pack.id]).replace('{credits}', Number(pack.credits).toLocaleString('en-US')).replace('{price}', Number(pack.priceTwd).toLocaleString('en-US')))}</span>${enabledProviders.length > 1 ? `<small>${m.billing.providerChoice}</small>` : ''}<div class="provider-choices">${enabledProviders.map(([provider, name]) => `<button type="button" data-billing-checkout data-provider="${provider}" data-pack-id="${pack.id}">${escapeHtml(enabledProviders.length > 1 ? name : m.billing.buy)}</button>`).join('')}</div></section>`).join('')}</div><p class="billing-status" id="billing-status" role="status" hidden></p>`
-    : `<p class="billing-status">${m.account.billingDisabled}</p>`;
+  const packActions = `<p class="billing-status">${escapeHtml(m.billing.betaUnavailable)}</p>`;
   return documentShell({
     title: m.account.title,
     description: m.account.intro,
@@ -1235,7 +1485,6 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
             <p class="eyebrow">${m.page.creditsEyebrow}</p>
             <h2 id="account-credits-title">${m.account.credits.replace('{count}', Math.max(0, Number(creditBalance || 0)))}</h2>
             <p>${m.account.creditsHelp}</p>
-            <p><strong>${m.billing.packs}</strong></p>
             ${packActions}
             <p><a href="${localizedHref(locale, 'ai-credits')}">${m.account.productInfo}</a> · <a href="${localizedHref(locale, 'support')}">${m.support.button}</a> · <a href="${localizedHref(locale, 'refund-policy')}">${m.account.refund}</a></p>
           </section>
@@ -1245,40 +1494,7 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
         </article>
       </main>
     `,
-    script: enabledProviders.length ? `
-      const billingMessages = ${JSON.stringify(m.billing).replaceAll('<', '\\u003c')};
-      const billingStatus = document.getElementById('billing-status');
-      document.querySelectorAll('[data-billing-checkout]').forEach((buyButton) => buyButton.addEventListener('click', async () => {
-        const allButtons = document.querySelectorAll('[data-billing-checkout]');
-        allButtons.forEach((button) => { button.disabled = true; });
-        billingStatus.hidden = false;
-        billingStatus.textContent = billingMessages.opening;
-        try {
-          const response = await fetch('/api/billing/checkout', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} },
-            body: JSON.stringify({ provider: buyButton.dataset.provider, packId: buyButton.dataset.packId }),
-          });
-          const payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || billingMessages.failed);
-          if (payload.checkoutUrl) location.assign(payload.checkoutUrl);
-          else if (payload.action && payload.fields) {
-            const form = document.createElement('form');
-            form.method = 'post';
-            form.action = payload.action;
-            Object.entries(payload.fields).forEach(([name, value]) => {
-              const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; form.append(input);
-            });
-            document.body.append(form);
-            form.submit();
-          } else throw new Error(billingMessages.failed);
-        } catch (error) {
-          billingStatus.textContent = error.message;
-          billingStatus.dataset.error = 'true';
-          allButtons.forEach((button) => { button.disabled = false; });
-        }
-      }));
-    ` : '',
+    script: '',
     nonce,
   });
 }
@@ -1592,7 +1808,7 @@ export function renderNativeVerificationPage(nonce, turnstileSiteKey, locale = '
   });
 }
 
-function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [], googleSiteVerification = '' }) {
+function documentShell({ title, description, body, robots = 'noindex, nofollow', locale = 'zh-Hant', canonicalPath = '', script = '', nonce = '', externalScript = '', externalScripts = [], googleSiteVerification = '', ogImage = '' }) {
   const scriptMarkup = script ? `<script nonce="${escapeHtml(nonce)}">${script}</script>` : '';
   const scripts = [externalScript, ...externalScripts].filter(Boolean);
   const canonicalUrl = canonicalPath ? `https://no-no.uk${canonicalPath}` : '';
@@ -1604,6 +1820,7 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     ? `<script src="${escapeHtml(source)}" async defer></script>`
     : `<script type="module" src="${escapeHtml(source)}"></script>`).join('');
   const verificationMarkup = googleSiteVerification ? `<meta name="google-site-verification" content="${escapeHtml(googleSiteVerification)}">` : '';
+  const socialImage = ogImage || 'https://no-no.uk/og.png?v=1';
   const jsonLd = isIndexable ? `<script type="application/ld+json">${JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'WebSite',
@@ -1624,14 +1841,14 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
   <meta property="og:type" content="website">
   <meta property="og:title" content="${escapeHtml(title)}">
   <meta property="og:description" content="${escapeHtml(description)}">
-  <meta property="og:image" content="https://no-no.uk/og.png?v=1">
+  <meta property="og:image" content="${escapeHtml(socialImage)}">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   ${canonicalUrl ? `<meta property="og:url" content="${escapeHtml(canonicalUrl)}">` : ''}
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escapeHtml(title)}">
   <meta name="twitter:description" content="${escapeHtml(description)}">
-  <meta name="twitter:image" content="https://no-no.uk/og.png?v=1">
+  <meta name="twitter:image" content="${escapeHtml(socialImage)}">
   ${jsonLd}
   <title>${escapeHtml(title)}</title>
   ${canonicalMarkup}
@@ -1722,6 +1939,12 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .formula-ai-compose { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .6rem; align-items: stretch; }
     .formula-ai-compose textarea { min-height: 5.4rem; }
     .formula-ai-compose button { width: auto; min-width: 8rem; border: 0; background: var(--ink); color: white; }
+    .formula-ai-image-label { display: inline-block; margin-top: .7rem; color: var(--green); font-size: .76rem; font-weight: 750; cursor: pointer; }
+    #formula-ai-image { display: block; max-width: 100%; margin-top: .35rem; font-size: .72rem; }
+    .formula-ai-image-help { display: block; margin-top: .35rem; color: var(--muted); font-size: .68rem; }
+    .formula-ai-image-preview { display: flex; align-items: center; gap: .65rem; margin-top: .55rem; }
+    .formula-ai-image-preview img { width: auto; max-width: 9rem; height: auto; max-height: 6rem; border: 1px solid var(--line); border-radius: .6rem; object-fit: contain; background: white; }
+    .formula-ai-image-preview button { width: auto; min-height: 2.2rem; padding: .4rem .7rem; border: 1px solid var(--line); background: white; color: var(--ink); font-size: .72rem; }
     .formula-ai-status { margin: .65rem 0 0; color: var(--green); font-size: .76rem; }
     .formula-ai-status[data-error="true"] { color: #8f2f2a; }
     .formula-ai-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .65rem; align-items: center; margin-top: .75rem; padding: .85rem; border: 1px solid var(--line); border-radius: .9rem; background: white; }
@@ -1790,6 +2013,12 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .panel { padding: clamp(1.4rem, 5vw, 3.5rem); border: 1px solid var(--line); border-radius: 2rem; background: var(--surface); box-shadow: 0 1.5rem 5rem rgba(35, 62, 50, .08); backdrop-filter: blur(18px); }
     .preview-panel h1 { max-width: none; font-size: clamp(2rem, 6vw, 4.5rem); overflow-wrap: anywhere; }
     .destination-url { margin: 1.5rem 0; padding: 1rem; border-radius: 1rem; background: #edf2ef; color: #435149; font-family: ui-monospace, "SFMono-Regular", monospace; overflow-wrap: anywhere; }
+    .preview-manage { margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line); display: grid; gap: .75rem; justify-items: start; }
+    .preview-manage .preview-manage-title { margin: 0; color: var(--muted); font-size: .8rem; font-weight: 650; }
+    .preview-manage .danger-button { width: auto; margin-top: 0; padding: .6rem 1rem; font-size: .8rem; }
+    .content-manage { margin: 1.25rem 0 0; padding-top: 1.25rem; border-top: 1px solid var(--line); display: grid; gap: .75rem; justify-items: start; }
+    .content-manage .content-manage-title { margin: 0; color: var(--muted); font-size: .8rem; font-weight: 650; }
+    .content-manage .danger-button { width: auto; margin-top: 0; padding: .6rem 1rem; font-size: .8rem; }
     .facts { margin: 1.5rem 0 2rem; border-block: 1px solid var(--line); }
     .facts p { display: grid; grid-template-columns: minmax(7rem, .4fr) 1fr; gap: 1rem; margin: 0; padding: 1rem 0; border-bottom: 1px solid var(--line); }
     .facts p:last-child { border-bottom: 0; }
@@ -1832,6 +2061,8 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .managed-content-card { display: grid; grid-template-columns: auto 1fr auto; gap: .8rem; align-items: center; margin: 1.5rem 0; padding: 1rem; border: 1px solid var(--line); border-radius: 1.2rem; background: #f8fbf9; }
     .managed-content-card span { color: var(--muted); font-size: .75rem; }
     .managed-content-card .primary-link { padding: .7rem 1rem; }
+    .managed-content-card .managed-destination { grid-column: 1 / -1; display: grid; gap: .3rem; padding-top: .75rem; border-top: 1px solid var(--line); }
+    .managed-content-card .managed-destination code { color: var(--ink); font-family: ui-monospace, "SFMono-Regular", monospace; font-size: .8rem; overflow-wrap: anywhere; }
     .account-connect { display: grid; gap: .7rem; margin: 1rem 0 1.5rem; padding: 1rem; border-radius: 1.2rem; background: #edf5f1; }
     .account-connect p { margin: 0; color: var(--muted); line-height: 1.55; }
     .google-link { display: flex; justify-content: center; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: white; text-decoration: none; font-weight: 700; }

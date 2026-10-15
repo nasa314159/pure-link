@@ -25,7 +25,8 @@ export function html(markup, init = {}, options = {}) {
   const scriptPolicy = `; script-src ${scriptSources.join(' ')}; connect-src ${connectSources}${turnstilePolicy}`;
   const formActions = ["'self'"];
   if (options.ecpayCheckout) formActions.push('https://payment-stage.ecpay.com.tw', 'https://payment.ecpay.com.tw');
-  headers.set('content-security-policy', `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action ${formActions.join(' ')}; frame-ancestors 'none'${scriptPolicy}`);
+  const imageSources = options.blobImages ? "'self' data: blob:" : "'self' data:";
+  headers.set('content-security-policy', `default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src ${imageSources}; base-uri 'none'; form-action ${formActions.join(' ')}; frame-ancestors 'none'${scriptPolicy}`);
   applyBaseHeaders(headers);
   return new Response(markup, { ...init, headers });
 }

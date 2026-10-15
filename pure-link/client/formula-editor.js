@@ -1,5 +1,6 @@
 import katex from 'katex';
 import { normalizeFormulaExpression } from '../src/formula.js';
+import { createFormulaAiRequest, setupFormulaAiImage } from './formula-ai-image.js';
 
 // These element handles exist on every page that loads this bundle; the
 // ai* handles only exist for signed-in creators and are guarded by
@@ -14,6 +15,10 @@ const customList = /** @type {HTMLElement} */ (document.getElementById('custom-f
 const customStatus = /** @type {HTMLElement} */ (document.getElementById('custom-formula-status'));
 const customAdd = /** @type {HTMLButtonElement} */ (document.getElementById('add-custom-formula'));
 const aiDescription = /** @type {HTMLTextAreaElement} */ (document.getElementById('formula-ai-description'));
+const aiImageInput = /** @type {HTMLInputElement} */ (document.getElementById('formula-ai-image'));
+const aiImagePreview = /** @type {HTMLElement} */ (document.getElementById('formula-ai-image-preview'));
+const aiImagePreviewImage = /** @type {HTMLImageElement} */ (document.getElementById('formula-ai-image-preview-image'));
+const aiImageRemove = /** @type {HTMLButtonElement} */ (document.getElementById('remove-formula-ai-image'));
 const aiGenerate = /** @type {HTMLButtonElement} */ (document.getElementById('generate-formula-ai'));
 const aiStatus = /** @type {HTMLElement} */ (document.getElementById('formula-ai-status'));
 const aiResult = /** @type {HTMLElement} */ (document.getElementById('formula-ai-result'));
@@ -23,6 +28,8 @@ const aiUse = /** @type {HTMLButtonElement} */ (document.getElementById('use-for
 const customStorageKey = 'purelink:formula-shortcuts:v1';
 const customShortcutLimit = 24;
 let generatedLatex = '';
+/** @type {{ selected: () => File | null, clear: () => void, clearPreviewUrl: () => void } | null} */
+let formulaAiImage = null;
 const messages = readMessages();
 
 if (input && preview && rendered) {
@@ -48,9 +55,19 @@ if (input && preview && rendered) {
 }
 
 function initializeFormulaAi() {
-  if (!aiDescription || !aiGenerate || !aiStatus || !aiResult || !aiPreview || !aiSource || !aiUse) return;
+  if (!aiDescription || !aiImageInput || !aiImagePreview || !aiImagePreviewImage || !aiImageRemove
+    || !aiGenerate || !aiStatus || !aiResult || !aiPreview || !aiSource || !aiUse) return;
 
   aiGenerate.addEventListener('click', generateFormula);
+  formulaAiImage = setupFormulaAiImage({
+    input: aiImageInput,
+    preview: aiImagePreview,
+    previewImage: aiImagePreviewImage,
+    removeButton: aiImageRemove,
+    messages,
+    setStatus: setAiStatus,
+  });
+  window.addEventListener('pagehide', formulaAiImage.clearPreviewUrl, { once: true });
   aiDescription.addEventListener('keydown', (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') generateFormula();
   });
@@ -63,6 +80,7 @@ function initializeFormulaAi() {
 
 async function generateFormula() {
   const description = aiDescription.value.trim();
+  const image = formulaAiImage?.selected() || null;
   if (!description) return setAiStatus(messages.describe, true);
 
   aiGenerate.disabled = true;
@@ -70,11 +88,8 @@ async function generateFormula() {
   aiResult.hidden = true;
   setAiStatus(messages.generating);
   try {
-    const response = await fetch('/api/formulas/generate', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-purelink-locale': document.documentElement.lang },
-      body: JSON.stringify({ description }),
-    });
+    const request = createFormulaAiRequest(description, image, document.documentElement.lang);
+    const response = await fetch('/api/formulas/generate', request);
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || messages.failed);
 
@@ -91,6 +106,7 @@ async function generateFormula() {
     generatedLatex = '';
     setAiStatus(error.message, true);
   } finally {
+    formulaAiImage?.clear();
     aiGenerate.disabled = false;
     aiGenerate.textContent = messages.generate;
   }

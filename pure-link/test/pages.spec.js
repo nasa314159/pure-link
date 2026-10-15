@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderStartPage, renderSupportPage } from '../src/pages.js';
+import { renderAccountPage, renderCardPage, renderFormulaPage, renderHomePage, renderLegalPage, renderManagePage, renderReportPage, renderStartPage, renderSupportPage, renderUrlPreview } from '../src/pages.js';
 
 describe('interactive pages', () => {
   it('emits a syntactically valid creation script with its CSP nonce', () => {
@@ -54,7 +54,7 @@ describe('interactive pages', () => {
     expect(script).toContain('sessionStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify(draft))');
     expect(script).toContain('sessionStorage.removeItem(CREATE_DRAFT_KEY)');
     expect(script).not.toContain('localStorage.setItem(CREATE_DRAFT_KEY');
-    expect(script).toContain("const CREATE_DRAFT_TEXT_FIELDS = ['content', 'signature', 'slug', 'trackingRemove', 'trackingKeep', 'formulaAiDescription']");
+    expect(script).toContain("const CREATE_DRAFT_TEXT_FIELDS = ['content', 'signature', 'slug', 'trackingRemove', 'trackingKeep']");
     expect(script).toContain("const CREATE_DRAFT_CHECKBOXES = ['cleanTracking', 'isAffiliate']");
     expect(script).toContain('draft.contentType');
     expect(script).toContain('input[name="theme"]:checked');
@@ -74,7 +74,6 @@ describe('interactive pages', () => {
       slug: { value: 'my-slug_1' },
       trackingRemove: { value: 'utm_source' },
       trackingKeep: { value: 'q' },
-      formulaAiDescription: { value: 'a formula about circles' },
     };
     const documentStub = { getElementById: (id) => elements[id] || null };
     const formStub = {
@@ -91,7 +90,7 @@ describe('interactive pages', () => {
 
     api.saveCreateDraft();
     const saved = JSON.parse(storage.get('purelink.createDraft.v1'));
-    expect(Object.keys(saved).sort()).toEqual(['cleanTracking', 'content', 'contentType', 'formulaAiDescription', 'isAffiliate', 'signature', 'slug', 'theme', 'trackingKeep', 'trackingRemove'].sort());
+    expect(Object.keys(saved).sort()).toEqual(['cleanTracking', 'content', 'contentType', 'isAffiliate', 'signature', 'slug', 'theme', 'trackingKeep', 'trackingRemove'].sort());
     expect(saved).toMatchObject({ contentType: 'formula', theme: 'mist', content: 'https://example.com/watch?v=x', cleanTracking: true, isAffiliate: false, slug: 'my-slug_1' });
 
     storage.set('purelink.createDraft.v1', '{not json');
@@ -107,14 +106,14 @@ describe('interactive pages', () => {
       managementToken: 'secret-token', managementUrl: 'https://no-no.uk/manage/x', url: 'https://no-no.uk/k1', turnstileToken: 'tok', user: 'attacker',
     }));
     const restored = api.readCreateDraft();
-    expect(restored).toEqual({ contentType: 'card', theme: 'night', content: 'card text', signature: 'sig', slug: 'k1', trackingRemove: 'fbclid', trackingKeep: 'id', cleanTracking: true, isAffiliate: true, formulaAiDescription: 'd' });
+    expect(restored).toEqual({ contentType: 'card', theme: 'night', content: 'card text', signature: 'sig', slug: 'k1', trackingRemove: 'fbclid', trackingKeep: 'id', cleanTracking: true, isAffiliate: true });
     expect(JSON.stringify(restored)).not.toContain('secret-token');
 
     const calls = [];
     const selectSpy = (type) => calls.push(type);
     const api2 = factory({ getItem: () => null, setItem: () => {}, removeItem: () => {} }, documentStub, formStub, elements.content, { value: 'url' }, selectSpy, () => {}, () => {});
     for (const type of ['url', 'formula', 'card']) {
-      api2.restoreCreateDraft({ contentType: type, theme: null, content: 'draft body', signature: '', slug: '', trackingRemove: '', trackingKeep: '', cleanTracking: false, isAffiliate: false, formulaAiDescription: '' });
+      api2.restoreCreateDraft({ contentType: type, theme: null, content: 'draft body', signature: '', slug: '', trackingRemove: '', trackingKeep: '', cleanTracking: false, isAffiliate: false });
     }
     expect(calls).toEqual(['formula', 'card']);
     expect(elements.content.value).toBe('draft body');
@@ -297,14 +296,15 @@ describe('interactive pages', () => {
     expect(html).toContain('<pre class="formula-source">x² + y² = z²</pre>');
     expect(html).toContain('<textarea id="raw-content" hidden>x² + y² = z²</textarea>');
     const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
-    // The outer wrapper owns overflow; the inner wrapper holds the untouched
-    // render and is scaled through the layout-participating zoom property.
+    // The outer wrapper owns overflow (scrolling stays available on every
+    // browser path); the inner wrapper holds the untouched render and is
+    // scaled through the layout-participating zoom property.
     expect(css.match(/\.formula-fit \{([^}]*)\}/)[1]).toContain('overflow-x: auto');
     const boxRule = css.match(/\.formula-box \{([^}]*)\}/)[1];
     expect(boxRule).toContain('width: max-content');
     expect(boxRule).toContain('margin-inline: auto');
     // KaTeX keeps its natural internal size: no font-size scaling, no
-    // transform wrapper compensation, no overrides of KaTeX's own rules.
+    // transform scaling, no overrides of KaTeX's own rules.
     expect(css).not.toContain('--formula-scale');
     expect(css).not.toContain('transform');
     expect(css).not.toContain('formula-stretch');
@@ -312,7 +312,41 @@ describe('interactive pages', () => {
     expect(css).not.toContain('.formula-fit .katex');
   });
 
-  it('zooms the rendered formula to a readability floor with scroll fallback, without affecting cards', () => {
+  it('gates shared formula scaling to engines that render zoomed KaTeX correctly', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const detectorSource = contentActions.match(/function isProblematicWebKitFormulaRendering\(\) \{[\s\S]*?\n\}/)?.[0];
+    expect(detectorSource).toBeTruthy();
+    const detector = new Function('navigator', `${detectorSource}\nreturn isProblematicWebKitFormulaRendering();`);
+    const decide = (ua, maxTouchPoints = 0) => detector({ userAgent: ua, maxTouchPoints });
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
+    const WEBKIT = 'AppleWebKit/605.1.15 (KHTML, like Gecko)';
+    const CHROMIUM = 'AppleWebKit/537.36 (KHTML, like Gecko)';
+    // Desktop Safari takes the no-scaling WebKit fallback.
+    expect(decide(`${MAC} ${WEBKIT} Version/18.4 Safari/605.1.15`)).toBe(true);
+    // Desktop Chromium-family browsers keep scaling.
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36`)).toBe(false);
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0`)).toBe(false);
+    // Android Chrome keeps scaling.
+    expect(decide('Mozilla/5.0 (Linux; Android 14; Pixel 8) ' + CHROMIUM + ' Chrome/140.0.0.0 Mobile Safari/537.36')).toBe(false);
+    // iOS/iPadOS: platform no longer implies WebKit (Apple allows entitled
+    // alternative engines in the EU iOS 17.4+ / Japan iOS 26.2+). Only the
+    // unambiguous WebKit Safari identity (Version token) falls back on
+    // engine evidence; the detector never encodes "iPhone == WebKit".
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) ' + WEBKIT;
+    expect(decide(`${IPHONE} Version/18.5 Mobile/15E148 Safari/604.1`)).toBe(true);
+    // Third-party iOS UAs (CriOS/FxiOS…) cannot prove a non-WebKit engine;
+    // they conservatively fall back (wrong scaling would corrupt the render,
+    // a needless fallback only forgoes the scaling UX), not because their
+    // platform is assumed to be WebKit.
+    expect(decide(`${IPHONE} CriOS/140.0.7339.60 Mobile/15E148 Safari/604.1`)).toBe(true);
+    expect(decide(`${IPHONE} FxiOS/141.0 Mobile/15E148 Safari/605.1.15`)).toBe(true);
+    // iPadOS desktop-site UAs masquerade as Macs; touch points reveal them.
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36`, 5)).toBe(true);
+    // Desktop Firefox is not targeted by the WebKit gate.
+    expect(decide(`${MAC} Gecko/20100101 Firefox/141.0`)).toBe(false);
+  });
+
+  it('zooms the rendered formula to a readability floor on scaling engines with a WebKit fallback, without affecting cards', () => {
     const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
     expect(contentActions).toContain('const FORMULA_MIN_SCALE = 0.7');
     expect(contentActions).toMatch(/Math\.max\(FORMULA_MIN_SCALE, Math\.min\(1, availableWidth \/ naturalWidth\)\)/);
@@ -325,11 +359,15 @@ describe('interactive pages', () => {
     expect(contentActions).toContain("removeProperty('zoom')");
     expect(contentActions).toMatch(/const formulaResizeObserver = new ResizeObserver/);
     expect(contentActions).toContain('formulaResizeObserver.observe(formulaFit)');
+    // The WebKit fallback runs before any measurement and never scales.
+    expect(contentActions).toMatch(/if \(formulaScalingBlocked\) \{\n[\s\S]*?formulaBox\.style\.removeProperty\('zoom'\);\n[\s\S]*?return;/);
+    expect(contentActions).toMatch(/typeof ResizeObserver === 'function' && !formulaScalingBlocked/);
     expect(contentActions).not.toContain('setInterval');
     expect(contentActions).not.toContain('MutationObserver');
-    // No font-size or transform scaling is left over.
+    // No font-size or transform scaling is introduced on any path.
     expect(contentActions).not.toContain('--formula-scale');
     expect(contentActions).not.toContain('style.transform');
+    expect(contentActions).not.toContain('style.fontSize');
     // PNG capture neutralizes the zoom before capture and re-fits after.
     const exportIndex = contentActions.indexOf("querySelector('[data-download-png]')");
     const captureIndex = contentActions.indexOf('toPng(captureTarget');
@@ -338,6 +376,7 @@ describe('interactive pages', () => {
     expect(resetIndex).toBeGreaterThan(-1);
     expect(resetIndex).toBeLessThan(captureIndex);
     expect(reFitIndex).toBeGreaterThan(captureIndex);
+    expect(contentActions).toContain("removeProperty('zoom')");
     // Card shared pages carry no formula scaler markup; the shared-page
     // behavior lives in the bundle's [data-formula-scale] guard.
     const card = renderCardPage({ slug: 'kind', content: 'hello', theme: 'paper' }, 'en', 'test-nonce');
@@ -407,8 +446,17 @@ describe('interactive pages', () => {
     expect(html).toContain('id="formula-ai-description"');
     expect(html).toContain('id="generate-formula-ai"');
     expect(html).toContain('id="use-formula-ai"');
-    expect(html).toContain('Cloudflare Workers AI');
-    expect(html).toContain('PureLink 不儲存描述或生成結果');
+    expect(html).toContain('id="formula-ai-image"');
+    expect(html).toContain('accept="image/png,image/jpeg"');
+    expect(html).toContain('id="remove-formula-ai-image"');
+    expect(html).toContain('AI 供應商');
+    expect(html).toContain('不會將描述、圖片或草稿保存為 AI 歷程');
+    expect(html).toContain('若你選擇建立，提交的公式會依一般分享功能保存為分享內容');
+    expect(html).not.toContain('Cloudflare Workers AI');
+    const english = renderHomePage('test-nonce', '', true, '', { id: 'user-1', email: 'person@example.com' }, 'en');
+    expect(english).toContain('＋ Add reference image (optional)');
+    expect(english).toContain('if you choose Create, the selected formula is saved as shared content');
+    expect(english).not.toContain('Cloudflare Workers AI');
   });
 
   it('shows the administrator formula allowance without changing regular accounts', () => {
@@ -443,11 +491,15 @@ describe('interactive pages', () => {
     const chineseHome = renderHomePage('test-nonce', '', false, '', null, 'zh-Hant');
     const englishHome = renderHomePage('test-nonce', '', false, '', null, 'en');
     const chinesePrivacy = renderLegalPage('privacy', 'zh-Hant');
+    const englishPrivacy = renderLegalPage('privacy', 'en');
     const englishCredits = renderLegalPage('ai-credits', 'en');
 
     expect(chineseHome).toContain('href="/en/"');
     expect(englishHome).toContain('href="/zh-Hant/"');
     expect(chinesePrivacy).toContain('href="/en/privacy"');
+    expect(chinesePrivacy).toContain('若使用者選擇建立');
+    expect(englishPrivacy).toContain('If the customer chooses Create');
+    expect(englishPrivacy).toContain('provider’s retention terms apply');
     expect(englishCredits).toContain('href="/zh-Hant/ai-credits"');
     expect(chineseHome).not.toContain('<form method="post" action="/locale">');
   });
@@ -497,19 +549,22 @@ describe('interactive pages', () => {
     expect(credits).toContain('<html lang="en">');
     expect(credits).toContain('Last updated: September 1, 2026');
     expect(credits).toContain('PureLink AI Formula Credits');
-    expect(credits).toContain('Small: 150 AI formula drafts — NT$150');
-    expect(credits).toContain('Standard: 400 AI formula drafts — NT$300');
-    expect(credits).toContain('Large: 1,000 AI formula drafts — NT$600');
-    expect(credits).toContain('one-time purchases, not subscriptions');
+    expect(credits).toContain('Paid AI credit purchases are currently unavailable during the public beta');
+    expect(credits).toContain('Five free AI formula generations remain available daily');
+    expect(credits).not.toContain('Small: 150 AI formula drafts');
+    expect(credits).not.toContain('Standard: 400 AI formula drafts');
+    expect(credits).not.toContain('Large: 1,000 AI formula drafts');
+    expect(credits).not.toContain('legal-purchase');
+    expect(credits).not.toContain('Sign in to purchase AI formula credits');
     expect(credits).toContain('No payment rail is enabled in this deployment');
     expect(credits).not.toMatch(/US\$5|US\$10|US\$20|300 AI formula generations|800 generations|2,000 generations|Creem/);
     expect(chineseCredits).toContain('<html lang="zh-Hant">');
     expect(chineseCredits).toContain('MVP 說明版本：2026-09-01');
     expect(chineseCredits).toContain('PureLink AI 公式額度');
-    expect(chineseCredits).toContain('小型方案：150 次 AI 公式草稿，NT$150');
-    expect(chineseCredits).toContain('標準方案：400 次 AI 公式草稿，NT$300');
-    expect(chineseCredits).toContain('大型方案：1,000 次 AI 公式草稿，NT$600');
-    expect(chineseCredits).toContain('一次性購買，不是訂閱');
+    expect(chineseCredits).toContain('公開測試期間暫不開放付費 AI 公式額度購買；每日仍有 5 次免費 AI 公式生成');
+    expect(chineseCredits).not.toContain('小型方案：150 次 AI 公式草稿');
+    expect(chineseCredits).not.toContain('標準方案：400 次 AI 公式草稿');
+    expect(chineseCredits).not.toContain('大型方案：1,000 次 AI 公式草稿');
     expect(chineseCredits).toContain('此部署尚未啟用任何付款方式；啟用前不會收款');
     expect(chineseCredits).toContain('href="/zh-Hant/refund-policy"');
     expect(chineseCredits).toContain('mailto:nasa3.14159@gmail.com');
@@ -527,12 +582,11 @@ describe('interactive pages', () => {
     const chineseEcpay = renderLegalPage('ai-credits', 'zh-Hant', { ecpay: true });
     expect(englishDisabled).not.toContain('ECPay');
     expect(englishDisabled).not.toContain('legal-purchase');
-    expect(englishEcpay).toContain('Credit card / Apple Pay / TWQR and more');
     expect(englishEcpay).not.toContain('ECPay');
-    expect(englishEcpay).toContain('Sign in to purchase AI formula credits');
+    expect(englishEcpay).not.toContain('Sign in to purchase AI formula credits');
     expect(chineseEcpay).toContain('信用卡 / Apple Pay / TWQR 等');
     expect(chineseEcpay).not.toContain('ECPay');
-    expect(chineseEcpay).toContain('登入購買 AI 公式額度');
+    expect(chineseEcpay).not.toContain('ECPay');
     expect(englishEcpay).not.toContain('信用卡 / Apple Pay / TWQR 等');
     expect(chineseEcpay).not.toContain('Credit card / Apple Pay / TWQR and more');
   });
@@ -542,20 +596,26 @@ describe('interactive pages', () => {
     const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, { ecpay: true, lemon: true }, 'success', 'billing-nonce', 'en');
     expect(disabled).toContain('可用購買額度：12 次');
     expect(disabled).not.toContain('data-billing-checkout');
-    expect(enabled).toContain('data-provider="ecpay" data-pack-id="small"');
-    expect(enabled).toContain('data-provider="lemon" data-pack-id="large"');
-    expect(enabled).toContain('Small: 150 AI formula drafts — NT$150');
+    expect(enabled).not.toContain('data-provider="ecpay"');
+    expect(enabled).not.toContain('data-pack-id');
+    expect(enabled).not.toContain('data-billing-checkout');
+    expect(enabled).not.toContain('NT$150');
+    expect(enabled).toContain('Paid AI credit purchases are currently unavailable during the public beta');
+    expect(enabled).toContain('Five free AI formula generations remain available daily');
     expect(enabled).toContain('The payment flow has returned to PureLink');
-    expect(enabled).toContain('nonce="billing-nonce"');
-    expect(() => new Function(extractScript(enabled))).not.toThrow();
+  });
+
+  it('replaces the buying area with the neutral public-beta message in both locales', () => {
+    const english = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'en');
+    const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'zh-Hant');
+    expect(english).toContain('Paid AI credit purchases are currently unavailable during the public beta');
+    expect(chinese).toContain('公開測試期間暫不開放付費 AI 公式額度購買；每日仍有 5 次免費 AI 公式生成');
   });
 
   it('keeps account billing copy localized when ECPay is enabled', () => {
     const english = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'en');
     const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'zh-Hant');
-    expect(english).toContain('Credit card / Apple Pay / TWQR and more');
     expect(english).not.toContain('台灣一次性付款');
-    expect(chinese).toContain('信用卡 / Apple Pay / TWQR 等');
     expect(chinese).not.toContain('Credit card / Apple Pay / TWQR and more');
   });
 
@@ -1001,11 +1061,356 @@ describe('interactive pages', () => {
     expect(html).not.toContain('type="module" src="https://challenges.cloudflare.com');
   });
 
+  describe('destination preview management section', () => {
+    const baseLink = { slug: 'preview-slug', content_type: 'url', content: 'https://example.com/watch?v=abc', is_affiliate: 0, created_at: '2026-09-01 00:00:00' };
+
+    it('shows the quiet management section with its delete script only for confirmed managers', () => {
+      const stranger = renderUrlPreview(baseLink, 'en');
+      expect(stranger).toContain('example.com/watch?v=abc');
+      expect(stranger).toContain('Continue to destination');
+      expect(stranger).not.toContain('You manage this PureLink');
+      expect(stranger).not.toContain('Delete this PureLink');
+      expect(stranger).not.toContain('preview-delete');
+      expect(stranger).not.toMatch(/<script nonce=/);
+
+      const manager = renderUrlPreview(baseLink, 'en', { nonce: 'preview-nonce' });
+      expect(manager).toContain('You manage this PureLink');
+      expect(manager).toContain('Delete this PureLink');
+      expect(manager).toContain('nonce="preview-nonce"');
+      expect(() => new Function(extractScript(manager))).not.toThrow();
+      expect(extractScript(manager)).toContain("encodeURIComponent(slug)");
+      expect(extractScript(manager)).not.toContain('authorization');
+    });
+
+    it('renders the management section in the shared locale style', () => {
+      const chinese = renderUrlPreview(baseLink, 'zh-Hant', { nonce: 'preview-nonce' });
+      expect(chinese).toContain('你管理這個 PureLink。');
+      expect(chinese).toContain('刪除這個 PureLink');
+      expect(chinese).toContain('destination-url');
+      expect(chinese).toContain('class="preview-manage"');
+    });
+  });
+
+  describe('formula and card owner management section', () => {
+    const formulaLink = { slug: 'quiet-math', content: 'x² + y² = z²', content_type: 'formula', created_at: '2026-09-01 00:00:00' };
+    const cardLink = { slug: 'quiet-card', content: 'a quiet note', signature: '', theme: 'paper', content_type: 'card', created_at: '2026-09-01 00:00:00' };
+
+    it('keeps the formula content page management-free for anonymous and stranger viewers', () => {
+      const stranger = renderFormulaPage(formulaLink, 'en');
+      expect(stranger).toContain('x² + y² = z²');
+      expect(stranger).not.toContain('You manage this PureLink');
+      expect(stranger).not.toContain('Delete this PureLink');
+      expect(stranger).not.toContain('owner-delete');
+      expect(stranger).not.toMatch(/<script nonce=/);
+
+      // The shared content rendering is identical: the owner page is the
+      // stranger page plus exactly the manage section and its script
+      // (whitespace-normalized, since the section carries template indenting).
+      const owner = renderFormulaPage(formulaLink, 'en', { nonce: 'owner-nonce' });
+      const squeeze = (value) => value.replace(/\s+/g, ' ');
+      expect(squeeze(
+        owner
+          .replace(/<section class="content-manage">[\s\S]*?<\/section>/, '')
+          .replace(/<script nonce="owner-nonce">[\s\S]*?<\/script>/, ''),
+      )).toBe(squeeze(stranger));
+    });
+
+    it('adds the quiet formula owner section with its delete affordance for the verified owner', () => {
+      const owner = renderFormulaPage(formulaLink, 'en', { nonce: 'owner-nonce' });
+      expect(owner).toContain('You manage this PureLink.');
+      expect(owner).toContain('Delete this PureLink');
+      expect(owner).toContain('class="content-manage"');
+      expect(owner).toContain('nonce="owner-nonce"');
+      const script = extractScript(owner);
+      expect(() => new Function(script)).not.toThrow();
+      expect(script).toContain("encodeURIComponent(slug)");
+      expect(script).toContain("method: 'DELETE'");
+      expect(script).not.toContain('authorization');
+      expect(script).not.toContain('isOwner');
+      // The section sits after the shared content actions, near the footer area.
+      expect(owner.indexOf('report-link')).toBeLessThan(owner.indexOf('<section class="content-manage"'));
+    });
+
+    it('renders the content owner section in the shared locale style', () => {
+      const chinese = renderFormulaPage(formulaLink, 'zh-Hant', { nonce: 'owner-nonce' });
+      expect(chinese).toContain('你管理這個 PureLink。');
+      expect(chinese).toContain('刪除這個 PureLink');
+      expect(chinese).toContain('formula-source');
+    });
+
+    it('keeps card content and export behavior unchanged with and without the owner section', () => {
+      const stranger = renderCardPage(cardLink, 'en', 'card-nonce');
+      expect(stranger).toContain('a quiet note');
+      expect(stranger).toContain('nonce="card-nonce"');
+      expect(stranger).not.toContain('You manage this PureLink');
+      expect(stranger).not.toContain('Delete this PureLink');
+      expect(stranger).not.toContain('owner-delete');
+
+      const owner = renderCardPage(cardLink, 'en', 'card-nonce', { nonce: 'card-nonce' });
+      expect(owner).toContain('You manage this PureLink.');
+      expect(owner).toContain('Delete this PureLink');
+      expect(owner).toContain('class="content-manage"');
+      // The card script keeps its collapse behavior and gains only the delete flow.
+      const script = extractScript(owner);
+      expect(() => new Function(script)).not.toThrow();
+      expect(script).toContain('card-copy-expanded');
+      expect(script).toContain("method: 'DELETE'");
+      // Escaped card content is untouched.
+      expect(owner).toContain('a quiet note');
+    });
+  });
+
+  describe('account owner navigation targets', () => {
+    const user = { id: 'user-1', email: 'person@example.com' };
+    const links = [
+      { slug: 'nav-url', content_type: 'url' },
+      { slug: 'nav-formula', content_type: 'formula' },
+      { slug: 'nav-card', content_type: 'card' },
+    ];
+
+    it('routes URL management to the destination preview and formula/card to their content pages', () => {
+      const html = renderAccountPage(user, links, 0, {}, '', 'account-nonce', 'en');
+      expect(html).toContain('<a href="/nav-url+">Manage</a>');
+      expect(html).toContain('<a href="/nav-formula">Manage</a>');
+      expect(html).toContain('<a href="/nav-card">Manage</a>');
+      // The standalone manage address is no longer the account-owner entry.
+      expect(html).not.toContain('/en/manage/');
+      expect(html).not.toContain('manage/nav-');
+    });
+
+    it('keeps the same routing in Chinese', () => {
+      const html = renderAccountPage(user, links, 0, {}, '', 'account-nonce', 'zh-Hant');
+      expect(html).toContain('<a href="/nav-url+">管理</a>');
+      expect(html).toContain('<a href="/nav-formula">管理</a>');
+      expect(html).toContain('<a href="/nav-card">管理</a>');
+      expect(html).not.toContain('/zh-Hant/manage/');
+    });
+  });
+
+  describe('managed destination display', () => {
+    it('shows the stored destination URL as escaped text for URL links', () => {
+      const html = renderManagePage({ slug: 'dest-link', content: 'https://example.com/a?q="x<y"&b=1', content_type: 'url', owner_user_id: null }, 'manage-nonce');
+      expect(html).toContain('class="managed-destination"');
+      expect(html).toContain('&quot;x&lt;y&quot;');
+      expect(html).not.toContain('"x<y"');
+    });
+
+    it('keeps formula and card management presentations unchanged', () => {
+      const formula = renderManagePage({ slug: 'formula-link', content: 'E=mc^2', content_type: 'formula', owner_user_id: null }, 'manage-nonce');
+      const card = renderManagePage({ slug: 'card-link', content: 'a card', content_type: 'card', owner_user_id: null }, 'manage-nonce');
+      for (const html of [formula, card]) {
+        expect(html).not.toContain('class="managed-destination"');
+        expect(html).not.toContain('>Destination<');
+      }
+    });
+  });
+
   it('emits a syntactically valid anonymous management script', () => {
     const html = renderManagePage({ slug: 'safe-slug', content_type: 'url', owner_user_id: null }, 'manage-nonce');
     const script = extractScript(html);
     expect(html).toContain('nonce="manage-nonce"');
     expect(() => new Function(script)).not.toThrow();
+  });
+
+  describe('anonymous recovery handoff', () => {
+    const urlLink = { slug: 'handoff-url', content: 'https://example.com/watch?v=abc', content_type: 'url', is_affiliate: 0, created_at: '2026-09-01 00:00:00' };
+    const formulaLink = { slug: 'handoff-formula', content: 'x² + y²', content_type: 'formula', created_at: '2026-09-01 00:00:00' };
+    const cardLink = { slug: 'handoff-card', content: 'a quiet note', signature: '', theme: 'paper', content_type: 'card', created_at: '2026-09-01 00:00:00' };
+
+    it('keeps the recovery URL fragment-based and persists verified credentials', () => {
+      const html = renderManagePage(urlLink, 'manage-nonce', null, false, 'en');
+      const script = extractScript(html);
+      // The fragment stays the credential transport (never query, path, or server-visible state).
+      expect(script).toContain("location.hash.slice(1)");
+      // Persistence happens only after the fragment re-verifies against the
+      // page's public fingerprint; an invalid credential is never stored.
+      expect(script).toContain("localStorage.setItem(storageKey, fragmentToken)");
+      expect(script).toContain("explicitCredentialValid = Boolean(publicFingerprint) && observedFragmentHash === publicFingerprint");
+      // The copied management address keeps the recovery-file format.
+      expect(script).toContain("'/manage/' + encodeURIComponent(slug) + '#' + token");
+      expect(html).toContain('Copy management address');
+      expect(html).toContain('Download recovery file');
+      expect(() => new Function(script)).not.toThrow();
+    });
+
+    it('maps successful recovery onto the canonical surface of each content type', () => {
+      const urlScript = extractScript(renderManagePage(urlLink, 'n1'));
+      expect(urlScript).toContain('"/handoff-url+?handoff=1"');
+      const formulaScript = extractScript(renderManagePage(formulaLink, 'n2'));
+      expect(formulaScript).toContain('"/handoff-formula?handoff=1"');
+      const cardScript = extractScript(renderManagePage(cardLink, 'n3'));
+      expect(cardScript).toContain('"/handoff-card?handoff=1"');
+      for (const script of [urlScript, formulaScript, cardScript]) {
+        // Direct handoff after validation — no intermediate success page.
+        expect(script).toContain('location.replace(canonicalDestination)');
+      }
+    });
+
+    it('gates the handoff on the stored credential re-verifying against the stored hash', () => {
+      const script = extractScript(renderManagePage(formulaLink, 'n1'));
+      // The deciding composition: the hash-derived fingerprint must match;
+      // the localStorage hit alone never owns the redirect.
+      expect(script).toContain("localStorage.getItem('purelink:management:' + slug)");
+      expect(script).toContain("observedHash.slice(0, 16) === publicFingerprint");
+      expect(script).toContain("if (token && fingerprintMatches && !accountAccess)");
+    });
+
+    it('redirects invalid credentials nowhere and keeps the recovery error state', () => {
+      const html = renderManagePage({ slug: 'gone-slug', content_type: 'formula', owner_user_id: null, management_token_hash: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }, 'n1', null, false, 'en');
+      const script = extractScript(html);
+      // No credential-independent redirect: without a verified match, the
+      // visitor keeps the fallback page and its recovery status.
+      expect(html).toContain('No anonymous management credential was found');
+      expect(script).toContain("status.textContent = manageMessages.missingCredential");
+    });
+
+    it('fails closed on an explicitly wrong fragment credential, in every corrupted variant', async () => {
+      const { createHash } = await import('node:crypto');
+      const clientHash = (token) => createHash('sha256').update(token, 'utf8').digest('base64url');
+      const CRED = 'recovered-management-credential';
+      const credHash = clientHash(CRED);
+      const link = { slug: 'fp-gate', content: 'E=mc²', content_type: 'formula', owner_user_id: null, management_token_hash: credHash };
+      const html = renderManagePage(link, 'gate-nonce', null, false, 'en');
+      const script = extractScript(html);
+      // Exercise the exact inline script: replace only the asset-loader
+      // boundary with the same SHA-256 base64url primitive the client uses.
+      const runnable = script.replaceAll("import('/assets/hash-credential.js')", '__hashModule()');
+
+      const run = async (fragment, storedItems = {}) => {
+        const store = new Map(Object.entries(storedItems));
+        const storageStub = { getItem: (key) => (store.has(key) ? store.get(key) : null), setItem: (key, value) => { store.set(key, String(value)); } };
+        const replacements = [];
+        const elements = new Map();
+        const element = () => ({ hidden: false, textContent: '', disabled: false, addEventListener() {} });
+        const documentStub = { getElementById: () => element() };
+        const locationStub = { hash: fragment, origin: 'https://no-no.uk', pathname: '/manage/fp-gate', search: '', replace: (target) => replacements.push(target) };
+        const factory = new Function('__hashModule', 'document', 'localStorage', 'location', 'navigator', runnable);
+        factory(() => Promise.resolve({ hashManagementToken: clientHash }), documentStub, storageStub, locationStub, { clipboard: {} });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return { store, replacements };
+      };
+
+      // 1. Correct explicit credential: succeeds and hands off to the
+      // canonical surface (unchanged CASE A behavior).
+      const valid = await run(`#${CRED}`, { 'purelink:management:fp-gate': 'stale-previous-value' });
+      expect(valid.replacements).toEqual(['/fp-gate?handoff=1']);
+      expect(valid.store.get('purelink:management:fp-gate')).toBe(CRED);
+      // 1b. No stored credential either: handoff still happens.
+      const fresh = await run(`#${CRED}`);
+      expect(fresh.replacements).toEqual(['/fp-gate?handoff=1']);
+      expect(fresh.store.get('purelink:management:fp-gate')).toBe(CRED);
+
+      // 2-4. Wrong / one-character-short / one-character-mutated explicit
+      // credentials all fail closed: no handoff, explicit invalid state,
+      // and the previously stored credential is preserved, never clobbered.
+      const variants = {
+        wrong: `${CRED}-not`,
+        short: CRED.slice(0, -1),
+        mutated: `${CRED.slice(0, -1)}X`,
+      };
+      for (const [label, fragment] of Object.entries(variants)) {
+        const result = await run(`#${fragment}`);
+        expect(result.replacements, label).toEqual([]);
+        expect(result.store.get('purelink:management:fp-gate'), label).toBeUndefined();
+        const resultWithStored = await run(`#${fragment}`, { 'purelink:management:fp-gate': CRED });
+        // 5. Explicit fragment is authoritative: a valid stored credential
+        // is NEVER substituted for the failed verification, and is left
+        // untouched so a later correct recovery still works.
+        expect(resultWithStored.replacements, label).toEqual([]);
+        expect(resultWithStored.store.get('purelink:management:fp-gate'), label).toBe(CRED);
+      }
+
+      // 6. Missing fragment + valid localStorage credential: the existing
+      // recovery semantics still hand off (missing never means invalid).
+      const storedOnly = await run('', { 'purelink:management:fp-gate': CRED });
+      expect(storedOnly.replacements).toEqual(['/fp-gate?handoff=1']);
+      // 7. Missing fragment + no stored credential: explicit missing state.
+      const missing = await run('');
+      expect(missing.replacements).toEqual([]);
+      // 8. Localized invalid message is wired for both locales.
+      expect(html).toContain('This management credential is invalid.');
+      const zhHtml = renderManagePage(link, 'gate-nonce', null, false, 'zh-Hant');
+      expect(zhHtml).toContain('此管理憑證無效。');
+    });
+
+    it('keeps signed-in owner behavior unchanged while failing closed on a corrupted fragment', async () => {
+      const { createHash } = await import('node:crypto');
+      const clientHash = (token) => createHash('sha256').update(token, 'utf8').digest('base64url');
+      const CRED = 'owner-session-credential';
+      const credHash = clientHash(CRED);
+      const owner = { id: 'user-1', email: 'owner@example.com' };
+      const link = { slug: 'fp-owner', content: 'E=mc²', content_type: 'formula', owner_user_id: 'user-1', management_token_hash: credHash };
+      const script = extractScript(renderManagePage(link, 'n1', owner, true, 'en')).replaceAll("import('/assets/hash-credential.js')", '__hashModule()');
+
+      const run = async (fragment, storedItems = {}) => {
+        const store = new Map(Object.entries(storedItems));
+        const storageStub = { getItem: (key) => (store.has(key) ? store.get(key) : null), setItem: (key, value) => { store.set(key, String(value)); } };
+        const replacements = [];
+        const elements = new Map();
+        const element = () => ({ hidden: false, textContent: '', disabled: false, addEventListener() {} });
+        const locationStub = { hash: fragment, origin: 'https://no-no.uk', pathname: '/manage/fp-owner', search: '', replace: (target) => replacements.push(target) };
+        const factory = new Function('__hashModule', 'document', 'localStorage', 'location', 'navigator', script);
+        factory(() => Promise.resolve({ hashManagementToken: clientHash }), { getElementById: () => element() }, storageStub, locationStub, { clipboard: {} });
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return { store, replacements };
+      };
+
+      // Verified fragment + session: unchanged handoff for the owner.
+      const valid = await run(`#${CRED}`);
+      expect(valid.replacements).toEqual(['/fp-owner?handoff=1']);
+      // Bare session owner (no fragment) stays on the fallback page,
+      // unchanged.
+      const bare = await run('');
+      expect(bare.replacements).toEqual([]);
+      // An explicitly WRONG fragment fails closed even for the session
+      // owner: no auto-handoff during this navigation attempt (the owner
+      // keeps every session-based management surface; only the corrupt
+      // credential's silent auto-redirect is removed).
+      const corrupted = await run('#deliberately-corrupted-credential');
+      expect(corrupted.replacements).toEqual([]);
+      expect(corrupted.store.get('purelink:management:fp-owner')).toBeUndefined();
+    });
+
+    it('keeps credentials out of markup, scripts, and noscript fallbacks', () => {
+      for (const [link, nonce] of [[urlLink, 'n1'], [formulaLink, 'n2'], [cardLink, 'n3']]) {
+        const html = renderManagePage(link, nonce, null, false, 'en');
+        expect(html).not.toContain('purelink:owner-fp:');
+        expect(html).not.toContain('data-purelink-owner-fp');
+        // The noscript body carries instructions only, never credentials.
+        expect(html).toContain('<noscript>');
+        expect(html).toContain('management needs JavaScript');
+        expect(() => new Function(extractScript(html))).not.toThrow();
+      }
+    });
+  });
+
+  describe('anonymous owner activation on canonical pages', () => {
+    const activationSource = readFileSync(new URL('../client/owner-activation.js', import.meta.url), 'utf8');
+
+    it('reveals the identical owner section only after a verified local credential', () => {
+      // Same section contract as the session-owner render: ids, title, delete.
+      const formula = renderFormulaPage({ slug: 'a-f', content: 'x² + y²', content_type: 'formula', created_at: '2026-09-01 00:00:00' }, 'en', { nonce: '', slug: 'a-f', publicFingerprint: 'fp16chars' });
+      const card = renderCardPage({ slug: 'a-c', content: 'note', signature: '', theme: 'paper', content_type: 'card', created_at: '2026-09-01 00:00:00' }, 'en', 'card-nonce', { nonce: '', slug: 'a-c', publicFingerprint: 'fp16chars' });
+      const urlPreview = renderUrlPreview({ slug: 'a-u', content: 'https://example.com', content_type: 'url', is_affiliate: 0, created_at: '2026-09-01 00:00:00' }, 'en', { nonce: '', slug: 'a-u', publicFingerprint: 'fp16chars' });
+      for (const [page, sectionClass] of [[formula, 'content-manage'], [card, 'content-manage'], [urlPreview, 'preview-manage']]) {
+        expect(page).toContain('You manage this PureLink');
+        expect(page).toContain('Delete this PureLink');
+        expect(page).toContain(`<section class="${sectionClass}" hidden data-owner-section`);
+        expect(page).toContain('data-public-fingerprint="fp16chars"');
+        expect(page).toContain("import('/assets/owner-activation.js')");
+        // No credential ever reaches the markup.
+        expect(page).not.toContain('purelink:management:');
+        expect(page).not.toContain('Bearer ');
+      }
+      expect(formula).toContain('owner-delete');
+      expect(urlPreview).toContain('preview-delete');
+      // Activation reveals the same id-wired section, never invents its own.
+      expect(activationSource).toContain("section.querySelector('.danger-button')");
+      expect(activationSource).toContain("observedFingerprint !== publicFingerprint");
+      expect(activationSource).toContain("localStorage.getItem(`purelink:management:${slug}`)");
+      // The temporary handoff signal leaves the visible address after load.
+      expect(activationSource).toContain("location.pathname + location.hash");
+    });
   });
 
   it('emits a syntactically valid report form script', () => {
