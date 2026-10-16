@@ -346,6 +346,91 @@ describe('interactive pages', () => {
     expect(decide(`${MAC} Gecko/20100101 Firefox/141.0`)).toBe(false);
   });
 
+  it('switches visual rendering to native MathML exactly on macOS desktop Safari, and keeps every other engine on KaTeX HTML', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const detectorSource = contentActions.match(/function isMacDesktopSafariFormulaFallback\(\) \{[\s\S]*?\n\}/)?.[0];
+    expect(detectorSource).toBeTruthy();
+    const detector = new Function('navigator', `${detectorSource}\nreturn isMacDesktopSafariFormulaFallback();`);
+    const decide = (ua, maxTouchPoints = 1) => detector({ userAgent: ua, maxTouchPoints });
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
+    const WEBKIT = 'AppleWebKit/605.1.15 (KHTML, like Gecko)';
+    const CHROMIUM = 'AppleWebKit/537.36 (KHTML, like Gecko)';
+    // The QA-proven broken engine takes the MathML fallback.
+    expect(decide(`${MAC} ${WEBKIT} Version/26.6.1 Safari/605.1.15`)).toBe(true);
+    // macOS Chrome on identical Chromium UA tokens stays on KaTeX HTML.
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36`)).toBe(false);
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0`)).toBe(false);
+    // macOS Firefox never carries the Safari/Version pair.
+    expect(decide(`${MAC} Gecko/20100101 Firefox/141.0`)).toBe(false);
+    // iOS Safari renders KaTeX HTML correctly and must stay on it.
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) ' + WEBKIT;
+    expect(decide(`${IPHONE} Version/18.5 Mobile/15E148 Safari/604.1`)).toBe(false);
+    expect(decide(`${IPHONE} CriOS/140.0.7339.60 Mobile/15E148 Safari/604.1`)).toBe(false);
+    // iPadOS "request desktop site" masquerades as a Mac; touch points catch it.
+    expect(decide(`${MAC} ${WEBKIT} Version/18.5 Mobile Safari/605.1.15`, 5)).toBe(false);
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36`, 5)).toBe(false);
+  });
+
+  it('applies the MathML fallback root class only when the macOS Safari predicate matches, and suppresses it for PNG capture', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    expect(contentActions).toContain("const formulaNativeMathmlClass = 'formula-native-mathml'");
+    // The class is applied to <html> exactly when the fallback predicate holds.
+    const flat = contentActions
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\/\/[^\n]*/g, ' ')
+      .replace(/\s+/g, ' ');
+    expect(flat).toContain('const formulaNativeMathmlFallback = isMacDesktopSafariFormulaFallback(); if (formulaNativeMathmlFallback) { document.documentElement.classList.add(formulaNativeMathmlClass); }');
+    // The class is added to <html> exactly when the fallback predicate holds,
+    // and is removed/restored only on the PNG lifecycle. Adds: init + capture
+    // restore; removals: capture suppression only.
+    expect(contentActions.match(/classList\.add\(formulaNativeMathmlClass\)/g)).toHaveLength(2);
+    expect(contentActions.match(/classList\.remove\(formulaNativeMathmlClass\)/g)).toHaveLength(1);
+    expect(flat).toContain('document.documentElement.classList.remove(formulaNativeMathmlClass)');
+    // removal must happen before the capture (the same segment that already
+    // resets the zoom), and the restore afterwards must be engine-guarded.
+    const exportIndex = flat.indexOf("querySelector('[data-download-png]')");
+    const captureIndex = flat.indexOf('toPng(captureTarget,');
+    const removeIndex = flat.indexOf('classList.remove(formulaNativeMathmlClass)', exportIndex);
+    expect(removeIndex).toBeGreaterThan(-1);
+    expect(removeIndex).toBeLessThan(captureIndex);
+    const restoreCapture = flat.match(/finally \{ [\s\S]*?\} \}/)?.[0];
+    expect(restoreCapture).toContain('if (formulaNativeMathmlFallback) { document.documentElement.classList.add(formulaNativeMathmlClass); }');
+    expect(flat.indexOf('classList.remove(formulaNativeMathmlClass)', removeIndex + 1)).toBe(-1);
+  });
+
+  it('scopes the native MathML fallback CSS to rendered formulas under the root fallback class', () => {
+    const html = renderFormulaPage({ slug: 'math', content: 'x²' }, 'en');
+    const css = html
+      .match(/<style>([\s\S]*?)<\/style>/)[1]
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\s+/g, ' ');
+    // Every rule that touches KaTeX internals lives inside the fallback scope.
+    const kaTeXSelectors = [...css.matchAll(/([^{}]*\.katex[^{}]*)\{/g)].map((rule) => rule[1].trim());
+    expect(kaTeXSelectors).toHaveLength(2);
+    expect(kaTeXSelectors).toContain('.formula-native-mathml .formula-rendered .katex-html');
+    expect(kaTeXSelectors).toContain('.formula-native-mathml .formula-rendered .katex-mathml');
+    // The fallback swaps the visual branch: HTML branch hidden, MathML branch
+    // un-hides by undoing KaTeX's sr-only hiding exactly.
+    expect(css).toContain('.formula-native-mathml .formula-rendered .katex-html { display: none; }');
+    const mathmlRule = css.match(/\.formula-native-mathml \.formula-rendered \.katex-mathml \{([^}]*)\}/)[1];
+    for (const property of ['position: static', 'clip: auto', 'width: auto', 'height: auto', 'overflow: visible', 'padding: 0', 'border: 0']) {
+      expect(mathmlRule).toContain(property);
+    }
+    // No engine-specific offsets, transforms, or scaling inside the fallback.
+    expect(mathmlRule).not.toMatch(/left|top|translate|transform|zoom/);
+  });
+
+  it('ships both KaTeX branches on shared Formula pages', () => {
+    const html = renderFormulaPage({ slug: 'math', content: '\\int_0^\\infty f(x)\\,dx' }, 'en');
+    expect(html).toContain('class="katex-mathml"');
+    expect(html).toContain('<math xmlns="http://www.w3.org/1998/Math/MathML"');
+    // The visually rendered HTML branch (and its aria-hidden accessibility
+    // separation) is untouched; the screen-reader MathML tree is extra.
+    expect(html).toContain('<span class="katex-html" aria-hidden="true">');
+    expect(html).toContain('mop op-symbol large-op');
+    expect(html.indexOf('katex-mathml')).toBeLessThan(html.indexOf('katex-html'));
+  });
+
   it('zooms the rendered formula to a readability floor on scaling engines with a WebKit fallback, without affecting cards', () => {
     const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
     expect(contentActions).toContain('const FORMULA_MIN_SCALE = 0.7');

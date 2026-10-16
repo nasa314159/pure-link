@@ -41,9 +41,15 @@ function extractMatch(match) {
 }
 
 function renderMath(expression, displayMode) {
+  // htmlAndMathml ships the KaTeX HTML render (visual path everywhere) plus a
+  // visually hidden native MathML branch; KaTeX's own CSS keeps .katex-mathml
+  // sr-only. macOS desktop Safari 26 mislays the HTML branch's tall operators
+  // even at natural size, but renders native <math> correctly, so the client
+  // flips visual rendering to the MathML branch there only (root class
+  // formula-native-mathml); see client/content-actions.js.
   return katex.renderToString(normalizeFormulaExpression(expression), {
     displayMode,
-    output: 'html',
+    output: 'htmlAndMathml',
     throwOnError: false,
     trust: false,
     strict: 'warn',

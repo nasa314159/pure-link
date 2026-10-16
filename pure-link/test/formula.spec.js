@@ -27,4 +27,18 @@ describe('formula rendering', () => {
     expect(html).toContain('class="katex-display"');
     expect(html).toContain('mop op-symbol large-op');
   });
+
+  it('ships both KaTeX branches so native MathML can take over visually on macOS Safari', () => {
+    const html = renderFormulaContent('\\int_0^\\infty f(x)\\,dx');
+    // The visually hidden MathML branch (with the LaTeX source as annotation)
+    // sits ahead of the unchanged HTML branch inside the same .katex element.
+    expect(html).toContain('class="katex-mathml"');
+    expect(html).toContain('<math xmlns="http://www.w3.org/1998/Math/MathML"');
+    expect(html).toContain('<annotation encoding="application/x-tex">\\int_0^\\infty f(x)\\,dx</annotation>');
+    expect(html).toContain('<span class="katex-html" aria-hidden="true">');
+    expect(html.indexOf('katex-mathml')).toBeLessThan(html.indexOf('katex-html'));
+    // The structured HTML render (and its tall-operator markup) is unchanged.
+    expect(html).toContain('mop op-symbol large-op');
+    expect(html).toContain('class="strut"');
+  });
 });
