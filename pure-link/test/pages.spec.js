@@ -469,6 +469,117 @@ describe('interactive pages', () => {
     expect(card).not.toContain('class="formula-fit"');
   });
 
+  it('expands overflowing formula wrappers and the export root to natural width for the PNG capture only', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const flat = contentActions
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\/\/[^\n]*/g, ' ')
+      .replace(/\s+/g, ' ');
+    const expandSource = contentActions.match(/function expandFormulaCapture\(fits\) \{[\s\S]*?\n\}/)?.[0];
+    expect(expandSource).toBeTruthy();
+    // The expansion is invoked only inside the export lifecycle, after the
+    // zoom reset and the MathML suppression, once the fonts have settled,
+    // and strictly before toPng measures the capture box.
+    const exportIndex = flat.indexOf("querySelector('[data-download-png]')");
+    const resetIndex = flat.indexOf('scaledFormulas.forEach(resetFormulaDisplay);', exportIndex);
+    const suppressIndex = flat.indexOf('classList.remove(formulaNativeMathmlClass)', resetIndex);
+    const fontsIndex = flat.indexOf('await document.fonts.ready', exportIndex);
+    const expandIndex = flat.indexOf('restoreCaptureGeometry = expandFormulaCapture(scaledFormulas);', exportIndex);
+    const captureIndex = flat.indexOf('toPng(captureTarget,', exportIndex);
+    expect(exportIndex).toBeGreaterThan(-1);
+    expect(resetIndex).toBeGreaterThan(exportIndex);
+    expect(suppressIndex).toBeGreaterThan(resetIndex);
+    expect(fontsIndex).toBeGreaterThan(suppressIndex);
+    expect(expandIndex).toBeGreaterThan(fontsIndex);
+    expect(captureIndex).toBeGreaterThan(expandIndex);
+    // Conditional: only wrappers that genuinely overflow their panel
+    // (scrollWidth beyond clientWidth, html-to-image's blind spot) widen;
+    // narrow formulas and card pages are skipped before any inline style is
+    // touched, so today's capture is kept exactly for them.
+    expect(expandSource).toContain('if (!fit || fit.scrollWidth <= fit.clientWidth) return;');
+    expect(expandSource).toContain('if (expandedFits.length === 0) return () => {};');
+    // The scroll container is dropped outright for the capture: setting the
+    // inline shorthand (both axes) is what makes `visible` stick — `visible`
+    // alone next to the stylesheet's `overflow-y: hidden` would compute back
+    // to a scroll container and paint a scrollbar into the PNG.
+    expect(expandSource).toContain("fit.style.overflow = 'visible';");
+    // The wrapper and the measured capture root both expand to natural
+    // content width, so the captured client box covers the whole formula
+    // plus the export padding instead of the visible panel cut.
+    expect(expandSource).toContain("fit.style.width = 'max-content';");
+    expect(expandSource).toContain("fit.closest('#share-export') ?? captureTarget");
+    expect(expandSource).toContain("target.style.width = 'max-content';");
+    // Purely inline-geometry: the expansion introduces no zoom, no
+    // transform, no font-size effect, and no arbitrary pixel width.
+    for (const forbidden of ['zoom', 'transform', 'fontSize', 'max-width', 'scrollWidth =']) {
+      expect(expandSource).not.toContain(forbidden);
+    }
+  });
+
+  it('restores the capture-only geometry exactly in finally, on success and failure alike', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const flat = contentActions
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\/\/[^\n]*/g, ' ')
+      .replace(/\s+/g, ' ');
+    // The restore closure is seeded as a no-op before the try, so the
+    // finally below stays callable even when awaiting the fonts (or
+    // anything before the expansion) throws.
+    const seedIndex = flat.indexOf('let restoreCaptureGeometry = () => {};');
+    const fontsIndex = flat.indexOf('await document.fonts.ready');
+    expect(seedIndex).toBeGreaterThan(-1);
+    expect(seedIndex).toBeLessThan(fontsIndex);
+    // Exactly one restore invocation, and it lives inside the finally block
+    // that runs on every path — success, the catch's error label, or
+    // anything in between — so a failed capture restores the exact
+    // pre-capture styles as well.
+    const restoreCalls = flat.match(/restoreCaptureGeometry\(\);/g);
+    expect(restoreCalls).toHaveLength(1);
+    const restoreIndex = flat.indexOf('restoreCaptureGeometry();');
+    const finallyIndex = flat.indexOf('} finally {', fontsIndex);
+    const mathmlRestoreIndex = flat.indexOf('classList.add(formulaNativeMathmlClass)', restoreIndex);
+    const reFitIndex = flat.indexOf('fitFormulaToWidth();', restoreIndex);
+    expect(finallyIndex).toBeGreaterThan(-1);
+    expect(restoreIndex).toBeGreaterThan(finallyIndex);
+    expect(mathmlRestoreIndex).toBeGreaterThan(restoreIndex);
+    expect(reFitIndex).toBeGreaterThan(mathmlRestoreIndex);
+    // Restoration rewinds the whole saved inline style string of every
+    // expanded element, so nothing leaks into the live page after capture.
+    expect(contentActions).toContain('target.style.cssText = cssText;');
+    expect(contentActions).toContain('fit.style.cssText = cssText;');
+    // The MathML switch is still restored only on the engine that took it,
+    // inside this same finally.
+    expect(contentActions).toMatch(/if \(formulaNativeMathmlFallback\) \{/);
+    const finallySegment = flat.slice(finallyIndex, reFitIndex);
+    expect(finallySegment).toContain('if (formulaNativeMathmlFallback) { document.documentElement.classList.add(formulaNativeMathmlClass); }');
+    expect(flat.indexOf('if (formulaNativeMathmlFallback) { document.documentElement.classList.add(formulaNativeMathmlClass); }', mathmlRestoreIndex + 1)).toBe(-1);
+  });
+
+  it('achieves the capture geometry through client inline styles only, without adding permanent page CSS', () => {
+    const html = renderFormulaPage({ slug: 'math', content: 'x²' }, 'en');
+    const css = html
+      .match(/<style>([\s\S]*?)<\/style>/)[1]
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/\s+/g, ' ');
+    // The shipped geometry rules are byte-identical in intent: the fit
+    // wrapper keeps its scroll container for the visible page, and the box
+    // keeps its natural width — the expansion happens inline at capture
+    // time and never lands in the stylesheet.
+    expect(css.match(/\.formula-fit \{([^}]*)\}/)[1]).toContain('overflow-x: auto');
+    expect(css.match(/\.formula-fit \{([^}]*)\}/)[1]).toContain('overflow-y: hidden');
+    expect(css.match(/\.formula-box \{([^}]*)\}/)[1]).toContain('width: max-content');
+    expect(css).not.toContain('formula-capture');
+    expect(css).not.toContain('capture-expand');
+    // The bundle never injects a stylesheet at runtime either.
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    for (const forbidden of ['insertRule', 'adoptedStyleSheets', '<style', 'append(<style']) {
+      expect(contentActions).not.toContain(forbidden);
+    }
+    // The server markup pipeline stays out of the fix entirely.
+    const pagesSource = readFileSync(new URL('../src/pages.js', import.meta.url), 'utf8');
+    expect(pagesSource).not.toContain('expandFormulaCapture');
+  });
+
   it('keeps shared-content routes unprefixed and switches locale via the /locale endpoint', () => {
     const pages = [
       ['formula', (locale) => renderFormulaPage({ slug: 'math', content: 'x²' }, locale), '/math'],

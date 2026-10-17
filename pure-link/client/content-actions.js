@@ -207,8 +207,23 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
   // no-op (it was never added).
   document.documentElement.classList.remove(formulaNativeMathmlClass);
 
+  // Restores every capture-only geometry override; seeded as a no-op before
+  // the try so the finally below is safe even when awaiting the fonts (or
+  // anything earlier) throws before the expansion ever ran.
+  let restoreCaptureGeometry = () => {};
   try {
     await document.fonts.ready;
+    // html-to-image measures the capture box from the live element's
+    // clientWidth (it never reads scrollWidth) and copies each node's
+    // computed style into the clone, so a wide formula keeps its
+    // panel-constrained .formula-fit wrapper with its overflow-x scrolling
+    // inside the captured box: content beyond the panel width is clipped at
+    // the canvas edge, and the cloned scroll container paints a scrollbar
+    // into the PNG (desktop Blink) or clips silently behind overlay
+    // scrollbars (mobile Chromium). Expand overflowing wrappers to their
+    // natural content width for the measurement only; the finally below
+    // restores every override on both success and failure.
+    restoreCaptureGeometry = expandFormulaCapture(scaledFormulas);
     const backgroundColor = getComputedStyle(captureTarget).backgroundColor;
     const dataUrl = await toPng(captureTarget, {
       pixelRatio: Math.min(window.devicePixelRatio || 1, 3),
@@ -227,6 +242,9 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
   } finally {
     clampedCardCopies.forEach((cardCopy) => cardCopy.classList.remove('card-export-reveal'));
     scaledFormulas.forEach(resetFormulaDisplay);
+    // Undo every capture-only geometry override exactly, before the re-fit
+    // below recomputes the display fitting on the restored layout.
+    restoreCaptureGeometry();
     if (formulaNativeMathmlFallback) {
       // Restore the MathML switch only on the engine that took it.
       document.documentElement.classList.add(formulaNativeMathmlClass);
@@ -249,6 +267,52 @@ function resetFormulaDisplay(fit) {
   fit.querySelectorAll('.formula-box').forEach((element) => {
     /** @type {HTMLElement} */ (element).style.removeProperty('zoom');
   });
+}
+
+// Capture-only geometry for the PNG export: html-to-image measures the
+// capture box from the live element's clientWidth (it never reads
+// scrollWidth) and clones every node's computed style, so a wide formula
+// keeps its panel-constrained .formula-fit wrapper — the overflow-x scroll
+// container — at the visible width, clipping everything beyond it at the
+// captured box and painting the cloned scroll container's scrollbar into
+// the image. For the capture only, each wrapper that actually overflows its
+// panel drops the scroll container (both overflow axes, because inline
+// `visible` on one axis next to the stylesheet's hidden `overflow-y` would
+// compute back to a scroll container) and expands to its natural content
+// width, and #share-export — the measured and cloned capture root — expands
+// with it, so the measured box covers the complete natural formula plus the
+// export padding. Wrappers that fit their panel are skipped before any
+// style is touched, so narrower formulas keep the existing capture exactly,
+// and the zoom/fit logic above is never involved. The returned closure
+// restores every saved inline style exactly; it must run from the export
+// handler's finally block so it covers both success and failure.
+function expandFormulaCapture(fits) {
+  /** @type {Array<{ fit: HTMLElement, cssText: string }>} */
+  const expandedFits = [];
+  /** @type {Array<{ target: HTMLElement, cssText: string }>} */
+  const expandedTargets = [];
+  fits.forEach((fit) => {
+    // Only a real overflow needs widening: scrollWidth and clientWidth are
+    // integers, and a formula that fits (or a card page with no formula)
+    // must not change today's capture geometry at all.
+    if (!fit || fit.scrollWidth <= fit.clientWidth) return;
+    expandedFits.push({ fit, cssText: fit.style.cssText });
+    fit.style.overflow = 'visible';
+    fit.style.width = 'max-content';
+    const target = /** @type {HTMLElement} */ (fit.closest('#share-export') ?? captureTarget);
+    if (expandedTargets.some(({ target: saved }) => saved === target)) return;
+    expandedTargets.push({ target, cssText: target.style.cssText });
+    target.style.width = 'max-content';
+  });
+  if (expandedFits.length === 0) return () => {};
+  return function restoreFormulaCapture() {
+    expandedTargets.forEach(({ target, cssText }) => {
+      target.style.cssText = cssText;
+    });
+    expandedFits.forEach(({ fit, cssText }) => {
+      fit.style.cssText = cssText;
+    });
+  };
 }
 
 async function copyText(value) {
