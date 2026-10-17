@@ -63,6 +63,37 @@ function isProblematicWebKitFormulaRendering() {
 
 const formulaScalingBlocked = isProblematicWebKitFormulaRendering();
 
+// macOS desktop Safari 26 lays KaTeX's own HTML render out incorrectly for
+// tall operators (integrals, sums, limits) even at natural 100% size with
+// every KaTeX font loaded and no wrapper CSS, zoom, or font-size effect —
+// proven against a clean iframe holding only the production KaTeX CSS and the
+// rendered KaTeX DOM. The same engine renders the <math> element (the
+// visually hidden MathML branch of KATEX's htmlAndMathml output) correctly,
+// so exactly this engine gets the formula-native-mathml root class, and the
+// page CSS swaps the visual branch. Narrow identity gate:
+// - requires the true desktop Safari identity (Macintosh + Safari/ +
+//   Version/; Firefox and Chromium-family never carry that pair);
+// - maxTouchPoints <= 1 keeps iPadOS "request desktop site" masquerades and
+//   other Apple-mobile identities out;
+// - Chromium-family tokens exclude Chrome/Edge/Opera/electron hybrids.
+// iOS Safari renders KaTeX HTML correctly and must stay on it.
+const formulaNativeMathmlClass = 'formula-native-mathml';
+
+function isMacDesktopSafariFormulaFallback() {
+  const ua = navigator.userAgent;
+  const chromiumFamily = ua.includes('Chrome/') || ua.includes('Chromium') || ua.includes('Edg/') || ua.includes('OPR/');
+  const appleMobile = ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iPod') ||
+    (ua.includes('Macintosh') && navigator.maxTouchPoints > 1);
+
+  return !appleMobile && !chromiumFamily &&
+    ua.includes('Macintosh') && ua.includes('Safari/') && ua.includes('Version/');
+}
+
+const formulaNativeMathmlFallback = isMacDesktopSafariFormulaFallback();
+if (formulaNativeMathmlFallback) {
+  document.documentElement.classList.add(formulaNativeMathmlClass);
+}
+
 function fitFormulaToWidth() {
   if (!formulaFit || !formulaBox) return;
   if (formulaScalingBlocked) {
@@ -168,6 +199,13 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
   // fallback no zoom was applied, so this is a no-op there.
   const scaledFormulas = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('[data-formula-scale]')]);
   scaledFormulas.forEach(resetFormulaDisplay);
+  // The native MathML fallback is display-only too: the PNG export is
+  // produced from the KaTeX HTML branch, so the visual MathML switch is
+  // suppressed for the whole capture lifecycle — html-to-image copies each
+  // node's computed style, so the branch must be hidden at capture time —
+  // and restored afterwards. On non-fallback engines removing the class is a
+  // no-op (it was never added).
+  document.documentElement.classList.remove(formulaNativeMathmlClass);
 
   try {
     await document.fonts.ready;
@@ -189,6 +227,10 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
   } finally {
     clampedCardCopies.forEach((cardCopy) => cardCopy.classList.remove('card-export-reveal'));
     scaledFormulas.forEach(resetFormulaDisplay);
+    if (formulaNativeMathmlFallback) {
+      // Restore the MathML switch only on the engine that took it.
+      document.documentElement.classList.add(formulaNativeMathmlClass);
+    }
     fitFormulaToWidth();
     setTimeout(() => {
       button.textContent = originalLabel;

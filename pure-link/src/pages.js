@@ -2029,6 +2029,14 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .formula-rendered { font-size: clamp(1.05rem, 3vw, 1.45rem); line-height: 1.8; text-align: center; }
     .formula-fit { overflow-x: auto; overflow-y: hidden; }
     .formula-box { width: max-content; margin-inline: auto; }
+    /* macOS Safari only: the client adds formula-native-mathml to <html> when
+       the browser is desktop Safari, whose KaTeX HTML layout misaligns tall
+       operators at natural size. The visual branch swaps to the native
+       <math> element shipped inside .katex-mathml: undo KaTeX's sr-only
+       hiding exactly, and drop the HTML branch. Everywhere else this class is
+       absent and both rules are inert. */
+    .formula-native-mathml .formula-rendered .katex-html { display: none; }
+    .formula-native-mathml .formula-rendered .katex-mathml { position: static; clip: auto; width: auto; height: auto; overflow: visible; padding: 0; border: 0; }
     .formula-source { margin: .75rem 0 0; padding: 1.25rem; border-radius: 1.25rem; background: #edf2ef; font-size: .88rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
     .source-details { margin-top: 1.5rem; color: var(--muted); }
     .source-details summary { cursor: pointer; font-weight: 650; }
