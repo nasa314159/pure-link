@@ -176,34 +176,21 @@ function deliverPngObjectUrl(objectUrl, filename) {
 // Object URL lifetime: the automatic click's outcome is not observable from
 // the page — Safari keeps its download UI in its own hands after the anchor
 // click — so revoking the moment the click returns could destroy the Blob
-// before the browser has read it. The URL instead stays leased while it is
-// needed: the same URL is reused verbatim by the pending fallback (below),
-// so it must not be revoked before that fallback's lease is over. Cleanup
-// runs at exactly one of: this lease expiring with the fallback still armed,
-// the fallback being consumed by a genuine press (which re-leases the URL
-// for the same grace period), or synchronously when a delivery throws.
+// before the browser has read it, and there is no completion event to await.
+// Instead the URL is leased: it stays alive long enough for the browser to
+// read the Blob and for the user to answer the system download prompt, then
+// exactly one delayed revocation. If the delivery itself throws, the URL is
+// revoked synchronously on that failure path.
 const PNG_OBJECT_URL_LEASE_MS = 60_000;
 
-function armPendingIpadOsPng(button, objectUrl, filename) {
-  button.dataset.pendingDownloadUrl = objectUrl;
-  button.dataset.pendingDownloadName = filename;
-  setTimeout(() => {
-    // Only this attempt's lease cleans up its URL: a newer attempt may have
-    // armed a different one, or the fallback may already have consumed it.
-    if (button.dataset.pendingDownloadUrl !== objectUrl) return;
-    delete button.dataset.pendingDownloadUrl;
-    delete button.dataset.pendingDownloadName;
-    URL.revokeObjectURL(objectUrl);
-  }, PNG_OBJECT_URL_LEASE_MS);
-}
-
-// Automatic delivery attempt for iPadOS Safari. The capture ran outside any
-// user gesture (after the toPng awaits), so this synthetic anchor click is
-// exactly the unverified factor the real-device QA still has to answer; the
-// armPending fallback below guarantees a genuine-tap delivery regardless of
-// its outcome. The finished PNG is handed to the browser and the button is
-// released back to its normal affordance: no "Saved" is claimed, because the
-// page cannot observe whether the file actually reached the user.
+// One-click delivery for iPadOS Safari. The capture runs outside any user
+// gesture (after the toPng awaits), so this synthetic anchor click is exactly
+// the unverified factor real-device QA still has to answer; the file itself
+// is delivered exactly as the device experiment validated (Blob Object URL
+// behind an attached <a download>). The button returns to its normal
+// affordance when the delivery has been handed to the browser: no localized
+// "Saved" is introduced here, because the page cannot observe whether the
+// file actually reached the user's Files app.
 function deliverIpadOsSafariPng(button, pngBinary, originalLabel) {
   const filename = button.dataset.filename || 'purelink.png';
   const objectUrl = URL.createObjectURL(pngBinaryToBlob(pngBinary));
@@ -213,33 +200,10 @@ function deliverIpadOsSafariPng(button, pngBinary, originalLabel) {
     URL.revokeObjectURL(objectUrl);
     throw error;
   }
-  armPendingIpadOsPng(button, objectUrl, filename);
-  button.dataset.exportState = 'armed';
+  setTimeout(() => URL.revokeObjectURL(objectUrl), PNG_OBJECT_URL_LEASE_MS);
+  button.dataset.exportState = 'success';
   button.textContent = originalLabel;
   button.disabled = false;
-}
-
-// Second press with the PNG still armed (the same button, within the lease):
-// a genuine user gesture drives the exact delivery the device verified, so
-// the proven "Saved" semantics apply to this path alone. On failure the PNG
-// stays armed until the lease, and the button flashes the error label.
-function deliverPendingIpadOsPng(button) {
-  const objectUrl = button.dataset.pendingDownloadUrl;
-  const filename = button.dataset.pendingDownloadName || 'purelink.png';
-  delete button.dataset.pendingDownloadName;
-  try {
-    deliverPngObjectUrl(objectUrl, filename);
-  } catch {
-    setTemporaryLabel(button, messages.failed);
-    button.dataset.exportState = 'armed';
-    return;
-  }
-  // Re-lease: the download started from the synchronous dispatch inside the
-  // real press, but the revocation still waits out the same grace period.
-  delete button.dataset.pendingDownloadUrl;
-  button.dataset.exportState = 'success';
-  button.textContent = messages.saved;
-  setTimeout(() => URL.revokeObjectURL(objectUrl), PNG_OBJECT_URL_LEASE_MS);
 }
 
 function fitFormulaToWidth() {
@@ -330,14 +294,6 @@ document.querySelector('[data-share-link]')?.addEventListener('click', async (ev
 
 document.querySelector('[data-download-png]')?.addEventListener('click', async (event) => {
   const button = /** @type {HTMLButtonElement} */ (event.currentTarget);
-  // A pending download means the PNG was already generated and armed by an
-  // earlier automatic attempt: this press is a genuine user gesture, so the
-  // finished file is delivered directly — the real-device-verified delivery
-  // — instead of re-running the capture.
-  if (button.dataset.pendingDownloadUrl) {
-    deliverPendingIpadOsPng(button);
-    return;
-  }
   const originalLabel = button.textContent;
   button.dataset.exportState = 'working';
   button.disabled = true;
