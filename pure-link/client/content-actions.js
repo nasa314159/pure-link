@@ -94,6 +94,154 @@ if (formulaNativeMathmlFallback) {
   document.documentElement.classList.add(formulaNativeMathmlClass);
 }
 
+// PNG delivery on iPadOS Safari: a real device (iPadOS Safari 26.6.2) accepted
+// the old data-URL download prompt but could not hand a usable file back, even
+// though the PNG itself was independently valid (correct signature, sane
+// byte size, decodable through createImageBitmap). The same PNG delivered as
+// a Blob Object URL through an <a download> attached to the document was
+// saved and opened correctly — but only when driven by a genuine user tap,
+// so the Object URL delivery itself is NOT yet verified for synthetic
+// one-click downloads. This narrow gate decides which engine takes that
+// delivery path and reuses the established Apple-mobile/chromium-family
+// identity patterns above:
+// - a real iPad UA, or the iPadOS "request desktop site" masquerade that
+//   spoofs a Macintosh UA while still reporting multi-touch
+//   (maxTouchPoints > 1, same reveal the formulas gates above rely on);
+// - the true Safari identity pair (Safari/ + Version/): iPadOS Chrome and
+//   Firefox carry CriOS / FxiOS or their masquerades' Chromium/Firefox
+//   tokens instead, so they keep their current delivery;
+// - the same chromium-family token list, which excludes desktop Chromium
+//   and Android Chrome, and the Macintosh requirement (or iPad token)
+//   excludes macOS Safari desktop — maxTouchPoints > 1 never holds on a
+//   desktop Mac — and iPhone Safari, which has neither token.
+// Every other browser (macOS Safari, macOS Chrome, Android Chrome, iPad
+// Chrome, Firefox, desktop Chromium) keeps the existing delivery unchanged.
+function isIpadOsSafariDownloadTarget() {
+  const ua = navigator.userAgent;
+  const chromiumFamily = ua.includes('Chrome/') || ua.includes('Chromium') || ua.includes('Edg/') || ua.includes('OPR/');
+  const ipadOs = ua.includes('iPad') || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1);
+  return ipadOs && !chromiumFamily && ua.includes('Safari/') && ua.includes('Version/');
+}
+
+// A failed canvas capture falls back to "data:," and any earlier failure to
+// an unusable string; delivering either would produce a broken download
+// instead of the user-visible error label. This conservative guard decodes
+// the payload once and rejects only demonstrably invalid data: anything
+// other than the data:image/png;base64 prefix, undecodable base64, and a
+// payload that cannot be a real PNG — shorter than the 8-byte signature plus
+// the mandatory 25-byte IHDR chunk, missing the signature, or without IHDR
+// as the first chunk. Passing this does NOT prove the image content is
+// visually correct; it only screens out failures that could not possibly be
+// a valid PNG. Returns the decoded binary string, or null when invalid.
+const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
+const PNG_SIGNATURE = '\x89PNG\r\n\x1a\n';
+
+function decodeValidPngDataUrl(dataUrl) {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith(PNG_DATA_URL_PREFIX)) return null;
+  let binary = '';
+  try {
+    binary = atob(dataUrl.slice(PNG_DATA_URL_PREFIX.length));
+  } catch {
+    return null;
+  }
+  if (binary.length < 33 || !binary.startsWith(PNG_SIGNATURE) || binary.slice(12, 16) !== 'IHDR') return null;
+  return binary;
+}
+
+// Blob conversion stays inside the page's own script rights: PureLink's CSP
+// allows connect-src 'self' only, so fetch(data:) would be blocked. The same
+// bytes are decoded locally through atob instead — no network-style fetch of
+// the data URL anywhere.
+function pngBinaryToBlob(binary) {
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: 'image/png' });
+}
+
+// The delivery the real device verified: an <a download> attached to the
+// document, pointing at the PNG's Blob Object URL. The anchor is detached
+// again right after the click; the download is started from the synchronous
+// dispatch, so the anchor itself is not needed afterwards.
+function deliverPngObjectUrl(objectUrl, filename) {
+  const anchor = document.createElement('a');
+  anchor.download = filename;
+  anchor.href = objectUrl;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+// Object URL lifetime: the automatic click's outcome is not observable from
+// the page — Safari keeps its download UI in its own hands after the anchor
+// click — so revoking the moment the click returns could destroy the Blob
+// before the browser has read it. The URL instead stays leased while it is
+// needed: the same URL is reused verbatim by the pending fallback (below),
+// so it must not be revoked before that fallback's lease is over. Cleanup
+// runs at exactly one of: this lease expiring with the fallback still armed,
+// the fallback being consumed by a genuine press (which re-leases the URL
+// for the same grace period), or synchronously when a delivery throws.
+const PNG_OBJECT_URL_LEASE_MS = 60_000;
+
+function armPendingIpadOsPng(button, objectUrl, filename) {
+  button.dataset.pendingDownloadUrl = objectUrl;
+  button.dataset.pendingDownloadName = filename;
+  setTimeout(() => {
+    // Only this attempt's lease cleans up its URL: a newer attempt may have
+    // armed a different one, or the fallback may already have consumed it.
+    if (button.dataset.pendingDownloadUrl !== objectUrl) return;
+    delete button.dataset.pendingDownloadUrl;
+    delete button.dataset.pendingDownloadName;
+    URL.revokeObjectURL(objectUrl);
+  }, PNG_OBJECT_URL_LEASE_MS);
+}
+
+// Automatic delivery attempt for iPadOS Safari. The capture ran outside any
+// user gesture (after the toPng awaits), so this synthetic anchor click is
+// exactly the unverified factor the real-device QA still has to answer; the
+// armPending fallback below guarantees a genuine-tap delivery regardless of
+// its outcome. The finished PNG is handed to the browser and the button is
+// released back to its normal affordance: no "Saved" is claimed, because the
+// page cannot observe whether the file actually reached the user.
+function deliverIpadOsSafariPng(button, pngBinary, originalLabel) {
+  const filename = button.dataset.filename || 'purelink.png';
+  const objectUrl = URL.createObjectURL(pngBinaryToBlob(pngBinary));
+  try {
+    deliverPngObjectUrl(objectUrl, filename);
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl);
+    throw error;
+  }
+  armPendingIpadOsPng(button, objectUrl, filename);
+  button.dataset.exportState = 'armed';
+  button.textContent = originalLabel;
+  button.disabled = false;
+}
+
+// Second press with the PNG still armed (the same button, within the lease):
+// a genuine user gesture drives the exact delivery the device verified, so
+// the proven "Saved" semantics apply to this path alone. On failure the PNG
+// stays armed until the lease, and the button flashes the error label.
+function deliverPendingIpadOsPng(button) {
+  const objectUrl = button.dataset.pendingDownloadUrl;
+  const filename = button.dataset.pendingDownloadName || 'purelink.png';
+  delete button.dataset.pendingDownloadName;
+  try {
+    deliverPngObjectUrl(objectUrl, filename);
+  } catch {
+    setTemporaryLabel(button, messages.failed);
+    button.dataset.exportState = 'armed';
+    return;
+  }
+  // Re-lease: the download started from the synchronous dispatch inside the
+  // real press, but the revocation still waits out the same grace period.
+  delete button.dataset.pendingDownloadUrl;
+  button.dataset.exportState = 'success';
+  button.textContent = messages.saved;
+  setTimeout(() => URL.revokeObjectURL(objectUrl), PNG_OBJECT_URL_LEASE_MS);
+}
+
 function fitFormulaToWidth() {
   if (!formulaFit || !formulaBox) return;
   if (formulaScalingBlocked) {
@@ -182,6 +330,14 @@ document.querySelector('[data-share-link]')?.addEventListener('click', async (ev
 
 document.querySelector('[data-download-png]')?.addEventListener('click', async (event) => {
   const button = /** @type {HTMLButtonElement} */ (event.currentTarget);
+  // A pending download means the PNG was already generated and armed by an
+  // earlier automatic attempt: this press is a genuine user gesture, so the
+  // finished file is delivered directly — the real-device-verified delivery
+  // — instead of re-running the capture.
+  if (button.dataset.pendingDownloadUrl) {
+    deliverPendingIpadOsPng(button);
+    return;
+  }
   const originalLabel = button.textContent;
   button.dataset.exportState = 'working';
   button.disabled = true;
@@ -230,12 +386,20 @@ document.querySelector('[data-download-png]')?.addEventListener('click', async (
       backgroundColor,
       cacheBust: false,
     });
-    const anchor = document.createElement('a');
-    anchor.download = button.dataset.filename || 'purelink.png';
-    anchor.href = dataUrl;
-    anchor.click();
-    button.dataset.exportState = 'success';
-    button.textContent = messages.saved;
+    if (isIpadOsSafariDownloadTarget()) {
+      // Decoding also validates: delivery only ever proceeds from data that
+      // cannot be a failed-capture fallback ("data:," and friends).
+      const pngBinary = decodeValidPngDataUrl(dataUrl);
+      if (!pngBinary) throw new Error('The PNG export produced invalid data.');
+      deliverIpadOsSafariPng(button, pngBinary, originalLabel);
+    } else {
+      const anchor = document.createElement('a');
+      anchor.download = button.dataset.filename || 'purelink.png';
+      anchor.href = dataUrl;
+      anchor.click();
+      button.dataset.exportState = 'success';
+      button.textContent = messages.saved;
+    }
   } catch {
     button.dataset.exportState = 'error';
     button.textContent = messages.failed;

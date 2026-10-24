@@ -599,6 +599,297 @@ describe('interactive pages', () => {
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // iPadOS Safari PNG download delivery.
+  //
+  // Everything below is a static or shim-based assertion: none of it can prove
+  // what a browser does with an anchor download. The real-device boundary is
+  // exactly the one the tests mirror: automatic Blob delivery after the async
+  // capture remains UNVERIFIED on iPadOS Safari (real-device QA), while the
+  // genuine second press delivering the same Object URL is the real-device
+  // verified path. Static tests only pin that this architecture is what ships.
+  // ---------------------------------------------------------------------------
+  it('gates the Blob-object-URL download path to real iPadOS Safari identities only', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const detectorSource = contentActions.match(/function isIpadOsSafariDownloadTarget\(\) \{[\s\S]*?\n\}/)?.[0];
+    expect(detectorSource).toBeTruthy();
+    const detector = new Function('navigator', `${detectorSource}\nreturn isIpadOsSafariDownloadTarget();`);
+    const decide = (ua, maxTouchPoints = 0) => detector({ userAgent: ua, maxTouchPoints });
+    const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)';
+    const IPAD = 'Mozilla/5.0 (iPad; CPU OS 26_6 like Mac OS X)';
+    const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X)';
+    const WEBKIT = 'AppleWebKit/605.1.15 (KHTML, like Gecko)';
+    const CHROMIUM = 'AppleWebKit/537.36 (KHTML, like Gecko)';
+    // Real iPadOS Safari (mobile UA and requested-desktop-site masquerade).
+    expect(decide(`${IPAD} ${WEBKIT} Version/26.6 Mobile/15E148 Safari/604.1`)).toBe(true);
+    expect(decide(`${MAC} ${WEBKIT} Version/26.6 Mobile/15E148 Safari/604.1`, 5)).toBe(true);
+    expect(decide(`${MAC} ${WEBKIT} Version/26.6 Safari/605.1.15`, 5)).toBe(true);
+    // macOS desktop Safari keeps its existing delivery (no multi-touch).
+    expect(decide(`${MAC} ${WEBKIT} Version/18.4 Safari/605.1.15`, 0)).toBe(false);
+    // iPad Chrome (CriOS keeps the Safari token but never the Version pair).
+    expect(decide(`${IPAD} ${WEBKIT} CriOS/140.0.7339.60 Mobile/15E148 Safari/604.1`, 5)).toBe(false);
+    // iPad Chrome / desktop-site masquerade (Chromium tokens).
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36`, 5)).toBe(false);
+    expect(decide(`${IPAD} ${CHROMIUM} Chrome/140.0.0.0 Mobile Safari/537.36`, 5)).toBe(false);
+    // iPad Firefox, and the Firefox desktop-site masquerade.
+    expect(decide(`${IPAD} ${WEBKIT} FxiOS/141.0 Mobile/15E148 Safari/605.1.15`, 5)).toBe(false);
+    expect(decide(`${MAC} Gecko/20100101 Firefox/141.0`, 5)).toBe(false);
+    // macOS Chrome, Android Chrome, desktop Chromium on a touchscreen device.
+    expect(decide(`${MAC} ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36`, 0)).toBe(false);
+    expect(decide('Mozilla/5.0 (Linux; Android 14; Pixel 8) ' + CHROMIUM + ' Chrome/140.0.0.0 Mobile Safari/537.36')).toBe(false);
+    expect(decide(`Mozilla/5.0 (Windows NT 10.0; Win64; x64) ${CHROMIUM} Chrome/140.0.0.0 Safari/537.36`, 5)).toBe(false);
+    // iPhone Safari is not the tested target and keeps the existing delivery.
+    expect(decide(`${IPHONE} ${WEBKIT} Version/18.5 Mobile/15E148 Safari/604.1`, 5)).toBe(false);
+  });
+
+  it('validates the PNG data URL conservatively before converting it to a Blob', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const pngSource = [
+      contentActions.match(/const PNG_DATA_URL_PREFIX = .*;/)?.[0],
+      contentActions.match(/const PNG_SIGNATURE = .*;/)?.[0],
+      contentActions.match(/function decodeValidPngDataUrl\(dataUrl\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function pngBinaryToBlob\(binary\) \{[\s\S]*?\n\}/)?.[0],
+    ].join('\n');
+    const api = new Function(`${pngSource}\nreturn { decodeValidPngDataUrl, pngBinaryToBlob };`)();
+    // A minimal well-formed PNG: 8-byte signature plus the mandatory 25-byte IHDR chunk.
+    const bytes = [
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+      1, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+      0, 0, 0, 0,
+    ];
+    const binary = String.fromCharCode(...bytes);
+    const dataUrl = `data:image/png;base64,${Buffer.from(binary, 'latin1').toString('base64')}`;
+    expect(api.decodeValidPngDataUrl(dataUrl)).toBe(binary);
+    const blob = api.pngBinaryToBlob(api.decodeValidPngDataUrl(dataUrl));
+    expect(blob.type).toBe('image/png');
+    expect(blob.size).toBe(33);
+    // Rejections: empty, the "data:," failed-capture fallback, short payloads,
+    // wrong MIME, missing base64 stage, wrong signature, IHDR not first, and
+    // undecodable base64. Passing is NOT claimed to prove full image validity.
+    const invalidPayloads = [
+      '',
+      'data:',
+      'data:,',
+      'data:image/png;base64,',
+      dataUrl.replace('image/png', 'image/jpeg'),
+      dataUrl.replace('image/png', 'text/plain'),
+      `data:image/png,${binary}`,
+      `data:image/png;base64,${Buffer.from(binary.slice(0, 8), 'latin1').toString('base64')}`,
+      `data:image/png;base64,${Buffer.from(`data:image/png;base64,`, 'utf8').toString('base64')}`,
+      `data:image/png;base64,${Buffer.from(binary.replace('IHDR', 'IDAT'), 'latin1').toString('base64')}`,
+      'data:image/png;base64,!!!',
+    ];
+    for (const invalidPayload of invalidPayloads) {
+      expect(api.decodeValidPngDataUrl(invalidPayload)).toEqual(null);
+    }
+  });
+
+  it('delivers each press through an attached anchor on the leased Object URL', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const deliverySource = [
+      contentActions.match(/const PNG_DATA_URL_PREFIX = .*;/)?.[0],
+      contentActions.match(/const PNG_SIGNATURE = .*;/)?.[0],
+      contentActions.match(/function decodeValidPngDataUrl\(dataUrl\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function pngBinaryToBlob\(binary\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function deliverPngObjectUrl\(objectUrl, filename\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function armPendingIpadOsPng\(button, objectUrl, filename\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function deliverIpadOsSafariPng\(button, pngBinary, originalLabel\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function deliverPendingIpadOsPng\(button\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function setTemporaryLabel\(button, label\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/const PNG_OBJECT_URL_LEASE_MS = .*;/)?.[0],
+    ].join('\n');
+    const anchors = [];
+    const timers = [];
+    const revoked = [];
+    let urlCounter = 0;
+    const URLStub = {
+      createObjectURL: () => { urlCounter += 1; return `blob:test-${urlCounter}`; },
+      revokeObjectURL: (url) => revoked.push(url),
+    };
+    const schedule = (fn, ms) => { timers.push({ fn, ms }); return 0; };
+    const makeDocumentStub = () => ({
+      createElement: () => {
+        const anchor = { download: '', href: '', appended: false, removed: false, clickedHref: null };
+        anchor.click = () => { anchor.clickedHref = anchor.href; };
+        anchor.remove = () => { anchor.removed = true; };
+        anchors.push(anchor);
+        return anchor;
+      },
+      body: { append: (element) => { element.appended = true; } },
+    });
+    const factory = (documentStub) => new Function('document', 'messages', 'URL', 'setTimeout',
+      `${deliverySource}\nreturn { deliverIpadOsSafariPng, deliverPendingIpadOsPng };`)(documentStub,
+      { saved: 'Saved', failed: 'Could not create PNG' }, URLStub, schedule);
+    // A minimal well-formed PNG for the conversion legs.
+    const bytes = [
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+      1, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+      0, 0, 0, 0,
+    ];
+    const pngBinary = String.fromCharCode(...bytes);
+
+    // First press: automatic one-click attempt with the Blob Object URL.
+    const button = { dataset: {}, textContent: 'Download PNG', disabled: true };
+    factory(makeDocumentStub()).deliverIpadOsSafariPng(button, pngBinary, 'Download PNG');
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0].download).toBe('purelink.png');
+    expect(anchors[0].href).toBe('blob:test-1');
+    expect(anchors[0].clickedHref).toBe('blob:test-1');
+    expect(anchors[0].appended).toBe(true);
+    expect(anchors[0].removed).toBe(true);
+    expect(revoked).toEqual([]);
+    expect(button.dataset.pendingDownloadUrl).toBe('blob:test-1');
+    expect(button.dataset.pendingDownloadName).toBe('purelink.png');
+    expect(button.dataset.exportState).toBe('armed');
+    expect(button.textContent).toBe('Download PNG');
+    expect(button.disabled).toBe(false);
+
+    // Second press within the lease: the same Object URL, delivered
+    // synchronously inside the genuine gesture, now with "Saved" semantics.
+    factory(makeDocumentStub()).deliverPendingIpadOsPng(button);
+    expect(anchors).toHaveLength(2);
+    expect(anchors[1].href).toBe('blob:test-1');
+    expect(anchors[1].appended).toBe(true);
+    expect(anchors[1].removed).toBe(true);
+    expect(button.dataset.pendingDownloadUrl).toBeUndefined();
+    expect(button.dataset.exportState).toBe('success');
+    expect(button.textContent).toBe('Saved');
+
+    // Nothing revoked so far. Running the collected timers: the armed lease
+    // finds its pending state already consumed and skips, and the consumed
+    // delivery's own lease performs the single revocation.
+    const revocationsByTimer = [];
+    while (timers.length) {
+      const timer = timers.shift();
+      const before = revoked.length;
+      timer.fn();
+      revocationsByTimer.push(revoked.length - before);
+    }
+    expect(revocationsByTimer).toEqual([0, 1]);
+    expect(revoked).toEqual(['blob:test-1']);
+  });
+
+  it('fails the delivery closed so the error branch, not a broken download, is the failure path', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const deliverySource = [
+      contentActions.match(/const PNG_DATA_URL_PREFIX = .*;/)?.[0],
+      contentActions.match(/const PNG_SIGNATURE = .*;/)?.[0],
+      contentActions.match(/function decodeValidPngDataUrl\(dataUrl\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function pngBinaryToBlob\(binary\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function deliverPngObjectUrl\(objectUrl, filename\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function armPendingIpadOsPng\(button, objectUrl, filename\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function deliverIpadOsSafariPng\(button, pngBinary, originalLabel\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function deliverPendingIpadOsPng\(button\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/function setTemporaryLabel\(button, label\) \{[\s\S]*?\n\}/)?.[0],
+      contentActions.match(/const PNG_OBJECT_URL_LEASE_MS = .*;/)?.[0],
+    ].join('\n');
+    const timers = [];
+    const revoked = [];
+    const URLStub = {
+      createObjectURL: () => 'blob:failing',
+      revokeObjectURL: (url) => revoked.push(url),
+    };
+    const schedule = (fn, ms) => { timers.push({ fn, ms }); return 0; };
+    const factory = (documentStub) => new Function('document', 'messages', 'URL', 'setTimeout',
+      `${deliverySource}\nreturn { deliverIpadOsSafariPng, deliverPendingIpadOsPng };`)(documentStub,
+      { saved: 'Saved', failed: 'Could not create PNG' }, URLStub, schedule);
+    // A minimal well-formed PNG for the conversion legs.
+    const bytes = [
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52,
+      1, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+      0, 0, 0, 0,
+    ];
+    const pngBinary = String.fromCharCode(...bytes);
+    const throwingAppend = () => {
+      throw new Error('append failed');
+    };
+    const failingDocumentStub = {
+      createElement: () => ({ download: '', href: '', click() {}, remove() {} }),
+      body: { append: throwingAppend },
+    };
+    // The automatic attempt failing mid-delivery revokes synchronously,
+    // leaves nothing armed, and lets the handler's catch show the error flash.
+    const armedButton = { dataset: {}, textContent: 'Download PNG', disabled: true };
+    expect(() => factory(failingDocumentStub)
+      .deliverIpadOsSafariPng(armedButton, pngBinary, 'Download PNG')).toThrow('append failed');
+    expect(revoked).toEqual(['blob:failing']);
+    expect(armedButton.dataset.pendingDownloadUrl).toBeUndefined();
+    expect(armedButton.dataset.exportState).toBeUndefined();
+    expect(armedButton.textContent).toBe('Download PNG');
+    expect(armedButton.disabled).toBe(true);
+    // The handler's catch keeps the proven error flash for that path.
+    const flat = contentActions.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ').replace(/\s+/g, ' ');
+    expect(flat).toContain("catch { button.dataset.exportState = 'error'; button.textContent = messages.failed; } finally {");
+    // A failed pending press keeps the ready PNG armed and flashes the error
+    // label through the shared temporary-label timer.
+    const pendingButton = { dataset: { pendingDownloadUrl: 'blob:ready', pendingDownloadName: 'purelink-card.png' }, textContent: 'Download PNG', disabled: false };
+    factory(failingDocumentStub).deliverPendingIpadOsPng(pendingButton);
+    expect(revoked).toEqual(['blob:failing']);
+    expect(pendingButton.dataset.pendingDownloadUrl).toBe('blob:ready');
+    expect(pendingButton.dataset.exportState).toBe('armed');
+    expect(pendingButton.textContent).toBe('Could not create PNG');
+    while (timers.length) timers.shift().fn();
+    expect(pendingButton.textContent).toBe('Download PNG');
+  });
+
+  it('keeps every other browser on the unchanged data-URL anchor delivery behind the iPad gate', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const flat = contentActions.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ').replace(/\s+/g, ' ');
+    const exportIndex = flat.indexOf("querySelector('[data-download-png]')");
+    const captureIndex = flat.indexOf('toPng(captureTarget,', exportIndex);
+    const gateIndex = flat.indexOf('if (isIpadOsSafariDownloadTarget()) {', captureIndex);
+    const decodeIndex = flat.indexOf('const pngBinary = decodeValidPngDataUrl(dataUrl);', captureIndex);
+    const anchorIndex = flat.indexOf("const anchor = document.createElement('a');", captureIndex);
+    expect(gateIndex).toBeGreaterThan(captureIndex);
+    expect(decodeIndex).toBeGreaterThan(gateIndex);
+    // The untouched delivery lives in the else branch of the gate, straight
+    // after the only validation that applies to it.
+    expect(anchorIndex).toBeGreaterThan(decodeIndex);
+    expect(flat).toContain("else { const anchor = document.createElement('a'); anchor.download = button.dataset.filename || 'purelink.png'; anchor.href = dataUrl; anchor.click(); button.dataset.exportState = 'success'; button.textContent = messages.saved; } } catch {");
+    // The capture pipeline is shared and untouched by the gate: same
+    // html-to-image settings, same geometry expansion, same re-fit.
+    expect(contentActions).toContain('pixelRatio: Math.min(window.devicePixelRatio || 1, 3),');
+    expect(contentActions).toContain('backgroundColor,');
+    expect(contentActions).toContain('cacheBust: false,');
+    expect(contentActions.match(/restoreCaptureGeometry\(\);/g)).toHaveLength(1);
+    expect(contentActions.match(/classList\.add\(formulaNativeMathmlClass\)/g)).toHaveLength(2);
+    expect(contentActions.match(/classList\.remove\(formulaNativeMathmlClass\)/g)).toHaveLength(1);
+  });
+
+  it('keeps the pending fallback distinct from the automatic attempt and never claims Saved for it', () => {
+    const contentActions = readFileSync(new URL('../client/content-actions.js', import.meta.url), 'utf8');
+    const flat = contentActions.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ').replace(/\s+/g, ' ');
+    // The automatic attempt hands the PNG to the browser and arms the pending
+    // fallback; it never reports the unobservable outcome as "Saved".
+    const autoSource = contentActions.match(/function deliverIpadOsSafariPng\(button, pngBinary, originalLabel\) \{[\s\S]*?\n\}/)?.[0];
+    expect(autoSource).toBeTruthy();
+    expect(autoSource).not.toContain('messages.saved');
+    expect(autoSource).toContain("button.dataset.exportState = 'armed'");
+    expect(autoSource).toContain('armPendingIpadOsPng(button');
+    expect(autoSource).toContain('armPendingIpadOsPng(button, objectUrl, filename);');
+    expect(autoSource).toContain('button.textContent = originalLabel;');
+    expect(autoSource).toContain('button.disabled = false;');
+    // The "Saved" claim exists only on the genuine-second-press path.
+    const pendingSource = contentActions.match(/function deliverPendingIpadOsPng\(button\) \{[\s\S]*?\n\}/)?.[0];
+    expect(pendingSource).toBeTruthy();
+    expect(pendingSource).toContain('deliverPngObjectUrl(objectUrl, filename)');
+    expect(pendingSource).toContain("button.textContent = messages.saved;");
+    // The pending branch runs first in the handler, ahead of any capture work.
+    const exportIndex = flat.indexOf("querySelector('[data-download-png]')");
+    const pendingIndex = flat.indexOf('if (button.dataset.pendingDownloadUrl) {', exportIndex);
+    const workingIndex = flat.indexOf("button.dataset.exportState = 'working';", exportIndex);
+    expect(pendingIndex).toBeGreaterThan(exportIndex);
+    expect(pendingIndex).toBeLessThan(workingIndex);
+    expect(flat).toContain('if (button.dataset.pendingDownloadUrl) { deliverPendingIpadOsPng(button); return; }');
+    // The pending fallback contains no second synthetic click after an await:
+    // its delivery is called directly, synchronously, inside the real press.
+    expect(pendingSource).not.toContain('.click();\n');
+    expect(pendingSource).not.toContain('await');
+  });
+
   it('gives client content-actions localized copy for both locales', () => {
     const clientMessages = (html) => JSON.parse(html.match(/<script id="purelink-client-messages" type="application\/json">([\s\S]*?)<\/script>/)[1]).content;
     const zh = clientMessages(renderFormulaPage({ slug: 'math', content: 'x²' }, 'zh-Hant'));
