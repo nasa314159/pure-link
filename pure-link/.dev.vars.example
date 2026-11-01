@@ -7,6 +7,13 @@ TURNSTILE_SECRET_KEY=replace-with-secret-key
 RATE_LIMIT_SECRET=replace-with-at-least-32-random-bytes
 # AI credit product identity is fixed in src/credit-products.js. Do not put
 # prices or credit quantities in provider configuration.
+# Server-side activation gate for NEW AI credit purchases. Purchases stay
+# disabled unless this is set to exactly 'true' in a non-production test
+# deployment. Leave this unset in production until explicit launch approval:
+# absent, empty, 'false', or malformed values are all fail-closed and never
+# enable checkout. Provider flags below remain independently required, and
+# webhooks, credit balances, and historical orders are unaffected either way.
+AI_CREDIT_PURCHASES_ENABLED=false
 LEMON_SQUEEZY_CHECKOUT_ENABLED=false
 LEMON_SQUEEZY_API_KEY=replace-with-lemon-api-key
 LEMON_SQUEEZY_WEBHOOK_SECRET=replace-with-lemon-webhook-secret

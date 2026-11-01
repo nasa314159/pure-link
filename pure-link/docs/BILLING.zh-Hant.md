@@ -16,6 +16,8 @@ PureLink 在 `src/credit-products.js` 有唯一的應用層商品目錄。商品
 
 結帳採 fail-closed：只有啟用旗標明確為 `true` 且設定完整時，付款方式才會顯示。
 
+新的 AI 額度購買另外需要部署層級的總開關 `AI_CREDIT_PURCHASES_ENABLED` 明確設為字串 `true`。正式環境設定中沒有這個變數（或為 `false`），因此無論供應商設定如何，正式結帳一律停用；只有刻意設定的非正式測試部署可以打開。缺少、空白、`false` 或無法辨識的值全部 fail-closed（允許前後空白後恰好為 `true`；`TRUE`、`1`、`on` 或拼錯一律不啟用）。這個開關只影響「新的」結帳：webhook、額度餘額、已建立的訂單、退款與獨立的支持軌道都不受影響。
+
 正式部署的公開來源是 `https://no-no.uk`。請保留這個設定，讓供應商回呼與瀏覽器結果頁不會依賴請求來源而被導向其他網域。
 
 Lemon Squeezy（國際／Merchant of Record）：

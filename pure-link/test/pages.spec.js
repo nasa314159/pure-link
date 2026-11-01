@@ -1037,21 +1037,55 @@ describe('interactive pages', () => {
 
   it('shows canonical packs and only enabled payment rails on the account page', () => {
     const disabled = renderAccountPage({ email: 'person@example.com' }, [], 12, false);
-    const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, { ecpay: true, lemon: true }, 'success', 'billing-nonce', 'en');
+    const gatedOff = renderAccountPage({ email: 'person@example.com' }, [], 12, { ecpay: true, lemon: true }, 'success', 'billing-nonce', 'en', false);
+    const enabled = renderAccountPage({ email: 'person@example.com' }, [], 12, { ecpay: true, lemon: true }, 'success', 'billing-nonce', 'en', true);
+    const enabledChinese = renderAccountPage({ email: 'person@example.com' }, [], 12, { ecpay: true, lemon: true }, '', 'billing-nonce', 'zh-Hant', true);
     expect(disabled).toContain('可用購買額度：12 次');
     expect(disabled).not.toContain('data-billing-checkout');
-    expect(enabled).not.toContain('data-provider="ecpay"');
-    expect(enabled).not.toContain('data-pack-id');
-    expect(enabled).not.toContain('data-billing-checkout');
-    expect(enabled).not.toContain('NT$150');
-    expect(enabled).toContain('Paid AI credit purchases are currently unavailable during the public beta');
-    expect(enabled).toContain('Five free AI formula generations remain available daily');
-    expect(enabled).toContain('The payment flow has returned to PureLink');
+    // Providers configured is not enough: the server-side purchase gate keeps
+    // the neutral public-beta message until it is explicitly enabled.
+    expect(gatedOff).not.toContain('data-billing-checkout');
+    expect(gatedOff).not.toContain('NT$150');
+    expect(gatedOff).not.toContain('data-pack-id');
+    expect(gatedOff).toContain('Paid AI credit purchases are currently unavailable during the public beta');
+    expect(gatedOff).toContain('Five free AI formula generations remain available daily');
+    expect(gatedOff).toContain('The payment flow has returned to PureLink');
+    // Enabled: canonical catalog prices only, one row per provider per pack,
+    // plus the checkout client script that calls the server endpoint.
+    expect(enabled).toContain('NT$150');
+    expect(enabled).toContain('NT$300');
+    expect(enabled).toContain('NT$600');
+    expect(enabled).toContain('data-billing-checkout');
+    expect(enabled).toContain('data-provider="ecpay"');
+    expect(enabled).toContain('data-provider="lemon"');
+    for (const packId of ['small', 'standard', 'large']) {
+      expect(enabled).toContain(`data-pack-id="${packId}"`);
+    }
+    expect(enabled).toContain("'/api/billing/checkout'");
+    expect(enabled).toContain('Opening a secure checkout…');
+    // Returned-purchase notices stay informational about credit granting.
+    expect(enabled).toContain('Only a verified provider notification adds credits');
+    expect(enabledChinese).toContain('小型方案');
+    expect(enabledChinese).toContain('標準方案');
+    expect(enabledChinese).toContain('大型方案');
+    expect(enabledChinese).toContain('正在開啟安全結帳頁');
+    expect(enabledChinese).toContain('data-provider="ecpay"');
   });
 
-  it('replaces the buying area with the neutral public-beta message in both locales', () => {
+  it('replaces the buying area with the neutral public-beta message in both locales by default', () => {
     const english = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'en');
     const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, { ecpay: true }, '', 'billing-nonce', 'zh-Hant');
+    expect(english).toContain('Paid AI credit purchases are currently unavailable during the public beta');
+    expect(chinese).toContain('公開測試期間暫不開放付費 AI 公式額度購買；每日仍有 5 次免費 AI 公式生成');
+    expect(english).not.toContain('data-billing-checkout');
+    expect(chinese).not.toContain('data-billing-checkout');
+  });
+
+  it('keeps the buying area neutral when the purchase gate is on but no provider is configured', () => {
+    const english = renderAccountPage({ email: 'person@example.com' }, [], 0, {}, '', 'billing-nonce', 'en', true);
+    const chinese = renderAccountPage({ email: 'person@example.com' }, [], 0, {}, '', 'billing-nonce', 'zh-Hant', true);
+    expect(english).not.toContain('data-billing-checkout');
+    expect(english).not.toContain('data-pack-id');
     expect(english).toContain('Paid AI credit purchases are currently unavailable during the public beta');
     expect(chinese).toContain('公開測試期間暫不開放付費 AI 公式額度購買；每日仍有 5 次免費 AI 公式生成');
   });

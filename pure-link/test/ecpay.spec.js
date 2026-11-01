@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AI_CREDIT_PACKS } from '../src/credit-products.js';
 import { createCheckMacValue, createEcpayCheckout, createMerchantTradeNo, ecpayEndpoint, ecpayTradeDate, ECPAY_PRODUCTION_ENDPOINT, ECPAY_STAGE_ENDPOINT, handleEcpayBrowserReturn, handleEcpayCallback, isEcpayCheckoutConfigured, verifyCheckMacValue } from '../src/ecpay.js';
+import { createCreditCheckout } from '../src/payments.js';
 
 const env = {
   ECPAY_CHECKOUT_ENABLED: 'true', ECPAY_MERCHANT_ID: '2000132', ECPAY_HASH_KEY: 'test-hash-key-12', ECPAY_HASH_IV: 'test-hash-iv-123', ECPAY_ENVIRONMENT: 'stage', PUBLIC_ORIGIN: 'https://no-no.uk',
@@ -105,6 +106,18 @@ describe('ECPay credit checkout', () => {
     expect(db.balance).toBe(150);
     expect(await (await handleEcpayCallback(callbackRequest(fields), configured)).text()).toBe('1|OK');
     expect(db.balance).toBe(150);
+    expect(db.orders).toHaveLength(1);
+  });
+
+  it('keeps legitimate callback fulfillment working while new purchases are explicitly disabled', async () => {
+    const { db, fields } = await pendingCallback('standard');
+    // The purchase gate is off, so new checkouts are refused...
+    const disabled = { ...env, pure_link_db: db, AI_CREDIT_PURCHASES_ENABLED: 'false' };
+    await expect(createCreditCheckout({ provider: 'ecpay', requestUrl: new URL('https://no-no.uk/en/account'), user: { id: 'user-1' }, packId: 'small', locale: 'en', env: disabled })).rejects.toMatchObject({ code: 'billingUnavailable' });
+    expect(db.checkout.status).toBe('pending');
+    // ...but an already-created order still settles exactly as before.
+    expect(await (await handleEcpayCallback(callbackRequest(fields), disabled)).text()).toBe('1|OK');
+    expect(db.balance).toBe(400);
     expect(db.orders).toHaveLength(1);
   });
 
