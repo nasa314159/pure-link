@@ -1,4 +1,5 @@
 import { escapeHtml } from './http.js';
+import { listAiCreditPacks } from './credit-products.js';
 import { hashManagementToken } from './security.js';
 
 import { renderFormulaContent } from './formula.js';
@@ -13,6 +14,17 @@ function clientMessagesMarkup(locale) {
 
 function localizedHref(locale, path = '') {
   return localizedPath(locale, path);
+}
+
+// Canonical catalog text for the public pricing page. Rendered only when the
+// server-side purchase gate explicitly enables NEW purchases; the account page
+// remains the only place that starts a checkout.
+function creditPackSummary(locale) {
+  const billing = getMessages(locale).billing;
+  return listAiCreditPacks().map((pack) => billing.pack
+    .replace('{name}', billing.packNames[pack.id])
+    .replace('{credits}', Number(pack.credits).toLocaleString('en-US'))
+    .replace('{price}', Number(pack.priceTwd).toLocaleString('en-US'))).join(locale === 'en' ? '. ' : '。');
 }
 
 function languageSwitcher(locale, page = '') {
@@ -1048,7 +1060,10 @@ export function renderReportPage(slug, nonce, turnstileSiteKey = '', locale = 'z
   });
 }
 
-export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, googleSiteVerification = '') {
+// `purchasesEnabled` is the server-side gate result (fail-closed default):
+// without it the pricing page keeps the neutral public-beta message and no
+// purchase CTA, regardless of provider configuration.
+export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, googleSiteVerification = '', purchasesEnabled = false) {
   const pages = {
     privacy: {
       eyebrow: 'PRIVACY',
@@ -1125,7 +1140,11 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, google
     ? {
       ...baseContent,
       sections: baseContent.sections.map(([heading, copy]) => {
-        if (heading === 'One-time plans' || heading === '一次性方案') return [heading, m.billing.betaUnavailable];
+        // The canonical pack list is restored only when the server-side
+        // purchase gate explicitly enables NEW purchases; otherwise the
+        // neutral public-beta message stays, so the page never advertises
+        // checkouts the server would reject.
+        if (heading === 'One-time plans' || heading === '一次性方案') return [heading, purchasesEnabled ? `${creditPackSummary(locale)}${locale === 'en' ? '. These are one-time purchases, not subscriptions.' : '。這些都是一次性購買，不是訂閱。'}` : m.billing.betaUnavailable];
         if (heading === 'Payment status' || heading === '付款狀態') return [heading, paymentStatus];
         return [heading, copy];
       }),
@@ -1149,6 +1168,7 @@ export function renderLegalPage(page, locale = 'zh-Hant', providers = {}, google
           <h1 class="legal-title">${escapeHtml(content.title)}</h1>
           <p class="lede legal-intro">${escapeHtml(content.intro)}</p>
           <div class="legal-sections">${content.sections.map(([heading, copy]) => `<section><h2>${escapeHtml(heading)}</h2><p>${escapeHtml(copy)}</p></section>`).join('')}</div>
+          ${page === 'ai-credits' && purchasesEnabled && paymentProviders.length ? `<p class="legal-purchase"><a href="${localizedHref(locale, 'account')}">${m.billing.purchase}</a></p>` : ''}
           ${page === 'ai-credits' ? `<p class="legal-contact"><a href="${localizedHref(locale, 'refund-policy')}">${locale === 'en' ? 'Refund policy' : '退款政策'}</a> · <a href="mailto:nasa3.14159@gmail.com">${locale === 'en' ? 'Support: nasa3.14159@gmail.com' : '支援：nasa3.14159@gmail.com'}</a></p>` : ''}
           <nav class="legal-nav" aria-label="${escapeHtml(m.page.policyNav)}"><a href="${localizedHref(locale)}">PureLink</a><a href="${localizedHref(locale, 'ai-credits')}">${m.page.aiCreditsNav}</a><a href="${localizedHref(locale, 'support')}">${m.support.button}</a><a href="${localizedHref(locale, 'refund-policy')}">${m.page.refundPolicyNav}</a><a href="${localizedHref(locale, 'privacy')}">${m.home.privacyLink}</a><a href="${localizedHref(locale, 'terms')}">${m.home.termsLink}</a><a href="${localizedHref(locale, 'transparency')}">${m.home.transparencyLink}</a></nav>
           ${languageSwitcher(locale, page)}
@@ -1452,7 +1472,7 @@ export function renderManagePage(link, nonce, user = null, googleAuthConfigured 
   });
 }
 
-export function renderAccountPage(user, links, creditBalance = 0, providers = {}, purchaseStatus = '', nonce = '', locale = 'zh-Hant') {
+export function renderAccountPage(user, links, creditBalance = 0, providers = {}, purchaseStatus = '', nonce = '', locale = 'zh-Hant', purchasesEnabled = false) {
   const m = getMessages(locale);
   // Account owners manage Formula and Card content directly on the shared
   // content page (which carries their owner-only controls), and URL content
@@ -1467,7 +1487,16 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
     : purchaseStatus === 'pending'
       ? `<p class="auth-notice" role="status"><strong>${m.billing.pending}</strong><span>${m.billing.pendingHelp}</span></p>`
       : '';
-  const packActions = `<p class="billing-status">${escapeHtml(m.billing.betaUnavailable)}</p>`;
+  // Purchase controls are rendered only when the server-side purchase gate is
+  // explicitly enabled AND at least one independently configured payment
+  // provider is available; otherwise the neutral public-beta message stays, so
+  // the buttons never advertise a checkout the server would reject.
+  const enabledProviders = purchasesEnabled
+    ? [providers.ecpay ? ['ecpay', m.billing.providerEcpay] : null, providers.lemon ? ['lemon', m.billing.providerLemon] : null].filter(Boolean)
+    : [];
+  const packActions = enabledProviders.length
+    ? `<div class="credit-pack-list">${listAiCreditPacks().map((pack) => `<section class="credit-pack"><strong>${escapeHtml(m.billing.packNames[pack.id])}</strong><span>${escapeHtml(m.billing.pack.replace('{name}', m.billing.packNames[pack.id]).replace('{credits}', Number(pack.credits).toLocaleString('en-US')).replace('{price}', Number(pack.priceTwd).toLocaleString('en-US')))}</span>${enabledProviders.length > 1 ? `<small>${m.billing.providerChoice}</small>` : ''}<div class="provider-choices">${enabledProviders.map(([provider, name]) => `<button type="button" data-billing-checkout data-provider="${provider}" data-pack-id="${pack.id}">${escapeHtml(enabledProviders.length > 1 ? name : m.billing.buy)}</button>`).join('')}</div></section>`).join('')}</div><p class="billing-status" id="billing-status" role="status" hidden></p>`
+    : `<p class="billing-status">${escapeHtml(m.billing.betaUnavailable)}</p>`;
   return documentShell({
     title: m.account.title,
     description: m.account.intro,
@@ -1485,6 +1514,7 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
             <p class="eyebrow">${m.page.creditsEyebrow}</p>
             <h2 id="account-credits-title">${m.account.credits.replace('{count}', Math.max(0, Number(creditBalance || 0)))}</h2>
             <p>${m.account.creditsHelp}</p>
+            <p><strong>${m.billing.packs}</strong></p>
             ${packActions}
             <p><a href="${localizedHref(locale, 'ai-credits')}">${m.account.productInfo}</a> · <a href="${localizedHref(locale, 'support')}">${m.support.button}</a> · <a href="${localizedHref(locale, 'refund-policy')}">${m.account.refund}</a></p>
           </section>
@@ -1494,7 +1524,46 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
         </article>
       </main>
     `,
-    script: '',
+    // The checkout flow mirrors the support page: disable every pack button
+    // while a checkout is opening, then either follow the provider's hosted
+    // checkout URL (Lemon Squeezy) or submit the signed ECPay form. Credits are
+    // never granted here — the server checkout endpoint re-verifies the gate,
+    // providers, pack, session, origin, and rate limit, and only verified
+    // provider callbacks add credits later.
+    script: enabledProviders.length ? `
+      const billingMessages = ${JSON.stringify(m.billing).replaceAll('<', '\\u003c')};
+      const billingStatus = document.getElementById('billing-status');
+      document.querySelectorAll('[data-billing-checkout]').forEach((buyButton) => buyButton.addEventListener('click', async () => {
+        const allButtons = document.querySelectorAll('[data-billing-checkout]');
+        allButtons.forEach((button) => { button.disabled = true; });
+        billingStatus.hidden = false;
+        billingStatus.textContent = billingMessages.opening;
+        try {
+          const response = await fetch('/api/billing/checkout', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-purelink-locale': ${JSON.stringify(locale)} },
+            body: JSON.stringify({ provider: buyButton.dataset.provider, packId: buyButton.dataset.packId }),
+          });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || billingMessages.failed);
+          if (payload.checkoutUrl) location.assign(payload.checkoutUrl);
+          else if (payload.action && payload.fields) {
+            const form = document.createElement('form');
+            form.method = 'post';
+            form.action = payload.action;
+            Object.entries(payload.fields).forEach(([name, value]) => {
+              const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value; form.append(input);
+            });
+            document.body.append(form);
+            form.submit();
+          } else throw new Error(billingMessages.failed);
+        } catch (error) {
+          billingStatus.textContent = error.message;
+          billingStatus.dataset.error = 'true';
+          allButtons.forEach((button) => { button.disabled = false; });
+        }
+      }));
+    ` : '',
     nonce,
   });
 }

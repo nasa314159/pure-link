@@ -16,6 +16,8 @@ They are one-time purchases for AI formula drafts only. URL shortening, manual f
 
 Checkout is fail-closed. It is visible only when a rail's enable flag is exactly `true` and its complete configuration is present.
 
+New AI-credit purchases additionally require the deployment-wide gate `AI_CREDIT_PURCHASES_ENABLED` to be the exact string `true`. It is absent, unset, or `false` in the production configuration, so production checkout stays disabled regardless of provider settings; only a deliberately configured non-production deployment may set it. Absent, empty, `false`, and malformed values are all fail-closed (`true ` trimmed whitespace counts; `TRUE`, `1`, `on`, and typos never enable). This gate affects only NEW checkouts: webhooks, credit balances, already-created orders, refunds, and the independent support rails are unchanged either way.
+
 The production deployment uses `https://no-no.uk` as its public origin. Keep this value configured so provider callbacks and browser result pages cannot be redirected to a request-dependent origin.
 
 Lemon Squeezy (international / merchant of record):

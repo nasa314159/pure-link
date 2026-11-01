@@ -289,9 +289,10 @@ describe('PureLink worker', () => {
     await expect(response.json()).resolves.toMatchObject({ error: 'Sign in before purchasing AI formula credits.' });
   });
 
-  it('refuses paid AI credit checkout for signed-in users during the public beta', async () => {
+  // Server-side activation gate for NEW AI credit purchases: stays fail-closed
+  // by default in every deployment, independent of provider configuration.
+  it('refuses new paid AI credit checkout by default even with payment providers configured', async () => {
     Object.assign(env, {
-      APP_ENV: 'production',
       RATE_LIMIT_SECRET: 'rate-limit-test-secret',
       LEMON_SQUEEZY_CHECKOUT_ENABLED: 'true',
       LEMON_SQUEEZY_API_KEY: 'lemon-api-key',
@@ -316,6 +317,86 @@ describe('PureLink worker', () => {
     await expect(response.json()).resolves.toMatchObject({
       error: 'AI credit checkout is not available yet.',
     });
+  });
+
+  it('rejects a malformed AI credit purchase flag fail-closed', async () => {
+    Object.assign(env, {
+      RATE_LIMIT_SECRET: 'rate-limit-test-secret',
+      ECPAY_CHECKOUT_ENABLED: 'true',
+      ECPAY_MERCHANT_ID: '2000132',
+      ECPAY_HASH_KEY: 'test-hash-key-12',
+      ECPAY_HASH_IV: 'test-hash-iv-123',
+      ECPAY_ENVIRONMENT: 'stage',
+      PUBLIC_ORIGIN: 'https://pure.test',
+    });
+    for (const [index, badValue] of ['TRUE', 'True', '1', 'yes', 'on', 'true7'].entries()) {
+      env.AI_CREDIT_PURCHASES_ENABLED = badValue;
+      // A fresh account per attempt: the checkout rate limiter (5 attempts per
+      // 10 minutes per account) is exercised separately, not here.
+      const token = await authenticateTestUser(env, { id: `user-${index}`, email: `person${index}@example.com`, display_name: 'Person', avatar_url: null, is_admin: 0 });
+      const response = await worker.fetch(new Request('https://pure.test/api/billing/checkout', {
+        method: 'POST',
+        headers: { origin: 'https://pure.test', 'content-type': 'application/json', cookie: `purelink_session=${token}`, 'x-purelink-locale': 'en' },
+        body: JSON.stringify({ provider: 'ecpay', packId: 'small' }),
+      }), env);
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({ error: 'AI credit checkout is not available yet.' });
+      expect(env.pure_link_db.ecpayCheckoutRequests).toHaveLength(0);
+    }
+    delete env.AI_CREDIT_PURCHASES_ENABLED;
+  });
+
+  it('accepts explicitly enabled non-production checkout without weakening the provider checks', async () => {
+    Object.assign(env, {
+      RATE_LIMIT_SECRET: 'rate-limit-test-secret',
+      ECPAY_CHECKOUT_ENABLED: 'true',
+      ECPAY_MERCHANT_ID: '2000132',
+      ECPAY_HASH_KEY: 'test-hash-key-12',
+      ECPAY_HASH_IV: 'test-hash-iv-123',
+      ECPAY_ENVIRONMENT: 'stage',
+      PUBLIC_ORIGIN: 'https://pure.test',
+      AI_CREDIT_PURCHASES_ENABLED: 'true',
+    });
+    const sessionToken = await authenticateTestUser(env);
+    const response = await worker.fetch(new Request('https://pure.test/api/billing/checkout', {
+      method: 'POST',
+      headers: { origin: 'https://pure.test', 'content-type': 'application/json', cookie: `purelink_session=${sessionToken}`, 'x-purelink-locale': 'en' },
+      body: JSON.stringify({ provider: 'ecpay', packId: 'standard' }),
+    }), env);
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.action).toBe('https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5');
+    expect(payload.fields.TotalAmount).toBe('300');
+    expect(env.pure_link_db.ecpayCheckoutRequests).toHaveLength(1);
+    expect(env.pure_link_db.ecpayCheckoutRequests[0]).toMatchObject({
+      pack_id: 'standard', expected_amount: 300, expected_credits: 400, user_id: 'user-1',
+    });
+  });
+
+  it('rejects invalid packs and unknown providers when purchases are enabled', async () => {
+    Object.assign(env, {
+      RATE_LIMIT_SECRET: 'rate-limit-test-secret',
+      ECPAY_CHECKOUT_ENABLED: 'true',
+      ECPAY_MERCHANT_ID: '2000132',
+      ECPAY_HASH_KEY: 'test-hash-key-12',
+      ECPAY_HASH_IV: 'test-hash-iv-123',
+      ECPAY_ENVIRONMENT: 'stage',
+      PUBLIC_ORIGIN: 'https://pure.test',
+      AI_CREDIT_PURCHASES_ENABLED: 'true',
+    });
+    const sessionToken = await authenticateTestUser(env);
+    const post = (body) => worker.fetch(new Request('https://pure.test/api/billing/checkout', {
+      method: 'POST',
+      headers: { origin: 'https://pure.test', 'content-type': 'application/json', cookie: `purelink_session=${sessionToken}`, 'x-purelink-locale': 'en' },
+      body: JSON.stringify(body),
+    }), env);
+    const invalidPack = await post({ provider: 'ecpay', packId: 'jumbo' });
+    expect(invalidPack.status).toBe(400);
+    await expect(invalidPack.json()).resolves.toMatchObject({ error: 'This AI credit pack is not available.' });
+    const unknownProvider = await post({ provider: 'creem', packId: 'small' });
+    expect(unknownProvider.status).toBe(400);
+    await expect(unknownProvider.json()).resolves.toMatchObject({ error: 'Choose an available payment provider.' });
+    expect(env.pure_link_db.ecpayCheckoutRequests).toHaveLength(0);
   });
 
   it('logs out an authenticated user with a normal same-origin Origin', async () => {
@@ -1230,6 +1311,7 @@ class MemoryD1 {
     this.rateLimits = new Map();
     this.lemonCheckoutRequests = 0;
     this.ecpayOrders = [];
+    this.ecpayCheckoutRequests = [];
   }
 
   prepare(sql) {
@@ -1353,6 +1435,13 @@ class MemoryStatement {
     }
     if (this.sql.startsWith('INSERT INTO lemon_checkout_requests')) {
       this.db.lemonCheckoutRequests += 1;
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith('INSERT INTO ecpay_checkout_requests')) {
+      const [id, merchantTradeNo, userId, packId, expectedAmount, expectedCredits] = this.values;
+      this.db.ecpayCheckoutRequests.push({
+        id, merchant_trade_no: merchantTradeNo, user_id: userId, pack_id: packId, expected_amount: expectedAmount, expected_credits: expectedCredits,
+      });
       return { success: true, meta: { changes: 1 } };
     }
     if (this.sql.startsWith('DELETE FROM user_sessions')) {

@@ -20,7 +20,7 @@ import { BillingError, getCreditBalance, handleCreemWebhook } from './billing.js
 import { handleEcpayBrowserReturn, handleEcpayCallback } from './ecpay.js';
 import { createEcpaySupportCheckout, getEcpaySupportTotals, handleEcpaySupportBrowserReturn, handleEcpaySupportCallback, isEcpaySupportCheckoutConfigured } from './ecpay-support.js';
 import { createLemonSupportCheckout, getSupportTotals, handleLemonSqueezyWebhook, isLemonSupportConfigured } from './lemon-squeezy.js';
-import { createCreditCheckout, enabledPaymentProviders, PaymentError } from './payments.js';
+import { createCreditCheckout, enabledPaymentProviders, isAiCreditPurchasesEnabled, PaymentError } from './payments.js';
 import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
 import { cleanupExpiredNativeCreateTokens, consumeNativeCreateToken, issueNativeCreateToken, readNativeCardInput } from './native-cards.js';
 
@@ -110,7 +110,7 @@ export async function routeRequest(request, env, context) {
   }
   if (isPublicRead && ['privacy', 'terms', 'transparency', 'ai-credits', 'refund-policy'].includes(path)) {
     if (!localeRoute) return redirect(localizedPath(locale, path), 302);
-    return publicReadResponse(request, html(renderLegalPage(path, locale, enabledPaymentProviders(env), env.GOOGLE_SITE_VERIFICATION || '')));
+    return publicReadResponse(request, html(renderLegalPage(path, locale, enabledPaymentProviders(env), env.GOOGLE_SITE_VERIFICATION || '', isAiCreditPurchasesEnabled(env))));
   }
   if (isPublicRead && path === 'support') {
     if (!localeRoute) return redirect(localizedPath(locale, path), 302);
@@ -168,15 +168,22 @@ export async function routeRequest(request, env, context) {
     const user = await getCurrentUser(request, env);
     if (!user) return redirect(`/auth/google?returnTo=${encodeURIComponent(localizedPath(locale, 'account'))}`);
     const nonce = createSlug() + createSlug();
+    // Server-decided purchase availability: the gate and provider checks live
+    // here so the rendered buttons always match what /api/billing/checkout
+    // would actually accept. If either is off, the page shows the neutral
+    // public-beta message instead of purchase controls.
+    const purchaseProviders = enabledPaymentProviders(env);
+    const purchasesEnabled = isAiCreditPurchasesEnabled(env) && Boolean(purchaseProviders.ecpay || purchaseProviders.lemon);
     return html(renderAccountPage(
       user,
       await repository.listByOwner(user.id),
       await getCreditBalance(env.pure_link_db, user.id),
-      enabledPaymentProviders(env),
+      purchaseProviders,
       requestUrl.searchParams.get('purchase'),
       nonce,
       locale,
-    ), {}, { scriptNonce: nonce, ecpayCheckout: enabledPaymentProviders(env).ecpay });
+      purchasesEnabled,
+    ), {}, { scriptNonce: nonce, ecpayCheckout: purchaseProviders.ecpay });
   }
 
   if (request.method === 'POST' && path === 'api/billing/checkout') {
