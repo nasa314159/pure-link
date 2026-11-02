@@ -1373,6 +1373,7 @@ class MemoryStatement {
   async all() {
     if (this.sql.startsWith('SELECT public_display_name FROM lemon_support_contributions')) return { results: [] };
     if (this.sql.startsWith('SELECT contribution.public_name,') && this.sql.includes('ecpay_support_contributions')) return { results: [] };
+    if (this.sql.startsWith('SELECT donation.public_name') && this.sql.includes('kofi_donations')) return { results: [] };
     if (this.sql.startsWith('SELECT day, SUM(amount)')) return { results: [] };
     if (this.sql.startsWith('SELECT slug, content_type')) {
       const ownerUserId = this.values[0];

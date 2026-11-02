@@ -96,6 +96,40 @@ Lemon 退款 webhook 使用供應商提供的累積 `total`、`refunded_amount`�
 
 Lemon Squeezy 的歷史支持資料表與已簽名 webhook 路徑會完整保留，以支援國際支持紀錄。本次變更不會重用它們作為 ECPay NTD 帳本，也不會自動啟用它們。
 
+## Ko-fi 捐款收據（Phase 1）
+
+Ko-fi 讓支持者直接向創作者付款（Ko-fi/PayPal/Stripe），因此 PureLink 無法自行驗證款項是否到帳。Ko-fi 捐款收據只作為供應商發出的記帳憑證，記錄在專屬軌道上。資料表完全獨立（`kofi_donations`、`kofi_webhook_events`、`kofi_refund_reconciliations`），沒有使用者、方案、額度、餘額或加額觸發器，絕不與 AI 額度訂單或餘額混用。Ko-fi 事件永遠不會推導出 PureLink 帳號，也不會授予任何權益；Ko-fi 會員付款在 Phase 1 明確忽略（只以 `membership` webhook 事件留作識別，絕不記為捐款）。
+
+### Webhook 接收路徑
+
+`POST /api/webhooks/kofi` 只接受 Ko-fi 的 `application/x-www-form-urlencoded` 傳送格式（單一 `data` 欄位內含 JSON 負載），並嚴格驗證：封閉欄位允許清單、verification token 以 `constantTimeEqual` 恆時比對、8 KiB 請求上限、正數小數金額以字串運算轉為整數最小單位（不使用浮點運算）、三個大寫字母的幣別、ISO-8601 UTC `timestamp`，以及付款識別碼驗證。受支援的付款事件只有 `type: "Donation"`（以嚴格布林 `is_subscription_payment` 區分單次與每月定期捐款付款）。`Subscription`、`Shop Order`、`Commission` 事件只會確認並記錄在 `kofi_webhook_events`（`membership`／`shop_order`／`commission`），不會記為捐款；其他任何事件類型直接拒絕。
+
+Ko-fi 的驗證 token 內嵌於負載之中，無法綁定負載欄位，因此刻意視為**弱於** ECPay CheckMacValue 與 Lemon Squeezy 的 body HMAC。token 只存為 Worker secret（`KOFI_WEBHOOK_TOKEN`；短缺於 16 字元或不存在時一律關閉）。Worker 絕不記錄 token、webhook 內容或付款人 email。接收端純屬收據性質：不加 AI 額度、不識別會員、不回填歷史（Ko-fi 只通知新付款）。
+
+去重由資料庫強制：`kofi_transaction_id` 是 `kofi_donations` 主鍵、`kofi_message_id` 有 UNIQUE 約束，因此同一則 webhook 的重複投遞是冪等的；重用既有識別碼但內容衝突的負載會被拒絕（HTTP 409），絕不覆寫已儲存的金額、幣別、收據類型或時間戳。
+
+### 隱私與營運人員歸屬設定
+
+每筆新的 Ko-fi 收據在 PureLink 一律為私密（`attribution_state = 'private'`），與 Ko-fi 的 `is_public` 旗標無關。公開顯示絕不因收錄而自動發生，收錄時也不會儲存負載中的 `email`、留言或顯示名稱。只有在營運人員另行記錄 PureLink 的歸屬決定後，支持者名稱、留言或確切金額才會出現在支持頁，且名稱、留言、金額各自獨立授權：
+
+1. 先在 Ko-fi 交易紀錄與對應的 PayPal/Stripe 帳單中驗證收據。
+2. 向支持者另行確認願意公開名稱、留言和／或金額（Ko-fi 的 `is_public` 不視為 PureLink 上的同意）。
+3. 記錄營運人員整理過的歸屬內容（名稱 ≤60 字元、留言 ≤2000 字元；渲染前 `@` 會加上零寬字元中和，HTML 於渲染時跳脫），例如：
+   `wrangler d1 execute pure-link-production --remote --command "UPDATE kofi_donations SET attribution_state = 'authorized', public_name = 1, public_display_name = '<name>', public_message = 1, public_message_text = '<message>', public_amount = 1 WHERE kofi_transaction_id = '<transaction id>'"`
+   只設定支持者實際授權的旗標，其餘保持預設。
+4. 已歸屬的項目隨後以收款幣別、沿用既有支持者列表設計呈現。收款幣別之間永遠不會加總或換算，既有的 NTD 總額、歷程圖與 ECPay 捐款語意維持不變。
+
+### 退款與對帳
+
+Ko-fi 不會發送退款 webhook，退款狀態也絕不會從後續付款事件推導。只有在 Ko-fi/PayPal/Stripe 後台完成並核對實際退款後（與 ECPay 流程相同），才以人工方式在附加-only 的 `kofi_refund_reconciliations` 帳本記錄：以原始 `kofi_transaction_id`、退款金額（最小單位）、該捐款幣別與內部註記新增 `refund` 列。資料庫觸發器會拒絕未知交易、幣別不符、超過原捐款的累計退款，以及對已記錄列的修改。完全退款的捐款會從已歸屬的支持者列表消失。絕不依瀏覽器返回、來信說法或未核對的截圖記錄退款。
+
+### 設定與 QA
+
+- 營運步驟：在 `https://ko-fi.com/manage/webhooks` 建立 webhook 指向 `https://no-no.uk/api/webhooks/kofi`，並將 `KOFI_WEBHOOK_TOKEN` 存為 Worker secret。token 不存在時端點一律回 503，屬於 fail-closed。
+- 在獲得明確 QA 授權之前，不要在正式環境觸發 Ko-fi 開發者控制台的測試 webhook；`test/kofi.spec.js` 的合成 fixtures 已涵蓋接收路徑。
+- 幣別限制（既有假設）：Ko-fi 的小數字串以兩位小數幣別呈現假設進行轉換。若零小數位幣別的實際負載與此不同，先回報負責人再啟用顯示，不要擴大接收器。
+
+
 ### 支持正式環境 QA
 
 - 既有的 ECPay MerchantID、HashKey、HashIV 只能存為 Worker secret；只有在營運人員套用 migration 後，才把 `ECPAY_ENVIRONMENT=production`、`PUBLIC_ORIGIN=https://no-no.uk` 與 `ECPAY_SUPPORT_CHECKOUT_ENABLED=true` 設為一般變數。

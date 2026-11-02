@@ -20,6 +20,7 @@ import { BillingError, getCreditBalance, handleCreemWebhook } from './billing.js
 import { handleEcpayBrowserReturn, handleEcpayCallback } from './ecpay.js';
 import { createEcpaySupportCheckout, getEcpaySupportTotals, handleEcpaySupportBrowserReturn, handleEcpaySupportCallback, isEcpaySupportCheckoutConfigured } from './ecpay-support.js';
 import { createLemonSupportCheckout, getSupportTotals, handleLemonSqueezyWebhook, isLemonSupportConfigured } from './lemon-squeezy.js';
+import { getKofiSupportTotals, handleKofiWebhook } from './kofi.js';
 import { createCreditCheckout, enabledPaymentProviders, isAiCreditPurchasesEnabled, PaymentError } from './payments.js';
 import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
 import { cleanupExpiredNativeCreateTokens, consumeNativeCreateToken, issueNativeCreateToken, readNativeCardInput } from './native-cards.js';
@@ -120,13 +121,17 @@ export async function routeRequest(request, env, context) {
       lemon: isLemonSupportConfigured(env),
     };
     const checkoutConfigured = (supportProviders.ecpay || supportProviders.lemon) && isPublicWriteProtectionConfigured(env);
-    const [lemonTotals, ecpayTotals] = await Promise.all([getSupportTotals(env.pure_link_db), getEcpaySupportTotals(env.pure_link_db)]);
+    const [lemonTotals, ecpayTotals, kofiTotals] = await Promise.all([
+      getSupportTotals(env.pure_link_db), getEcpaySupportTotals(env.pure_link_db), getKofiSupportTotals(env.pure_link_db),
+    ]);
     return publicReadResponse(request, html(renderSupportPage(
       {
         ...lemonTotals,
         netTwd: ecpayTotals.netTwd,
         contributionCount: Number(lemonTotals.contributionCount || 0) + Number(ecpayTotals.contributionCount || 0),
-        publicSupporters: [...ecpayTotals.publicSupporters, ...lemonTotals.publicSupporters],
+        // Ko-fi receipts are private until an operator records attribution;
+        // render only operator-authorized entries in provider currency.
+        publicSupporters: [...ecpayTotals.publicSupporters, ...kofiTotals.publicSupporters, ...lemonTotals.publicSupporters],
         history: ecpayTotals.history,
       },
       checkoutConfigured ? supportProviders : {}, requestUrl.searchParams.get('support') === 'pending' ? 'pending' : requestUrl.searchParams.get('thanks') === '1' ? 'thanks' : '', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '', env.GOOGLE_SITE_VERIFICATION || '',
@@ -163,6 +168,7 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'POST' && path === 'api/payment-return/ecpay') return handleEcpayBrowserReturn(requestUrl);
   if (request.method === 'POST' && path === 'api/webhooks/ecpay-support') return handleEcpaySupportCallback(request, env);
   if (request.method === 'POST' && path === 'api/payment-return/ecpay-support') return handleEcpaySupportBrowserReturn(requestUrl);
+  if (request.method === 'POST' && path === 'api/webhooks/kofi') return handleKofiWebhook(request, env);
   if (request.method === 'GET' && path === 'account') {
     if (!localeRoute) return redirect(localizedPath(locale, 'account'), 302);
     const user = await getCurrentUser(request, env);
