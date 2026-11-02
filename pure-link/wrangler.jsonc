@@ -13,7 +13,19 @@
 	"vars": {
 		"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL",
 		"PUBLIC_ORIGIN": "https://no-no.uk",
-		"CREEM_PRODUCT_300_ID": "prod_4UdvN9knG2AzhhktS3Nwj9"
+		"CREEM_PRODUCT_300_ID": "prod_4UdvN9knG2AzhhktS3Nwj9",
+		// Non-credential payment configuration lives here as the single
+		// documented source of truth (see docs/BILLING.*.md): these values are
+		// intentionally NOT secrets so their effective state is inspectable and
+		// survives every deploy. The exact strings are the fail-closed gate
+		// values recognized in src/payments.js, src/ecpay.js, and
+		// src/lemon-squeezy.js; anything else is treated as disabled.
+		// ECPay merchant credentials (ECPAY_MERCHANT_ID, ECPAY_HASH_KEY,
+		// ECPAY_HASH_IV) and the Donate rail flag (ECPAY_SUPPORT_CHECKOUT_ENABLED)
+		// remain Worker secrets, managed out-of-band and never printed.
+		"AI_CREDIT_PURCHASES_ENABLED": "true",
+		"ECPAY_CHECKOUT_ENABLED": "true",
+		"ECPAY_ENVIRONMENT": "production"
 	},
 	// Binary module import rules (imported in src/index.js) for the Formula OG
 	// image feature (src/formula-og.js): the wordmark font is imported as Data
