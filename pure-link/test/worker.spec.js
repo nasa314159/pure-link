@@ -228,6 +228,19 @@ describe('PureLink worker', () => {
     expect(response.headers.get('content-security-policy')).not.toContain('https://challenges.cloudflare.com');
   });
 
+  it('shows the Ko-fi overseas link to signed-out visitors in both locales and adds no CSP source', async () => {
+    for (const [locale, button] of [
+      ['en', 'Donate to PureLink on Ko-fi (external site)'],
+      ['zh-Hant', '到 Ko-fi 贊助 PureLink（外部網站）'],
+    ]) {
+      const response = await worker.fetch(new Request(`https://pure.test/${locale}/support`), env);
+      const body = await response.text();
+      expect(response.status).toBe(200);
+      expect(body).toContain(`<a class="support-kofi-button" href="https://ko-fi.com/purelink" target="_blank" rel="noopener noreferrer">${button}</a>`);
+      expect(response.headers.get('content-security-policy')).not.toContain('ko-fi.com');
+    }
+  });
+
   it('enables Turnstile markup and only the required CSP sources for configured support checkout', async () => {
     Object.assign(env, {
       APP_ENV: 'production',

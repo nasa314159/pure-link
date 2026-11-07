@@ -19,6 +19,11 @@
 // amounts whose fractional digits exceed the currency's exponent.
 import { json } from './http.js';
 
+// The official Ko-fi destination shown on the support page as an ordinary
+// external link. Visitors leave PureLink before any payment detail is entered;
+// this rail only ever sees provider-emitted webhook receipts.
+export const KOFI_DONATION_URL = 'https://ko-fi.com/purelink';
+
 const MAX_WEBHOOK_BODY_BYTES = 8192;
 const MAX_AMOUNT_MINOR_UNITS = 100000000;
 const DONATION_TYPE = 'Donation';
