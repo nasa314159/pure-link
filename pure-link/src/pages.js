@@ -1569,6 +1569,17 @@ export function renderAccountPage(user, links, creditBalance = 0, providers = {}
   });
 }
 
+// Payment-action icons are small, self-contained inline SVGs so no third-party
+// script, SDK, font, or image request is involved. Both are generic brand-
+// style glyphs drawn with currentColor so hover/focus states stay coherent.
+function supportEcpayIcon() {
+  return `<svg class="support-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5.5" width="19" height="13" rx="2.2"/><line x1="2.5" y1="10" x2="21.5" y2="10"/><line x1="6" y1="15.4" x2="10.5" y2="15.4"/></svg>`;
+}
+
+function supportKofiIcon() {
+  return `<svg class="support-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 7.5h12v4.4a4.6 4.6 0 0 1-4.6 4.6h-2.8a4.6 4.6 0 0 1-4.6-4.6z"/><path d="M16.5 10.2h1.3a2.3 2.3 0 0 1 0 4.6h-1.3"/><path d="M3.5 19.5h14"/><path d="M10.5 10.2c1.05-.95 2.5.05 2.5 1.15 0 1.15-2.5 2.3-2.5 2.3s-2.5-1.15-2.5-2.3c0-1.1 1.45-2.1 2.5-1.15z" fill="currentColor" stroke="none"/></svg>`;
+}
+
 export function renderSupportPage(totals, checkoutProviders = {}, returnState = '', nonce = '', locale = 'zh-Hant', turnstileSiteKey = '', googleSiteVerification = '') {
   const m = getMessages(locale);
   const providers = typeof checkoutProviders === 'boolean' ? { ecpay: checkoutProviders, lemon: false } : checkoutProviders;
@@ -1585,21 +1596,31 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
   const amountControls = providers.ecpay ? `<section id="support-amount-controls"><p class="field-help" id="support-ecpay-description">${escapeHtml(m.support.ecpayDescription)}</p><label class="field-label" for="support-amount">${escapeHtml(m.support.amount)}</label><div class="support-presets" aria-label="${escapeHtml(m.support.amountPresets)}">${[100, 300, 500, 1000].map((amount) => `<button type="button" data-support-amount="${amount}" aria-pressed="${amount === 100 ? 'true' : 'false'}"${amount === 100 ? ' class="selected"' : ''}>NT$${amount}</button>`).join('')}</div><input id="support-amount" name="amount" type="number" min="50" max="10000" step="1" inputmode="numeric" value="100" required><p class="field-help">${escapeHtml(m.support.customAmount)}</p></section>` : '';
   const ecpayAttribution = providers.ecpay ? `<section id="support-ecpay-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" rows="3" aria-describedby="support-message-help support-message-counter support-message-counter-error"></textarea><p class="field-help" id="support-message-help">${escapeHtml(m.support.optionalMessageHelp)}</p><p class="field-counter" id="support-message-counter" data-limit="${MESSAGE_LIMIT}" aria-live="polite" aria-atomic="true"></p><p class="field-counter-error" id="support-message-counter-error" role="alert" aria-live="assertive" hidden></p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
   const lemonAttribution = providers.lemon ? `<section id="support-lemon-attribution"><label class="field-label" for="support-lemon-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-lemon-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicAttribution" value="true"><span>${escapeHtml(m.support.attribute)}</span></label></section>` : '';
+  // Payment actions. The production configuration (ECPay only) renders a
+  // balanced pair: a green ECPay submit button and a blue Ko-fi external
+  // link. Any other configuration keeps the previous single submit button
+  // untouched and offers Ko-fi as a standalone external action row, so the
+  // Ko-fi option stays reachable in every deployment without ever submitting
+  // the checkout form. The Ko-fi destination carries no query parameters:
+  // Ko-fi documents no amount- or currency-prefill contract, so the supporter
+  // always chooses and confirms the amount on ko-fi.com.
+  const ecpayActionCard = `<button type="submit" class="support-action support-action-ecpay" id="support-button">${supportEcpayIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.ecpayButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.ecpayMethod)}</span></span></button>`;
+  const kofiActionCard = `<a class="support-action support-action-kofi" href="${escapeHtml(KOFI_DONATION_URL)}" target="_blank" rel="noopener noreferrer">${supportKofiIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.kofiButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.kofiSubtitle)}</span></span></a>`;
+  const actionNotes = `<p class="field-help support-actions-note">${escapeHtml(m.support.actionsNote)}</p><p class="field-help support-actions-privacy">${escapeHtml(m.support.kofiPrivacy)}</p>`;
+  const submitActions = providers.ecpay && !providers.lemon
+    ? `<div class="support-actions">${ecpayActionCard}${kofiActionCard}</div>${actionNotes}`
+    : `<button class="create-button" id="support-button" type="submit">${escapeHtml(m.support.button)}</button>`;
+  const standaloneKofi = providers.ecpay && !providers.lemon ? '' : `<div class="support-actions support-actions-standalone">${kofiActionCard}</div>${actionNotes}`;
   const checkout = checkoutConfigured
-    ? `<form id="support-form">${providerChoices}${amountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${ecpayAttribution}${lemonAttribution}${turnstileWidget}<button class="create-button" id="support-button" type="submit">${escapeHtml(m.support.button)}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
+    ? `<form id="support-form">${providerChoices}${amountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${ecpayAttribution}${lemonAttribution}${turnstileWidget}${submitActions}<p class="billing-status" id="support-status" role="status" hidden></p></form>`
     : `<p class="billing-status">${m.support.unavailable}</p>`;
-  // The Ko-fi overseas option is an ordinary external link, rendered for every
-  // visitor in both locales — signed in or not, and even when no checkout rail
-  // is configured. It sits next to the checkout as the balanced international
-  // alternative, never submits the support form, and never grants AI credits.
-  const kofiSection = `<section class="support-kofi" id="support-kofi" aria-labelledby="support-kofi-title"><h2 id="support-kofi-title">${escapeHtml(m.support.kofiTitle)}</h2><p class="support-kofi-method">${escapeHtml(m.support.kofiMethod)}</p><p>${escapeHtml(m.support.kofiDescription)}</p><a class="support-kofi-button" href="${escapeHtml(KOFI_DONATION_URL)}" target="_blank" rel="noopener noreferrer">${escapeHtml(m.support.kofiButton)}</a><p>${escapeHtml(m.support.kofiExternal)}</p><p>${escapeHtml(m.support.kofiNotCredits)}</p></section>`;
   const supportHistory = renderSupportHistory(totals?.history || [], m.support, locale);
   const returnNotice = returnState === 'pending'
     ? `<p class="auth-notice" role="status">${escapeHtml(m.support.pending)}</p>`
     : returnState === 'thanks' ? `<p class="auth-notice" role="status">${escapeHtml(m.support.thanks)}</p>` : '';
   return documentShell({
     title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale, googleSiteVerification,
-    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}${kofiSection}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
+    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}${standaloneKofi}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
     script: `
       const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
       const MESSAGE_LIMIT = ${MESSAGE_LIMIT};
@@ -2184,13 +2205,19 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .support-history p, .support-history small { margin: 0; color: var(--muted); }
     .support-history svg { width: 100%; height: 6rem; color: var(--green); }
     .supporters ul { display: grid; gap: .45rem; margin: 0; padding-left: 1.15rem; color: var(--muted); }
-    .support-kofi { display: grid; gap: .45rem; margin: 1.1rem 0 0; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: #f8fbf9; }
-    .support-kofi h2 { margin: 0; font-size: .95rem; letter-spacing: .02em; }
-    .support-kofi p { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.55; }
-    .support-kofi p.support-kofi-method { color: var(--ink); font-weight: 600; }
-    .support-kofi-button { justify-self: start; display: inline-flex; align-items: center; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--ink); font-weight: 700; text-decoration: none; }
-    .support-kofi-button:hover, .support-kofi-button:focus-visible { border-color: var(--green); color: var(--green); }
-    @media (max-width: 38rem) { .support-kofi-button { justify-self: stretch; justify-content: center; } }
+    .support-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); gap: .55rem; margin: .9rem 0 .4rem; }
+    .support-action { display: grid; gap: .1rem; place-content: center; justify-items: center; min-height: 3.6rem; padding: .6rem .8rem; border: 0; border-radius: .9rem; color: white; font-weight: 700; text-decoration: none; cursor: pointer; }
+    .support-action-icon { width: 1.35rem; height: 1.35rem; }
+    .support-action-copy { display: grid; gap: .1rem; justify-items: center; }
+    .support-action-label { font-size: 1rem; }
+    .support-action-subtitle { font-size: .72rem; font-weight: 600; opacity: .9; }
+    .support-action-ecpay { background: var(--green); }
+    .support-action-ecpay:hover, .support-action-ecpay:focus-visible { background: var(--ink); }
+    .support-action-kofi { background: #1f7fa6; }
+    .support-action-kofi:hover, .support-action-kofi:focus-visible { background: #16628a; }
+    .support-action:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+    .support-actions-note, .support-actions-privacy { margin: 0 0 .25rem; color: var(--muted); }
+    @media (max-width: 38rem) { .support-actions { grid-template-columns: 1fr; } }
     .supporter-message { display: -webkit-box; -webkit-box-orient: vertical; line-clamp: 4; -webkit-line-clamp: 4; overflow: hidden; white-space: pre-wrap; word-break: break-word; line-height: 1.55; max-width: 100%; }
     .supporter-message-expanded { display: block; line-clamp: unset; -webkit-line-clamp: unset; overflow: visible; }
     .supporter-expand { width: auto; display: inline-block; padding: .2rem .5rem; margin: .25rem 0; border: 1px solid var(--line); border-radius: .4rem; background: white; color: var(--muted); font-size: .72rem; font-weight: 600; cursor: pointer; }
