@@ -125,6 +125,7 @@ describe('Ko-fi donation webhook', () => {
     for (const patch of [
       { amount: '0.00' }, { amount: '-1.00' }, { amount: '1.005' }, { amount: '1,234' }, { amount: ' ' }, { amount: 500 }, { amount: '123456789' },
       { currency: 'usd' }, { currency: 'USDT' }, { currency: 'US' }, { currency: '' },
+      { currency: 'KRW' }, { currency: 'KWD' }, { currency: 'CHF' }, { currency: 'XYZ' },
       { timestamp: '2026-13-40T10:20:30Z' }, { timestamp: '2026-01-02T03:04:05' }, { timestamp: 'Nov 2 2026' }, { timestamp: '' },
       { kofi_transaction_id: 'inv.alid' }, { kofi_transaction_id: '' },
       { message_id: '' }, { message_id: 'has space 012' },
@@ -133,6 +134,62 @@ describe('Ko-fi donation webhook', () => {
       if (response.status !== 400) throw new Error(`expected 400 for ${JSON.stringify(patch)}`);
     }
     expect(db.queries).toBe(0);
+  });
+
+  it('stores Ko-fi page currencies on the fixed two-decimal scale documented at ingest', async () => {
+    const db = new KofiDb();
+    for (const [currency, amount, minor] of [
+      ['USD', '5.25', 525], ['EUR', '12.00', 1200], ['GBP', '7.05', 705],
+      ['AUD', '3.30', 330], ['BRL', '10.00', 1000], ['CAD', '4.44', 444],
+      ['SGD', '9.99', 999], ['THB', '88.80', 8880], ['NZD', '2.05', 205],
+      // Zero-decimal JPY is NOT an ISO minor-unit value: the fixed two-decimal
+      // scale keeps 1500 JPY as 150000, and refunds and the public display
+      // divide by 100 in the same scale.
+      ['JPY', '1500', 150000],
+    ]) {
+      const txId = `tx-currency-${currency.toLowerCase()}-000001`;
+      const messageId = `msg-currency-${currency.toLowerCase()}-0001`;
+      expect((await handleKofiWebhook(validRequest(donationPayload({ amount, currency, kofi_transaction_id: txId, message_id: messageId })), environment(db))).status).toBe(200);
+      expect(db.donations.at(-1).amount_minor).toBe(minor);
+      expect(db.donations.at(-1).amount_text).toBe(amount);
+    }
+  });
+
+  it('fails closed on currencies outside Ko-fi\'s documented page-currency set', async () => {
+    const db = new KofiDb();
+    for (const [currency, amount] of [
+      ['KRW', '5000'], ['CHF', '10.00'], ['KWD', '12'], ['MXN', '50.00'], ['XYZ', '5.00'],
+    ]) {
+      const txId = `tx-nonkofi-${currency.toLowerCase()}-00001`;
+      expect((await handleKofiWebhook(validRequest(donationPayload({ amount, currency, kofi_transaction_id: txId })), environment(db))).status).toBe(400);
+    }
+    expect(db.donations).toHaveLength(0);
+  });
+
+  it('rejects fractional digits beyond the currency exponent, including sub-unit JPY', async () => {
+    const db = new KofiDb();
+    for (const patch of [
+      { amount: '1500.50', currency: 'JPY', kofi_transaction_id: 'tx-exponent-jpy-0000001' },
+      { amount: '1500.5', currency: 'JPY', kofi_transaction_id: 'tx-exponent-jpy-0000002' },
+      { amount: '5.255', currency: 'USD', kofi_transaction_id: 'tx-exponent-usd-000001' },
+      { amount: '10.999', currency: 'EUR', kofi_transaction_id: 'tx-exponent-eur-000001' },
+    ]) {
+      expect((await handleKofiWebhook(validRequest(donationPayload(patch)), environment(db))).status).toBe(400);
+    }
+    expect(db.donations).toHaveLength(0);
+  });
+
+  it('keeps stored amounts strictly inside the fixed-scale integer bound', async () => {
+    const db = new KofiDb();
+    expect((await handleKofiWebhook(validRequest(donationPayload({ amount: '1000000.00', kofi_transaction_id: 'tx-bound-last-000000001' })), environment(db))).status).toBe(200);
+    expect(db.donations[0].amount_minor).toBe(100000000);
+    for (const patch of [
+      { amount: '1000000.01', kofi_transaction_id: 'tx-bound-over-00000001' },
+      { amount: '99999999.99', kofi_transaction_id: 'tx-bound-over-00000002' },
+    ]) {
+      expect((await handleKofiWebhook(validRequest(donationPayload(patch)), environment(db))).status).toBe(400);
+    }
+    expect(db.donations).toHaveLength(1);
   });
 
   it('treats repeated delivery and replays as idempotent', async () => {
@@ -165,6 +222,18 @@ describe('Ko-fi donation webhook', () => {
     const currencyConflict = await handleKofiWebhook(validRequest(donationPayload({ currency: 'EUR' })), environment(db));
     expect(currencyConflict.status).toBe(409);
     expect(db.donations[0].currency).toBe('USD');
+  });
+
+  it('preserves the original zero-decimal amount and currency across identical and conflicting replay', async () => {
+    const db = new KofiDb();
+    const payload = donationPayload({ amount: '1500', currency: 'JPY' });
+    expect((await handleKofiWebhook(validRequest(payload), environment(db))).status).toBe(200);
+    expect(db.donations[0]).toMatchObject({ amount_minor: 150000, amount_text: '1500', currency: 'JPY' });
+    expect((await handleKofiWebhook(validRequest(payload), environment(db))).status).toBe(200);
+    const conflict = await handleKofiWebhook(validRequest(donationPayload({ amount: '2500', currency: 'JPY', message_id: '77777777-8888-9999-aaaa-bbbbccccdddd' })), environment(db));
+    expect(conflict.status).toBe(409);
+    expect(db.donations).toHaveLength(1);
+    expect(db.donations[0]).toMatchObject({ amount_minor: 150000, amount_text: '1500', currency: 'JPY' });
   });
 
   it('preserves unexpected event types without recording donations', async () => {
@@ -231,6 +300,22 @@ describe('Ko-fi donation webhook', () => {
     expect(html).toContain('NT$300');
   });
 
+  it('displays a zero-decimal JPY donation at its stated amount in its own currency', async () => {
+    const db = new KofiDb();
+    await handleKofiWebhook(validRequest(donationPayload({ amount: '1500', currency: 'JPY' })), environment(db));
+    db.authorize(db.donations[0].kofi_transaction_id, { name: 'jpy supporter', message: '' });
+    const totals = await getKofiSupportTotals(db);
+    expect(totals.publicSupporters).toEqual([{ name: 'jpy supporter', message: '', amountText: '1500.00', currency: 'JPY' }]);
+    const html = renderSupportPage({ netTwd: 0, netUsdMinor: 0, contributionCount: 1, history: [], ...totals }, {}, '', '', 'en');
+    // The fixed scale divides back to the stated amount; Intl renders JPY
+    // with its own zero-decimal precision. A misread ISO-minor-unit scale
+    // would show ¥15.00 here, a fixed-scale text with forced rounding would
+    // show ¥1,500.00.
+    expect(html).toContain('¥1,500');
+    expect(html).not.toContain('¥15.00');
+    expect(html).not.toContain('¥1,500.00');
+  });
+
   it('never sums donation currencies on the support page', async () => {
     const html = renderSupportPage({
       netTwd: 500, netUsdMinor: 1000, contributionCount: 3, history: [],
@@ -249,6 +334,7 @@ describe('Ko-fi donation webhook', () => {
 describe('Ko-fi donation schema and refund ledger guards', () => {
   const db = new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../migrations/0014_kofi_donations.sql', import.meta.url), 'utf8'));
+  db.exec(readFileSync(new URL('../migrations/0015_kofi_refund_unit_guard.sql', import.meta.url), 'utf8'));
 
   function insertDonation(db, overrides = {}) {
     const donation = {
@@ -305,6 +391,28 @@ describe('Ko-fi donation schema and refund ledger guards', () => {
       .run(txn)).toThrow(/exceeds donation amount/);
     const totals = await getKofiSupportTotals(totalAdapter);
     expect(totals.publicSupporters).toEqual([expect.objectContaining({ name: 'operator', amountText: '5.00', currency: 'USD' })]);
+  });
+
+  it('records zero-decimal JPY refunds in the donation\'s fixed two-decimal scale and refuses any other scale', async () => {
+    insertDonation(db, { transaction_id: 'ledger-transaction-00000006', message_id: 'ledger-message-0000000006', amount_minor: 150000, amount_text: '1500', currency: 'JPY' });
+    // A verified ¥300 refund is 300 × 100 in the fixed scale.
+    db.prepare("INSERT INTO kofi_refund_reconciliations (id, kofi_transaction_id, kind, amount_minor, currency, note) VALUES ('r6', 'ledger-transaction-00000006', 'refund', 30000, 'JPY', 'verified whole-yen refund × 100')").run();
+    // A refund entered in an ISO minor-unit reading (the yen itself) is
+    // misstated: 333 is not a whole number of yen on the stored scale.
+    expect(() => db.prepare("INSERT INTO kofi_refund_reconciliations (id, kofi_transaction_id, kind, amount_minor, currency, note) VALUES ('r7', 'ledger-transaction-00000006', 'refund', 333, 'JPY', 'ISO-unit misreading')")
+      .run()).toThrow(/unit mismatch/);
+    expect(() => db.prepare("UPDATE kofi_refund_reconciliations SET amount_minor = 333 WHERE id = 'r6'").run()).toThrow(/unit mismatch/);
+    // Two-decimal currencies still accept any cent-precise refund amount.
+    insertDonation(db, { transaction_id: 'ledger-transaction-00000007', message_id: 'ledger-message-0000000007', amount_minor: 1250 });
+    db.prepare("INSERT INTO kofi_refund_reconciliations (id, kofi_transaction_id, kind, amount_minor, currency, note) VALUES ('r8', 'ledger-transaction-00000007', 'refund', 1234, 'USD', 'cent-precise refund')").run();
+  });
+
+  it('displays the JPY net amount after a fixed-scale refund', async () => {
+    insertDonation(db, { transaction_id: 'ledger-transaction-00000008', message_id: 'ledger-message-0000000008', amount_minor: 150000, amount_text: '1500', currency: 'JPY' });
+    db.prepare("UPDATE kofi_donations SET attribution_state = 'authorized', public_name = 1, public_display_name = 'jpy net', public_amount = 1 WHERE kofi_transaction_id = 'ledger-transaction-00000008'").run();
+    db.prepare("INSERT INTO kofi_refund_reconciliations (id, kofi_transaction_id, kind, amount_minor, currency, note) VALUES ('r9', 'ledger-transaction-00000008', 'refund', 30000, 'JPY', '¥300 refund')").run();
+    const totals = await getKofiSupportTotals(d1From(db));
+    expect(totals.publicSupporters).toContainEqual(expect.objectContaining({ amountText: '1200.00', currency: 'JPY' }));
   });
 });
 

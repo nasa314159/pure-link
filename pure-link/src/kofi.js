@@ -8,11 +8,31 @@
 // (verification_token). Unlike ECPay's per-request MAC or Lemon Squeezy's
 // body HMAC, it does not cryptographically bind the payload fields, so Ko-fi
 // data is treated as bookkeeping evidence, not as a fulfillment instruction.
+//
+// Monetary-unit convention (fixed two-decimal scale): stored `amount_minor`
+// is the displayed amount times 100 in EVERY currency, including zero-decimal
+// ones such as JPY — it is NOT the ISO 4217 minor unit (1500 JPY is stored as
+// 150000, not 1500). Refund reconciliations record the same fixed scale, and
+// the public display divides the stored integer back by 100 and formats it in
+// the receipt currency with the currency's own precision (`Intl.NumberFormat`).
+// Parsing rejects currencies outside Ko-fi's documented page-currency set and
+// amounts whose fractional digits exceed the currency's exponent.
 import { json } from './http.js';
 
 const MAX_WEBHOOK_BODY_BYTES = 8192;
 const MAX_AMOUNT_MINOR_UNITS = 100000000;
 const DONATION_TYPE = 'Donation';
+// Ko-fi's documented page currencies (Ko-fi Help Center: "Does Ko-fi take a
+// fee?"), the creator picks one page currency and the webhook `amount` and
+// `currency` are denominated in it. The value is the currency's ISO 4217
+// fractional-digit exponent: JPY is the only zero-decimal currency Ko-fi
+// offers, every other supported one is two-decimal, and no three-decimal
+// currency (KWD, BHD, TND, ...) is offered. Undocumented or future currencies
+// fail closed here rather than being stored with an ambiguous unit.
+const KOFI_PAGE_CURRENCIES = Object.freeze({
+  JPY: 0,
+  USD: 2, EUR: 2, GBP: 2, AUD: 2, BRL: 2, CAD: 2, SGD: 2, THB: 2, NZD: 2,
+});
 const IGNORED_EVENT_TYPES = Object.freeze([
   // Membership payments are explicitly ignored in Phase 1. They are recorded
   // (recognition only) so repeat delivery stays idempotent, but they never
@@ -79,8 +99,10 @@ export async function getKofiSupportTotals(db) {
   };
 }
 
-// Display-only integer math: minor units back to a major-unit decimal string
-// without floating-point arithmetic.
+// Display-only integer math: the fixed two-decimal scale back to a major-unit
+// decimal string without floating-point arithmetic. For zero-decimal
+// currencies the major amount is what `Intl.NumberFormat` formats, so a
+// monetary value never changes on display — only the currency's own precision.
 function minorToDecimalText(minor) {
   const safe = Math.trunc(Number(minor));
   const major = Math.floor(safe / 100);
@@ -152,10 +174,10 @@ function parseDonationPayload(payload) {
   if (!messageId || !transactionId) return null;
   const timestamp = parseKofiTimestamp(payload.timestamp);
   if (!timestamp) return null;
-  const amountMinor = amountToMinorUnits(payload.amount);
-  if (amountMinor == null) return null;
   const currency = String(payload.currency || '');
-  if (!/^[A-Z]{3}$/.test(currency)) return null;
+  if (!/^[A-Z]{3}$/.test(currency) || !Object.hasOwn(KOFI_PAGE_CURRENCIES, currency)) return null;
+  const amountMinor = amountToMinorUnits(payload.amount, KOFI_PAGE_CURRENCIES[currency]);
+  if (amountMinor == null) return null;
   // Classification is driven only by strictly typed, payload-decided fields:
   // the documented Donation/Subscription examples always carry a strict
   // is_subscription_payment boolean, and anything else fails closed rather
@@ -174,11 +196,14 @@ function parseDonationPayload(payload) {
 }
 
 // Converts an exact decimal string to integer minor units with string math
-// only; no floating-point arithmetic touches stored amounts.
-function amountToMinorUnits(value) {
-  if (typeof value !== 'string') return null;
+// only; no floating-point arithmetic touches stored amounts. The fractional
+// part must fit the currency's ISO 4217 exponent before the fixed-scale
+// conversion, so a zero-decimal currency can never carry sub-unit digits.
+function amountToMinorUnits(value, fractionalDigits) {
+  if (typeof value !== 'string' || !Number.isInteger(fractionalDigits)) return null;
   const match = /^([0-9]{1,8})(?:\.([0-9]{1,2}))?$/.exec(value);
   if (!match) return null;
+  if ((match[2] || '').length > fractionalDigits) return null;
   const minor = Number(match[1]) * 100 + Number(`${match[2] || ''}00`.slice(0, 2));
   return minor > 0 && minor <= MAX_AMOUNT_MINOR_UNITS ? minor : null;
 }

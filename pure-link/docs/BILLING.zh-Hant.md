@@ -102,7 +102,7 @@ Ko-fi 讓支持者直接向創作者付款（Ko-fi/PayPal/Stripe），因此 Pur
 
 ### Webhook 接收路徑
 
-`POST /api/webhooks/kofi` 只接受 Ko-fi 的 `application/x-www-form-urlencoded` 傳送格式（單一 `data` 欄位內含 JSON 負載），並嚴格驗證：單一 `data` 欄位、verification token 以 `constantTimeEqual` 恆時比對、8 KiB 請求上限、正數小數金額以字串運算轉為整數最小單位（不使用浮點運算）、三個大寫字母的幣別、ISO-8601 UTC `timestamp`、付款識別碼驗證，以及用於收據分類的嚴格布林 `is_subscription_payment`。文件所列的必要欄位（`verification_token`、`message_id`、`timestamp`、`type`、`amount`、`currency`、`kofi_transaction_id`）絕不容許缺失。未記載、未來新增或無關的 Ko-fi 欄位（包括 `is_public`、`from_name`、`message`、`url`、`email`）一律安全忽略，絕不用於身分、金額、額度、退款或公開決定。受支援的付款事件只有 `type: "Donation"`（以嚴格布林 `is_subscription_payment` 區分單次與每月定期捐款付款）。`Subscription`、`Shop Order`、`Commission` 事件只會確認並記錄在 `kofi_webhook_events`（`membership`／`shop_order`／`commission`），不會記為捐款；其他任何事件類型直接拒絕。
+`POST /api/webhooks/kofi` 只接受 Ko-fi 的 `application/x-www-form-urlencoded` 傳送格式（單一 `data` 欄位內含 JSON 負載），並嚴格驗證：單一 `data` 欄位、verification token 以 `constantTimeEqual` 恆時比對、8 KiB 請求上限、正數小數金額以字串運算（不使用浮點運算）轉為固定兩位小數整數刻度 —— `amount_minor` 在所有幣別下皆為「顯示金額 × 100」，對零小數位幣別**並非** ISO 最小單位（1500 JPY 記錄為 `150000`，而非 `1500`），並依幣別的 ISO 4217 小數位數驗證小數位，且只接受 Ko-fi 官方文件列出的頁面幣別（JPY 為零小數位；USD、EUR、GBP、AUD、BRL、CAD、SGD、THB、NZD 為兩位小數）、ISO-8601 UTC `timestamp`、付款識別碼驗證，以及用於收據分類的嚴格布林 `is_subscription_payment`。文件所列的必要欄位（`verification_token`、`message_id`、`timestamp`、`type`、`amount`、`currency`、`kofi_transaction_id`）絕不容許缺失。未記載、未來新增或無關的 Ko-fi 欄位（包括 `is_public`、`from_name`、`message`、`url`、`email`）一律安全忽略，絕不用於身分、金額、額度、退款或公開決定。受支援的付款事件只有 `type: "Donation"`（以嚴格布林 `is_subscription_payment` 區分單次與每月定期捐款付款）。`Subscription`、`Shop Order`、`Commission` 事件只會確認並記錄在 `kofi_webhook_events`（`membership`／`shop_order`／`commission`），不會記為捐款；其他任何事件類型直接拒絕。
 
 Ko-fi 的驗證 token 內嵌於負載之中，無法綁定負載欄位，因此刻意視為**弱於** ECPay CheckMacValue 與 Lemon Squeezy 的 body HMAC。token 只存為 Worker secret（`KOFI_WEBHOOK_TOKEN`；短缺於 16 字元或不存在時一律關閉）。Worker 絕不記錄 token、webhook 內容或付款人 email。接收端純屬收據性質：不加 AI 額度、不識別會員、不回填歷史（Ko-fi 只通知新付款）。
 
@@ -121,7 +121,7 @@ Ko-fi 的驗證 token 內嵌於負載之中，無法綁定負載欄位，因此�
 
 ### 退款與對帳
 
-Ko-fi 不會發送退款 webhook，退款狀態也絕不會從後續付款事件推導。只有在 Ko-fi/PayPal/Stripe 後台完成並核對實際退款後（與 ECPay 流程相同），才以人工方式在附加-only 的 `kofi_refund_reconciliations` 帳本記錄：以原始 `kofi_transaction_id`、退款金額（最小單位）、該捐款幣別與內部註記新增 `refund` 列。資料庫觸發器會拒絕未知交易、幣別不符、超過原捐款的累計退款，以及對已記錄列的修改。完全退款的捐款會從已歸屬的支持者列表消失。絕不依瀏覽器返回、來信說法或未核對的截圖記錄退款。
+Ko-fi 不會發送退款 webhook，退款狀態也絕不會從後續付款事件推導。只有在 Ko-fi/PayPal/Stripe 後台完成並核對實際退款後（與 ECPay 流程相同），才以人工方式在附加-only 的 `kofi_refund_reconciliations` 帳本記錄：以原始 `kofi_transaction_id`、與 `amount_minor` 相同的固定兩位小數刻度（顯示金額 × 100，見上方輸入慣例；例如 ¥1,200 的 JPY 退款記錄為 `120000`）、該捐款幣別與內部註記新增 `refund` 列。資料庫觸發器會拒絕未知交易、幣別不符、超過原捐款的累計退款、在儲存刻度上非整數的 JPY 退款（migration `0015`），以及對已記錄列的修改。完全退款的捐款會從已歸屬的支持者列表消失。絕不依瀏覽器返回、來信說法或未核對的截圖記錄退款。
 
 ### 設定與 QA
 
