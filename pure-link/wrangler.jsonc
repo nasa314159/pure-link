@@ -73,20 +73,39 @@
 			"ai": {
 				"binding": "AI"
 			},
+			// Staging vars are NOT inherited from the top level: everything here
+			// is the isolated staging environment's own source of truth (separate
+			// D1, separate hostname staging.no-no.uk) and all checkout rails are
+			// explicitly fail-closed so staging can never create real payments.
 			"vars": {
+				// Same non-credential Turnstile site key; the Managed widget is
+				// authorized for both no-no.uk and staging.no-no.uk
+				// (docs/RELEASE_CHECKLIST.md). Staging secrets stay separate.
 				"TURNSTILE_SITE_KEY": "0x4AAAAAAEOveWALXghlMLNL",
-				"PUBLIC_ORIGIN": "https://no-no.uk"
+				"PUBLIC_ORIGIN": "https://staging.no-no.uk",
+				// Fail-closed payment gates: purchases and ECPay Donate are
+				// disabled on staging, and ECPay points at its stage endpoint
+				// instead of production (src/ecpay.js ecpayEndpoint()).
+				"AI_CREDIT_PURCHASES_ENABLED": "false",
+				"ECPAY_CHECKOUT_ENABLED": "false",
+				"ECPAY_ENVIRONMENT": "stage"
+			},
+			// Define is not inherited from the top level either; workerd would
+			// crash on mathjax-full's package-version require() fallback
+			// without it (same requirement as production).
+			"define": {
+				"PACKAGE_VERSION": "\"3.2.1\""
 			},
 			"d1_databases": [
 				{
 					"binding": "pure_link_db",
-					"database_name": "pure-link-staging",
-					"database_id": "aed1b3d7-e32b-4636-b01d-5995d63d82a0"
+					"database_name": "pure-link-staging-v2",
+					"database_id": "49a8a6cc-49fe-4f2a-9a31-5e38b3576421"
 				}
 			],
 			"routes": [
 				{
-					"pattern": "no-no.uk",
+					"pattern": "staging.no-no.uk",
 					"custom_domain": true
 				}
 			]
