@@ -1790,7 +1790,7 @@ function renderPublicSupporter(supporter, locale, messages = {}) {
   if (!supporter || typeof supporter !== 'object') return '';
   const name = String(supporter.name || '').trim();
   const message = String(supporter.message || '').trim();
-  const amount = Number.isSafeInteger(Number(supporter.amount)) ? formatTwd(supporter.amount, locale) : '';
+  const amount = supportSupporterAmount(supporter, locale);
   if (!name && !message && !amount) return '';
   const escapedName = name ? `<strong>${escapeHtml(name)}</strong>` : '';
   const escapedAmount = amount ? `${name || message ? ' · ' : ''}${escapeHtml(amount)}` : '';
@@ -1800,6 +1800,21 @@ function renderPublicSupporter(supporter, locale, messages = {}) {
   const messageContent = `<span id="${collapsedId}" class="supporter-message" style="white-space: pre-wrap; word-break: break-word;">${escapedMessage}</span>`;
   const expandButton = messages.showMore ? `<button type="button" class="supporter-expand" hidden aria-expanded="false" aria-controls="${collapsedId}" data-show-more="${escapeHtml(messages.showMore)}" data-show-less="${escapeHtml(messages.showLess)}">${escapeHtml(messages.showMore)}</button>` : '';
   return `<li>${escapedName}${name && message ? ' — ' : ''}${messageContent}${escapedAmount}${expandButton ? ` ${expandButton}` : ''}</li>`;
+}
+
+// ECPay rows keep their integer-TWD rendering. Ko-fi rows carry their provider
+// currency and are formatted in it — currencies are never summed or converted
+// against each other, and a row without an authorized amount shows none.
+function supportSupporterAmount(supporter, locale) {
+  const currency = String(supporter.currency || '');
+  if (!currency) return Number.isSafeInteger(Number(supporter.amount)) ? formatTwd(supporter.amount, locale) : '';
+  const amountText = String(supporter.amountText || '');
+  if (!/^[A-Z]{3}$/.test(currency) || !/^[0-9]{1,8}(\.[0-9]{1,2})?$/.test(amountText)) return '';
+  try {
+    return new Intl.NumberFormat(locale === 'zh-Hant' ? 'zh-TW' : 'en-US', { style: 'currency', currency }).format(Number(amountText));
+  } catch {
+    return '';
+  }
 }
 
 function renderSupportHistory(history, messages, locale) {

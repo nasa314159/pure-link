@@ -96,6 +96,49 @@ The support page renders a server-generated NTD cumulative staircase from verifi
 
 Lemon Squeezy's historical support tables and signed webhook path remain intact for international support records. They are not reused by the ECPay NTD ledger and are not automatically enabled by this change.
 
+## Ko-fi donation receipts (Phase 1)
+
+Ko-fi lets supporters pay the creator directly (Ko-fi/PayPal/Stripe), so PureLink cannot verify money movement itself. Ko-fi donation receipts are recorded as provider-emitted bookkeeping on a dedicated rail. They have their own tables (`kofi_donations`, `kofi_webhook_events`, `kofi_refund_reconciliations`), no user, pack, credit, balance, or credit-granting trigger, and they are never mixed into AI-credit orders or balances. A Ko-fi event can never infer a PureLink account or grant any entitlement; Ko-fi membership payments are explicitly ignored in Phase 1 (recorded as `membership` webhook events, recognition-only, never donations).
+
+### Webhook receive path
+
+`POST /api/webhooks/kofi` expects Ko-fi's `application/x-www-form-urlencoded` delivery (one `data` form field containing the JSON payload) and validates it strictly: one `data` field, exact verification-token comparison with `constantTimeEqual`, an 8 KiB body limit, positive decimal amounts converted to integer minor units with string math (no floating point), a 3-letter uppercase currency, an ISO-8601 UTC `timestamp`, validated payment identifiers, and a strict `is_subscription_payment` boolean for receipt classification. Documented required fields (`verification_token`, `message_id`, `timestamp`, `type`, `amount`, `currency`, `kofi_transaction_id`) are never tolerated as absent. Undocumented, future, or irrelevant Ko-fi fields (including `is_public`, `from_name`, `message`, `url`, and `email`) are safely ignored and never used for identity, amount, credit, refund, or publication decisions. Supported payment events are only `type: "Donation"` (with the strict `is_subscription_payment` boolean distinguishing one-time from recurring monthly donation payments). `Subscription`, `Shop Order`, and `Commission` events are acknowledged and preserved in `kofi_webhook_events` as `membership`/`shop_order`/`commission` without recording a donation; any other event type is rejected.
+
+Ko-fi's verification token rides inside the payload and does not bind the payload fields, so it is deliberately **weaker** than ECPay's CheckMacValue or Lemon Squeezy's body HMAC. The token is stored only as a Worker secret (`KOFI_WEBHOOK_TOKEN`, fail-closed when absent or shorter than 16 characters). The Worker never logs the token, webhook body, or payer email. The receiver is receive-only: no AI credits, no membership recognition, no backfill of history (Ko-fi only notifies about new payments).
+
+Deduplication is database-enforced: `kofi_transaction_id` is the `kofi_donations` primary key and `kofi_message_id` is UNIQUE, so repeated delivery of the same webhook message is idempotent, and conflicting payloads that reuse a recorded identifier are refused (HTTP 409) without ever overwriting the stored amount, currency, receipt type, or timestamp.
+
+### Privacy and operator attribution
+
+Every new Ko-fi receipt is private on PureLink (`attribution_state = 'private'`), regardless of the Ko-fi `is_public` flag. Public display is not derived from ingestion, and the Ko-fi payload's `email`, personal message, and display name are never stored during ingest. Donor names, messages, or exact amounts appear on the support page only after an operator records a separate PureLink attribution decision, with each element (name, message, amount) opted in independently:
+
+1. Verify the donation receipt in the Ko-fi transaction history and its PayPal/Stripe counterpart.
+2. Confirm the supporter separately wants their name, message, and/or amount published (Ko-fi's `is_public` flag alone is not treated as consent on PureLink).
+3. Record the operator-sanitized attribution (≤60 characters for the name, ≤2000 for the message; advice `@` is neutralized before rendering; HTML is escaped at render time), e.g.:
+   `wrangler d1 execute pure-link-production --remote --command "UPDATE kofi_donations SET attribution_state = 'authorized', public_name = 1, public_display_name = '<name>', public_message = 1, public_message_text = '<message>', public_amount = 1 WHERE kofi_transaction_id = '<transaction id>'"`
+   Set only the flags the supporter actually authorized and leave the rest at their defaults.
+4. Attributed rows then render in their own receipt currency with the existing supporter-list design. Receipt currencies are never summed or converted against each other, and the existing NTD totals, history chart, and ECPay donation semantics are unchanged.
+
+### Refunds and reconciliation
+
+Ko-fi does not emit refund webhooks, and refund state is never inferred from later payment events. Refunds are recorded manually in the append-only `kofi_refund_reconciliations` ledger only after the actual refund is completed and verified in the Ko-fi/PayPal/Stripe console ( mirroring the ECPay workflow): the operator inserts one `refund` row per verified refund with the original `kofi_transaction_id`, the refunded amount in minor units, the donation's currency, and an internal note. Database triggers reject unknown transactions, currency mismatches, cumulative refunds above the donation, and edits to recorded rows. A fully refunded donation disappears from the attributed supporter list. Do not record a refund from a browser return, email claim, or unverified screenshot.
+
+### Configuration and QA
+
+- Operator steps: create the webhook at `https://ko-fi.com/manage/webhooks` pointing at `https://no-no.uk/api/webhooks/kofi`, and store `KOFI_WEBHOOK_TOKEN` as a Worker secret. The endpoint 503s unless the token is present, so configuration is fail-closed.
+- Do not trigger the Ko-fi developer-console test webhooks in production until deliberate QA is authorized; synthetic fixtures in `test/kofi.spec.js` cover the receive path.
+- Currency limitation (documented assumption): Ko-fi decimal strings are converted assuming two-decimal currency presentation. If Ko-fi payloads for zero-decimal currencies turn out to differ, bring that to the owner before enabling display rather than widening the receiver.
+
+### Migration and rollback (Ko-fi)
+
+- Migration `0014_kofi_donations.sql` is additive only: it creates new `kofi_*` tables, triggers, and indexes but never rebuilds, alters, or drops any existing financial table (ECPay, Lemon Squeezy, Creem, AI-credit balances).
+- Staging first: `npx --no-install wrangler d1 migrations apply pure-link-staging --remote`, then confirm `wrangler d1 migrations list pure-link-staging --remote` shows it applied and `npx --no-install wrangler d1 execute pure-link-staging --remote --command "SELECT name, sql FROM sqlite_master WHERE name LIKE 'kofi_%'"` shows the expected tables/triggers.
+- Production preflight: `npx --no-install wrangler d1 migrations list pure-link-production --remote` (expect only `0014` pending), then take a backup before applying: `npx --no-install wrangler d1 export pure-link-production --remote --output=backup-before-0014.sql`. D1 Time Travel additionally provides point-in-time restore for 30 days.
+- Applied migrations are inspected with `wrangler d1 migrations list pure-link-production --remote`; webhook diagnostics use id-only event rows (never payloads): `SELECT received_event, message_id, created_at FROM kofi_webhook_events ORDER BY created_at DESC LIMIT 20`. `received_event` distinguishes `donation`/`recurring_donation` receipts from ignored `membership`/`shop_order`/`commission` events.
+- Ingestion is disabled at any time by removing the token: `npx wrangler secret delete KOFI_WEBHOOK_TOKEN`. The endpoint then responds 503 fail-closed and nothing else changes; recorded receipts are unaffected.
+- Always retain the production Ko-fi donation tables after any code rollback. They are the only ledger of support actually received: deleting them would falsify financial records, and Ko-fi redeliveries rely on the same UNIQUE guards (duplicates stay idempotent, conflicts stay refused). Re-deploying the feature reuses the same tables; do not treat dropping real donation records as a routine rollback.
+
+
 ### Support production QA
 
 - Store the existing ECPay MerchantID, HashKey, and HashIV only as Worker secrets; set `ECPAY_ENVIRONMENT=production`, `PUBLIC_ORIGIN=https://no-no.uk`, and `ECPAY_SUPPORT_CHECKOUT_ENABLED=true` as variables only after the migration is applied by an operator.
