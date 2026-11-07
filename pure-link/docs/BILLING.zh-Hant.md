@@ -102,7 +102,7 @@ Ko-fi 讓支持者直接向創作者付款（Ko-fi/PayPal/Stripe），因此 Pur
 
 ### Webhook 接收路徑
 
-`POST /api/webhooks/kofi` 只接受 Ko-fi 的 `application/x-www-form-urlencoded` 傳送格式（單一 `data` 欄位內含 JSON 負載），並嚴格驗證：封閉欄位允許清單、verification token 以 `constantTimeEqual` 恆時比對、8 KiB 請求上限、正數小數金額以字串運算轉為整數最小單位（不使用浮點運算）、三個大寫字母的幣別、ISO-8601 UTC `timestamp`，以及付款識別碼驗證。受支援的付款事件只有 `type: "Donation"`（以嚴格布林 `is_subscription_payment` 區分單次與每月定期捐款付款）。`Subscription`、`Shop Order`、`Commission` 事件只會確認並記錄在 `kofi_webhook_events`（`membership`／`shop_order`／`commission`），不會記為捐款；其他任何事件類型直接拒絕。
+`POST /api/webhooks/kofi` 只接受 Ko-fi 的 `application/x-www-form-urlencoded` 傳送格式（單一 `data` 欄位內含 JSON 負載），並嚴格驗證：單一 `data` 欄位、verification token 以 `constantTimeEqual` 恆時比對、8 KiB 請求上限、正數小數金額以字串運算轉為整數最小單位（不使用浮點運算）、三個大寫字母的幣別、ISO-8601 UTC `timestamp`、付款識別碼驗證，以及用於收據分類的嚴格布林 `is_subscription_payment`。文件所列的必要欄位（`verification_token`、`message_id`、`timestamp`、`type`、`amount`、`currency`、`kofi_transaction_id`）絕不容許缺失。未記載、未來新增或無關的 Ko-fi 欄位（包括 `is_public`、`from_name`、`message`、`url`、`email`）一律安全忽略，絕不用於身分、金額、額度、退款或公開決定。受支援的付款事件只有 `type: "Donation"`（以嚴格布林 `is_subscription_payment` 區分單次與每月定期捐款付款）。`Subscription`、`Shop Order`、`Commission` 事件只會確認並記錄在 `kofi_webhook_events`（`membership`／`shop_order`／`commission`），不會記為捐款；其他任何事件類型直接拒絕。
 
 Ko-fi 的驗證 token 內嵌於負載之中，無法綁定負載欄位，因此刻意視為**弱於** ECPay CheckMacValue 與 Lemon Squeezy 的 body HMAC。token 只存為 Worker secret（`KOFI_WEBHOOK_TOKEN`；短缺於 16 字元或不存在時一律關閉）。Worker 絕不記錄 token、webhook 內容或付款人 email。接收端純屬收據性質：不加 AI 額度、不識別會員、不回填歷史（Ko-fi 只通知新付款）。
 
@@ -128,6 +128,15 @@ Ko-fi 不會發送退款 webhook，退款狀態也絕不會從後續付款事件
 - 營運步驟：在 `https://ko-fi.com/manage/webhooks` 建立 webhook 指向 `https://no-no.uk/api/webhooks/kofi`，並將 `KOFI_WEBHOOK_TOKEN` 存為 Worker secret。token 不存在時端點一律回 503，屬於 fail-closed。
 - 在獲得明確 QA 授權之前，不要在正式環境觸發 Ko-fi 開發者控制台的測試 webhook；`test/kofi.spec.js` 的合成 fixtures 已涵蓋接收路徑。
 - 幣別限制（既有假設）：Ko-fi 的小數字串以兩位小數幣別呈現假設進行轉換。若零小數位幣別的實際負載與此不同，先回報負責人再啟用顯示，不要擴大接收器。
+
+### Migration 與回滚（Ko-fi）
+
+- Migration `0014_kofi_donations.sql` 純屬新增：只建立新的 `kofi_*` 資料表、觸發器與索引，絕不重建、修改或刪除任何既有財務資料表（ECPay、Lemon Squeezy、Creem、AI 額度餘額）。
+- 先套用於 staging：`npx --no-install wrangler d1 migrations apply pure-link-staging --remote`，再以 `wrangler d1 migrations list pure-link-staging --remote` 確認已套用，並用 `npx --no-install wrangler d1 execute pure-link-staging --remote --command "SELECT name, sql FROM sqlite_master WHERE name LIKE 'kofi_%'"` 檢視資料表與觸發器是否符合預期。
+- 正式環境預檢：`npx --no-install wrangler d1 migrations list pure-link-production --remote`（預期僅剩 `0014` 未套用），套用前先備份：`npx --no-install wrangler d1 export pure-link-production --remote --output=backup-before-0014.sql`。D1 Time Travel 另提供 30 天的時間點還原。
+- 已套用的 migration 以 `wrangler d1 migrations list pure-link-production --remote` 檢視；webhook 診斷只查識別碼資料列（絕不含負載內容）：`SELECT received_event, message_id, created_at FROM kofi_webhook_events ORDER BY created_at DESC LIMIT 20`。`received_event` 能清楚區分已記錄的 `donation`／`recurring_donation` 收據與被忽略的 `membership`／`shop_order`／`commission` 事件。
+- 隨時可以移除 token 停用收錄：`npx wrangler secret delete KOFI_WEBHOOK_TOKEN`。端點隨後一律回 503（fail-closed），其他內容不變；已記錄的收據不受影響。
+- 任何程式碼回滚後，一律保留正式環境的 Ko-fi 捐款資料表。它們是實際收到支持的唯一帳本：刪除等於竄改財務紀錄，且 Ko-fi 的重複投遞依賴同一組 UNIQUE 防護（重複保持冪等、衝突保持拒絕）。重新部署會沿用同一批資料表；絕不把刪除真實捐款紀錄當作例行回滚步驟。
 
 
 ### 支持正式環境 QA

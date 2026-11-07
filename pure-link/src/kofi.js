@@ -21,15 +21,6 @@ const IGNORED_EVENT_TYPES = Object.freeze([
   ['Shop Order', 'shop_order'],
   ['Commission', 'commission'],
 ]);
-// Closed payload allowlist. All documented Ko-fi fields are permitted so the
-// request is accepted, but only the donation fields below are used; email,
-// from_name, message, and personal URLs are never stored or logged.
-const KOFI_FIELDS = Object.freeze(new Set([
-  'message_id', 'type', 'is_public', 'from_name', 'message', 'amount', 'url',
-  'email', 'currency', 'timestamp', 'is_subscription_payment',
-  'is_first_subscription_payment', 'tier_name', 'kofi_transaction_id',
-  'verification_token', 'shop_items', 'shipping',
-]));
 
 export function isKofiWebhookConfigured(env) {
   // The token is fail-closed: it must be a real secret of usable length.
@@ -148,11 +139,10 @@ function parseWebhookPayload(rawBody) {
   if (dataFields.length !== 1 || !dataFields[0]) throw new Error('missing data field');
   const payload = JSON.parse(dataFields[0]);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('payload is not an object');
-  // Unknown fields are refused outright (closed allowlist), so the parse here
-  // cannot be widened silently by provider-side changes.
-  for (const key of Object.keys(payload)) {
-    if (!KOFI_FIELDS.has(key)) throw new Error(`unexpected field: ${key}`);
-  }
+  // Undocumented, future, or irrelevant Ko-fi fields are safely ignored here.
+  // Nothing below reads an unvalidated field, so schema extensions can never
+  // reach an identity, amount, credit, refund, or publication decision; the
+  // fields parsed below are strictly validated where they are actually read.
   return payload;
 }
 
@@ -166,9 +156,12 @@ function parseDonationPayload(payload) {
   if (amountMinor == null) return null;
   const currency = String(payload.currency || '');
   if (!/^[A-Z]{3}$/.test(currency)) return null;
-  // Only strict booleans distinguish a recurring monthly donation from a
-  // one-time donation; anything else fails closed rather than guessing.
-  if (typeof payload.is_subscription_payment !== 'boolean' || typeof payload.is_public !== 'boolean') return null;
+  // Classification is driven only by strictly typed, payload-decided fields:
+  // the documented Donation/Subscription examples always carry a strict
+  // is_subscription_payment boolean, and anything else fails closed rather
+  // than guessing a receipt type. Unused fields (is_public, from_name,
+  // message, url, email, tier_name, shop_items, shipping, ...) are ignored.
+  if (typeof payload.is_subscription_payment !== 'boolean') return null;
   return {
     messageId,
     transactionId,

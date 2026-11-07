@@ -75,11 +75,42 @@ describe('Ko-fi donation webhook', () => {
     for (const data of ['not-json', '{"no":', '[1,2,3]', '"text"', '123', 'null']) {
       expect((await send({ body: 'data=' + encodeURIComponent(data), headers: { 'content-type': 'application/x-www-form-urlencoded' } })).status).toBe(400);
     }
-    const unexpected = donationPayload();
-    unexpected.provider_reference = 'extra';
-    expect((await handleKofiWebhook(validRequest(unexpected), environment(db))).status).toBe(400);
     expect((await send({ body: 'data=' + encodeURIComponent(donationJson()), headers: { 'content-type': 'application/json' } })).status).toBe(400);
     expect(db.queries).toBe(0);
+  });
+
+  it('safely ignores undocumented Ko-fi fields so future schema extensions never affect decisions', async () => {
+    const db = new KofiDb();
+    const payload = donationPayload({
+      creator_notice: 'thanks for using ko-fi',
+      kofi_transaction_id_secondary: '99999999-8888-7777-6666-555544443333',
+      public_consent_override: true,
+      refunded: 100,
+      subscription_status: 'active',
+      __proto__: { admin: true },
+    });
+    const { ['__proto__']: _ignored, ...safePayload } = payload;
+    expect((await handleKofiWebhook(validRequest(safePayload), environment(db))).status).toBe(200);
+    expect(db.donations).toHaveLength(1);
+    expect(db.donations[0]).toMatchObject({ receipt_type: 'donation', amount_minor: 500, currency: 'USD', attribution_state: 'private' });
+    await expect(getKofiSupportTotals(db)).resolves.toEqual({ publicSupporters: [] });
+    // Additional unknown fields on replay can neither break idempotency nor
+    // mutate the recorded transaction.
+    const replay = { ...safePayload, unknown_extension: { nested: ['x'] } };
+    expect((await handleKofiWebhook(validRequest(replay), environment(db))).status).toBe(200);
+    expect(db.donations).toHaveLength(1);
+    expect(db.donations[0].amount_text).toBe('5.00');
+    expect(db.events).toHaveLength(1);
+  });
+
+  it('tolerates null and absent optional fields outside the documented required set', async () => {
+    const db = new KofiDb();
+    const payload = donationPayload({ message: null, from_name: null, url: '', tier_name: null, shop_items: null, shipping: null });
+    delete payload.email;
+    delete payload.is_public;
+    expect((await handleKofiWebhook(validRequest(payload), environment(db))).status).toBe(200);
+    expect(db.donations[0]).toMatchObject({ receipt_type: 'donation', amount_minor: 500 });
+    expect(JSON.stringify(db.donations)).not.toContain('email');
   });
 
   it('rejects oversized bodies before parsing', async () => {
