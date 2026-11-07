@@ -4,6 +4,7 @@ import { hashManagementToken } from './security.js';
 
 import { renderFormulaContent } from './formula.js';
 import { getMessages, localizedPath } from './i18n.js';
+import { KOFI_DONATION_URL } from './kofi.js';
 import { MESSAGE_LIMIT, countCodePoints, isOverLimit, overBy, interpolate as interpolateMessage, formatCounter, formatOverLimitMessage } from './support-message.js';
 
 const PLATFORM_NOTICE = '透過 PureLink 分享的內容與外部網站由建立者提供，不代表 PureLink 的立場、推薦、背書或安全保證。';
@@ -1587,13 +1588,18 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
   const checkout = checkoutConfigured
     ? `<form id="support-form">${providerChoices}${amountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${ecpayAttribution}${lemonAttribution}${turnstileWidget}<button class="create-button" id="support-button" type="submit">${escapeHtml(m.support.button)}</button><p class="billing-status" id="support-status" role="status" hidden></p></form>`
     : `<p class="billing-status">${m.support.unavailable}</p>`;
+  // The Ko-fi overseas option is an ordinary external link, rendered for every
+  // visitor in both locales — signed in or not, and even when no checkout rail
+  // is configured. It sits next to the checkout as the balanced international
+  // alternative, never submits the support form, and never grants AI credits.
+  const kofiSection = `<section class="support-kofi" id="support-kofi" aria-labelledby="support-kofi-title"><h2 id="support-kofi-title">${escapeHtml(m.support.kofiTitle)}</h2><p class="support-kofi-method">${escapeHtml(m.support.kofiMethod)}</p><p>${escapeHtml(m.support.kofiDescription)}</p><a class="support-kofi-button" href="${escapeHtml(KOFI_DONATION_URL)}" target="_blank" rel="noopener noreferrer">${escapeHtml(m.support.kofiButton)}</a><p>${escapeHtml(m.support.kofiExternal)}</p><p>${escapeHtml(m.support.kofiNotCredits)}</p></section>`;
   const supportHistory = renderSupportHistory(totals?.history || [], m.support, locale);
   const returnNotice = returnState === 'pending'
     ? `<p class="auth-notice" role="status">${escapeHtml(m.support.pending)}</p>`
     : returnState === 'thanks' ? `<p class="auth-notice" role="status">${escapeHtml(m.support.thanks)}</p>` : '';
   return documentShell({
     title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale, googleSiteVerification,
-    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
+    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}${kofiSection}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
     script: `
       const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
       const MESSAGE_LIMIT = ${MESSAGE_LIMIT};
@@ -2178,6 +2184,13 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .support-history p, .support-history small { margin: 0; color: var(--muted); }
     .support-history svg { width: 100%; height: 6rem; color: var(--green); }
     .supporters ul { display: grid; gap: .45rem; margin: 0; padding-left: 1.15rem; color: var(--muted); }
+    .support-kofi { display: grid; gap: .45rem; margin: 1.1rem 0 0; padding: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: #f8fbf9; }
+    .support-kofi h2 { margin: 0; font-size: .95rem; letter-spacing: .02em; }
+    .support-kofi p { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.55; }
+    .support-kofi p.support-kofi-method { color: var(--ink); font-weight: 600; }
+    .support-kofi-button { justify-self: start; display: inline-flex; align-items: center; padding: .7rem 1rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--ink); font-weight: 700; text-decoration: none; }
+    .support-kofi-button:hover, .support-kofi-button:focus-visible { border-color: var(--green); color: var(--green); }
+    @media (max-width: 38rem) { .support-kofi-button { justify-self: stretch; justify-content: center; } }
     .supporter-message { display: -webkit-box; -webkit-box-orient: vertical; line-clamp: 4; -webkit-line-clamp: 4; overflow: hidden; white-space: pre-wrap; word-break: break-word; line-height: 1.55; max-width: 100%; }
     .supporter-message-expanded { display: block; line-clamp: unset; -webkit-line-clamp: unset; overflow: visible; }
     .supporter-expand { width: auto; display: inline-block; padding: .2rem .5rem; margin: .25rem 0; border: 1px solid var(--line); border-radius: .4rem; background: white; color: var(--muted); font-size: .72rem; font-weight: 600; cursor: pointer; }
