@@ -19,10 +19,15 @@
 // amounts whose fractional digits exceed the currency's exponent.
 import { json } from './http.js';
 
-// The official Ko-fi destination shown on the support page as an ordinary
-// external link. Visitors leave PureLink before any payment detail is entered;
-// this rail only ever sees provider-emitted webhook receipts.
-export const KOFI_DONATION_URL = 'https://ko-fi.com/purelink';
+// The Ko-fi destination shown on the support page as an ordinary external
+// link. `https://ko-fi.com/purelink/donate` was verified (2026-11, non-paying
+// browser navigation) to open this creator's donation panel directly; the
+// generic profile page (ko-fi.com/purelink) only reaches it after another
+// click. Ko-fi's help center documents /shop, /commissions, and /tiers
+// shortcuts but not /donate, and documents no amount- or currency-prefill
+// parameters, so the link must never carry invented query parameters:
+// supporters choose and confirm the amount on Ko-fi.
+export const KOFI_DONATION_URL = 'https://ko-fi.com/purelink/donate';
 
 const MAX_WEBHOOK_BODY_BYTES = 8192;
 const MAX_AMOUNT_MINOR_UNITS = 100000000;
