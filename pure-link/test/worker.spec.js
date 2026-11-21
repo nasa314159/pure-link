@@ -230,15 +230,16 @@ describe('PureLink worker', () => {
 
   it('shows the Ko-fi overseas link to signed-out visitors in both locales and adds no CSP source', async () => {
     for (const [locale, subtitle] of [
-      ['en', 'International · ko-fi.com'],
-      ['zh-Hant', '國際付款 · ko-fi.com'],
+      ['en', 'One-time tip · USD · ko-fi.com'],
+      ['zh-Hant', '單次自由贊助 · 美元 · ko-fi.com'],
     ]) {
       const response = await worker.fetch(new Request(`https://pure.test/${locale}/support`), env);
       const body = await response.text();
       expect(response.status).toBe(200);
       expect(body).toContain('<a class="support-action support-action-kofi" href="https://ko-fi.com/purelink/donate" target="_blank" rel="noopener noreferrer">');
+      expect(body).toContain('<a class="support-action support-action-kofi support-action-kofi-membership" href="https://ko-fi.com/purelink/tiers" target="_blank" rel="noopener noreferrer">');
       expect(body).toContain(subtitle);
-      expect(body).not.toContain('ko-fi.com/purelink/donate?');
+      expect(body).not.toMatch(/ko-fi\.com\/purelink\/(?:donate|tiers)\?/);
       expect(response.headers.get('content-security-policy')).not.toContain('ko-fi.com');
     }
   });

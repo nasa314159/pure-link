@@ -29,6 +29,17 @@ import { json } from './http.js';
 // supporters choose and confirm the amount on Ko-fi.
 export const KOFI_DONATION_URL = 'https://ko-fi.com/purelink/donate';
 
+// The Ko-fi membership destination shown on the support page as a second,
+// distinct external action. `https://ko-fi.com/purelink/tiers` was verified
+// (2026-11, non-paying browser navigation) to open this creator's membership
+// page, which currently lists one tier: "PureLink Supporter", US$3 per month,
+// with Ko-fi's own tier text stating there are no additional product features
+// or usage entitlements. Like the donation link it carries no query
+// parameters: Ko-fi documents no prefill contract for tiers either.
+// Membership events (Ko-fi "Subscription" webhooks) stay recognition-only
+// bookkeeping; they are not donations and grant no PureLink entitlements.
+export const KOFI_MEMBERSHIP_URL = 'https://ko-fi.com/purelink/tiers';
+
 const MAX_WEBHOOK_BODY_BYTES = 8192;
 const MAX_AMOUNT_MINOR_UNITS = 100000000;
 const DONATION_TYPE = 'Donation';

@@ -100,6 +100,8 @@ Lemon Squeezy 的歷史支持資料表與已簽名 webhook 路徑會完整保留
 
 Ko-fi 讓支持者直接向創作者付款（Ko-fi/PayPal/Stripe），因此 PureLink 無法自行驗證款項是否到帳。Ko-fi 捐款收據只作為供應商發出的記帳憑證，記錄在專屬軌道上。資料表完全獨立（`kofi_donations`、`kofi_webhook_events`、`kofi_refund_reconciliations`），沒有使用者、方案、額度、餘額或加額觸發器，絕不與 AI 額度訂單或餘額混用。Ko-fi 事件永遠不會推導出 PureLink 帳號，也不會授予任何權益；Ko-fi 會員付款在 Phase 1 明確忽略（只以 `membership` webhook 事件留作識別，絕不記為捐款）。
 
+支持頁面也會連向 Ko-fi 會員頁（`https://ko-fi.com/purelink/tiers`，2026-11 以不付款的瀏覽器瀏覽驗證；目前為「PureLink Supporter」方案，每月 3 美元）。該連結僅供資訊參考：它是一個不帶查詢參數的普通外部連結，不需要任何 D1 查詢或資料表異動，絕不計入支持總額，不聲稱任何 AI 額度或進階權益，也不會在 PureLink 上對會員身分做任何即時狀態聲明。
+
 ### Webhook 接收路徑
 
 `POST /api/webhooks/kofi` 只接受 Ko-fi 的 `application/x-www-form-urlencoded` 傳送格式（單一 `data` 欄位內含 JSON 負載），並嚴格驗證：單一 `data` 欄位、verification token 以 `constantTimeEqual` 恆時比對、8 KiB 請求上限、正數小數金額以字串運算（不使用浮點運算）轉為固定兩位小數整數刻度 —— `amount_minor` 在所有幣別下皆為「顯示金額 × 100」，對零小數位幣別**並非** ISO 最小單位（1500 JPY 記錄為 `150000`，而非 `1500`），並依幣別的 ISO 4217 小數位數驗證小數位，且只接受 Ko-fi 官方文件列出的頁面幣別（JPY 為零小數位；USD、EUR、GBP、AUD、BRL、CAD、SGD、THB、NZD 為兩位小數）、ISO-8601 UTC `timestamp`、付款識別碼驗證，以及用於收據分類的嚴格布林 `is_subscription_payment`。文件所列的必要欄位（`verification_token`、`message_id`、`timestamp`、`type`、`amount`、`currency`、`kofi_transaction_id`）絕不容許缺失。未記載、未來新增或無關的 Ko-fi 欄位（包括 `is_public`、`from_name`、`message`、`url`、`email`）一律安全忽略，絕不用於身分、金額、額度、退款或公開決定。受支援的付款事件只有 `type: "Donation"`（以嚴格布林 `is_subscription_payment` 區分單次與每月定期捐款付款）。`Subscription`、`Shop Order`、`Commission` 事件只會確認並記錄在 `kofi_webhook_events`（`membership`／`shop_order`／`commission`），不會記為捐款；其他任何事件類型直接拒絕。

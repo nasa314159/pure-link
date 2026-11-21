@@ -4,7 +4,7 @@ import { hashManagementToken } from './security.js';
 
 import { renderFormulaContent } from './formula.js';
 import { getMessages, localizedPath } from './i18n.js';
-import { KOFI_DONATION_URL } from './kofi.js';
+import { KOFI_DONATION_URL, KOFI_MEMBERSHIP_URL } from './kofi.js';
 import { MESSAGE_LIMIT, countCodePoints, isOverLimit, overBy, interpolate as interpolateMessage, formatCounter, formatOverLimitMessage } from './support-message.js';
 
 const PLATFORM_NOTICE = '透過 PureLink 分享的內容與外部網站由建立者提供，不代表 PureLink 的立場、推薦、背書或安全保證。';
@@ -1580,6 +1580,10 @@ function supportKofiIcon() {
   return `<svg class="support-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 7.5h12v4.4a4.6 4.6 0 0 1-4.6 4.6h-2.8a4.6 4.6 0 0 1-4.6-4.6z"/><path d="M16.5 10.2h1.3a2.3 2.3 0 0 1 0 4.6h-1.3"/><path d="M3.5 19.5h14"/><path d="M10.5 10.2c1.05-.95 2.5.05 2.5 1.15 0 1.15-2.5 2.3-2.5 2.3s-2.5-1.15-2.5-2.3c0-1.1 1.45-2.1 2.5-1.15z" fill="currentColor" stroke="none"/></svg>`;
 }
 
+function supportKofiMembershipIcon() {
+  return `<svg class="support-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9.5" r="5.5"/><path d="M9.7 9.6l1.7 1.7 3.2-3.4"/><path d="M8.3 14.6V20l3.7-2 3.7 2v-5.4"/></svg>`;
+}
+
 export function renderSupportPage(totals, checkoutProviders = {}, returnState = '', nonce = '', locale = 'zh-Hant', turnstileSiteKey = '', googleSiteVerification = '') {
   const m = getMessages(locale);
   const providers = typeof checkoutProviders === 'boolean' ? { ecpay: checkoutProviders, lemon: false } : checkoutProviders;
@@ -1596,31 +1600,32 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
   const amountControls = providers.ecpay ? `<section id="support-amount-controls"><p class="field-help" id="support-ecpay-description">${escapeHtml(m.support.ecpayDescription)}</p><label class="field-label" for="support-amount">${escapeHtml(m.support.amount)}</label><div class="support-presets" aria-label="${escapeHtml(m.support.amountPresets)}">${[100, 300, 500, 1000].map((amount) => `<button type="button" data-support-amount="${amount}" aria-pressed="${amount === 100 ? 'true' : 'false'}"${amount === 100 ? ' class="selected"' : ''}>NT$${amount}</button>`).join('')}</div><input id="support-amount" name="amount" type="number" min="50" max="10000" step="1" inputmode="numeric" value="100" required><p class="field-help">${escapeHtml(m.support.customAmount)}</p></section>` : '';
   const ecpayAttribution = providers.ecpay ? `<section id="support-ecpay-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" rows="3" aria-describedby="support-message-help support-message-counter support-message-counter-error"></textarea><p class="field-help" id="support-message-help">${escapeHtml(m.support.optionalMessageHelp)}</p><p class="field-counter" id="support-message-counter" data-limit="${MESSAGE_LIMIT}" aria-live="polite" aria-atomic="true"></p><p class="field-counter-error" id="support-message-counter-error" role="alert" aria-live="assertive" hidden></p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
   const lemonAttribution = providers.lemon ? `<section id="support-lemon-attribution"><label class="field-label" for="support-lemon-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-lemon-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicAttribution" value="true"><span>${escapeHtml(m.support.attribute)}</span></label></section>` : '';
-  // Payment actions. The production configuration (ECPay only) renders a
-  // balanced pair: a green ECPay submit button and a blue Ko-fi external
-  // link. Any other configuration keeps the previous single submit button
-  // untouched and offers Ko-fi as a standalone external action row, so the
-  // Ko-fi option stays reachable in every deployment without ever submitting
-  // the checkout form. The Ko-fi destination carries no query parameters:
-  // Ko-fi documents no amount- or currency-prefill contract, so the supporter
-  // always chooses and confirms the amount on ko-fi.com.
+  // Payment actions. Providers stay clearly separated so no ECPay-only form
+  // control can be mistaken for a Ko-fi input. The green ECPay submit button
+  // stays inside the checkout form; the blue Ko-fi actions live in their own
+  // section outside the form: a one-time tip link (supporter chooses the
+  // amount, name, and message on ko-fi.com — Ko-fi documents no amount- or
+  // currency-prefill contract, so the link never carries query parameters)
+  // and a membership link to the verified tiers page. The section renders in
+  // every configuration, so Ko-fi stays reachable even when no checkout rail
+  // is enabled, and it never submits the checkout form.
   const ecpayActionCard = `<button type="submit" class="support-action support-action-ecpay" id="support-button">${supportEcpayIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.ecpayButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.ecpayMethod)}</span></span></button>`;
   const kofiActionCard = `<a class="support-action support-action-kofi" href="${escapeHtml(KOFI_DONATION_URL)}" target="_blank" rel="noopener noreferrer">${supportKofiIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.kofiButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.kofiSubtitle)}</span></span></a>`;
-  const actionNotes = `<p class="field-help support-actions-note">${escapeHtml(m.support.actionsNote)}</p><p class="field-help support-actions-privacy">${escapeHtml(m.support.kofiPrivacy)}</p>`;
+  const kofiMembershipActionCard = `<a class="support-action support-action-kofi support-action-kofi-membership" href="${escapeHtml(KOFI_MEMBERSHIP_URL)}" target="_blank" rel="noopener noreferrer">${supportKofiMembershipIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.kofiMembershipButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.kofiMembershipSubtitle)}</span></span></a>`;
+  const kofiSection = `<section class="support-kofi" aria-labelledby="support-kofi-heading"><h2 class="support-kofi-heading" id="support-kofi-heading">${escapeHtml(m.support.kofiHeading)}</h2><p class="field-help support-kofi-intro">${escapeHtml(m.support.kofiIntro)}</p><div class="support-actions support-actions-kofi">${kofiActionCard}${kofiMembershipActionCard}</div><p class="field-help support-actions-membership">${escapeHtml(m.support.kofiMembershipNote)}</p><p class="field-help support-actions-privacy">${escapeHtml(m.support.kofiPrivacy)}</p></section>`;
   const submitActions = providers.ecpay && !providers.lemon
-    ? `<div class="support-actions">${ecpayActionCard}${kofiActionCard}</div>${actionNotes}`
+    ? `<div class="support-actions support-actions-submit">${ecpayActionCard}</div><p class="field-help support-actions-note">${escapeHtml(m.support.actionsNote)}</p>`
     : `<button class="create-button" id="support-button" type="submit">${escapeHtml(m.support.button)}</button>`;
-  const standaloneKofi = providers.ecpay && !providers.lemon ? '' : `<div class="support-actions support-actions-standalone">${kofiActionCard}</div>${actionNotes}`;
   const checkout = checkoutConfigured
-    ? `<form id="support-form">${providerChoices}${amountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${ecpayAttribution}${lemonAttribution}${turnstileWidget}${submitActions}<p class="billing-status" id="support-status" role="status" hidden></p></form>`
-    : `<p class="billing-status">${m.support.unavailable}</p>`;
+    ? `<form id="support-form">${providerChoices}${amountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${ecpayAttribution}${lemonAttribution}${turnstileWidget}${submitActions}<p class="billing-status" id="support-status" role="status" hidden></p></form>${kofiSection}`
+    : `<p class="billing-status">${m.support.unavailable}</p>${kofiSection}`;
   const supportHistory = renderSupportHistory(totals?.history || [], m.support, locale);
   const returnNotice = returnState === 'pending'
     ? `<p class="auth-notice" role="status">${escapeHtml(m.support.pending)}</p>`
     : returnState === 'thanks' ? `<p class="auth-notice" role="status">${escapeHtml(m.support.thanks)}</p>` : '';
   return documentShell({
     title: `${m.support.title} — PureLink`, description: m.support.description, robots: 'index, follow', canonicalPath: localizedHref(locale, 'support'), locale, googleSiteVerification,
-    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}${standaloneKofi}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
+    body: `<main class="page support-page"><a class="wordmark" href="${localizedHref(locale)}">PureLink</a><article class="panel support-panel"><p class="eyebrow">${m.support.eyebrow}</p><h1 class="manage-title">${m.support.title}</h1><p class="lede manage-lede">${m.support.intro}</p>${returnNotice}<section class="support-totals" aria-label="${escapeHtml(m.support.totals)}"><span>${escapeHtml(m.support.totals)}</span><strong>${formatTwd(totals?.netTwd || 0, locale)}</strong>${Number(totals?.netUsdMinor || 0) > 0 ? `<small>${formatUsd(totals.netUsdMinor, locale)}</small>` : ''}<small>${((count) => count === 1 ? m.support.contributions : m.support.contributionsPlural)(Math.max(0, Number(totals?.contributionCount || 0))).replace('{count}', Math.max(0, Number(totals?.contributionCount || 0)))}</small>${totals?.hasUnconvertedContributions ? `<p>${escapeHtml(m.support.limitedTotals)}</p>` : ''}</section>${supportHistory}${publicSupporters.length ? `<section class="supporters"><strong>${escapeHtml(m.support.supporters)}</strong><ul>${publicSupporters.join('')}</ul></section>` : ''}<p class="notice">${escapeHtml(m.support.boundary)}</p>${checkout}<p><a href="${localizedHref(locale, 'ai-credits')}">${escapeHtml(m.support.aiCredits)}</a></p>${languageSwitcher(locale, 'support')}</article></main>`,
     script: `
       const supportMessages = ${JSON.stringify(m.support).replaceAll('<', '\\u003c')};
       const MESSAGE_LIMIT = ${MESSAGE_LIMIT};
@@ -2215,7 +2220,12 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .support-action-ecpay:hover, .support-action-ecpay:focus-visible { background: var(--ink); }
     .support-action-kofi { background: #1f7fa6; }
     .support-action-kofi:hover, .support-action-kofi:focus-visible { background: #16628a; }
+    .support-action-kofi-membership { background: white; color: #1f7fa6; border: 1px solid #1f7fa6; }
+    .support-action-kofi-membership:hover, .support-action-kofi-membership:focus-visible { background: #eaf4f9; }
     .support-action:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+    .support-kofi { display: grid; gap: .3rem; margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--line); }
+    .support-kofi-heading { font-size: .95rem; margin: 0; }
+    .support-kofi-intro, .support-actions-membership { margin: 0 0 .25rem; color: var(--muted); }
     .support-actions-note, .support-actions-privacy { margin: 0 0 .25rem; color: var(--muted); }
     @media (max-width: 38rem) { .support-actions { grid-template-columns: 1fr; } }
     .supporter-message { display: -webkit-box; -webkit-box-orient: vertical; line-clamp: 4; -webkit-line-clamp: 4; overflow: hidden; white-space: pre-wrap; word-break: break-word; line-height: 1.55; max-width: 100%; }
