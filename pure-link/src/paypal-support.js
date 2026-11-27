@@ -36,6 +36,7 @@ import {
   createPaypalOrder,
   getPaypalCapture,
   getPaypalOrder,
+  getPaypalRefund,
   isPaypalClientConfigured,
   paypalApproveUrl,
   paypalEnvironment,
@@ -207,7 +208,11 @@ export async function handlePaypalWebhook(request, env, fetchImplementation = fe
   if (!verified) return json({ error: 'Invalid webhook signature.' }, { status: 401 });
 
   const db = env.pure_link_db;
-  await recordWebhookEvent(db, eventId, eventType);
+  // Minimal resource identifiers only (no payload, no personal data) so a
+  // processing failure remains recoverable through PayPal's authenticated
+  // lookup APIs without retaining the original event body.
+  const identifiers = extractEventIdentifiers(eventType, payload.resource);
+  await recordWebhookEvent(db, eventId, eventType, identifiers);
   const event = await db.prepare('SELECT state FROM paypal_support_webhook_events WHERE event_id = ?').bind(eventId).first();
   // Exact replay of an already-committed event: acknowledge identically.
   if (event?.state === 'processed') return json({ received: true });
@@ -278,11 +283,15 @@ async function processWebhookEvent({ env, db, eventType, resource, fetchImplemen
     case 'CUSTOMER.DISPUTE.UPDATED': {
       const captureIds = parseDisputeCaptureIds(source);
       for (const captureId of captureIds) await markContributionDisputed(db, captureId);
-      return captureIds.length ? 'dispute recognition recorded' : 'dispute event recorded without matching capture';
+      return captureIds.length ? 'dispute open recorded' : 'dispute event recorded without matching capture';
     }
-    case 'CUSTOMER.DISPUTE.RESOLVED':
-      // Dispute resolution returns accounting to the ledger-derived state.
-      return 'dispute resolution recorded';
+    case 'CUSTOMER.DISPUTE.RESOLVED': {
+      const resolvedCaptureIds = parseDisputeCaptureIds(source);
+      for (const captureId of resolvedCaptureIds) await markContributionDisputeResolved(db, captureId);
+      // Money state stays ledger-derived; the resolution is provider-evidenced
+      // by the PayPal-signed dispute event.
+      return resolvedCaptureIds.length ? 'dispute resolution recorded' : 'dispute resolution recorded without matching capture';
+    }
     default:
       // Unknown or future event types are safely acknowledged, never acted on.
       return 'unsupported event ignored';
@@ -323,7 +332,11 @@ async function processVerifiedCapture({ env, db, orderId, captureIdHint = '', fe
     return { outcome: 'unknown-checkout' };
   }
   if (checkout.status === 'completed') return { outcome: 'completed' };
-  if (checkout.status === 'failed' || checkout.status === 'expired') return { outcome: 'ignored-terminal' };
+  // failed/expired are LOCAL bookkeeping states (a previous declined attempt or
+  // an abandoned-checkout sweep). They never outrank authoritative financial
+  // settlement: a verified completed capture that matches this checkout's
+  // recorded identity, amount, currency, and merchant is still recorded below.
+  // Only the full verification in this function may decide what money happened.
 
   // Server-side lookup: the order's identity, recipient merchant, amount, and
   // currency must all match the local expectation exactly.
@@ -514,28 +527,45 @@ async function refreshContributionRefundState(db, captureId) {
 }
 
 async function markContributionDisputed(db, captureId) {
+  // Dispute lifecycle is tracked separately from the ledger-derived refund
+  // status: refund accounting can never silently clear an unresolved dispute.
   await db.prepare(`
-    UPDATE paypal_support_contributions SET status = 'disputed', updated_at = CURRENT_TIMESTAMP
-    WHERE paypal_capture_id = ? AND status IN ('completed', 'partially_refunded')
+    UPDATE paypal_support_contributions SET dispute_state = 'open', updated_at = CURRENT_TIMESTAMP
+    WHERE paypal_capture_id = ? AND status != 'capture_pending'
+  `).bind(captureId).run();
+}
+
+async function markContributionDisputeResolved(db, captureId) {
+  // Provider evidence: the PayPal-signed dispute event carrying the dispute
+  // lifecycle for this capture; only an open dispute is transitioned.
+  await db.prepare(`
+    UPDATE paypal_support_contributions SET dispute_state = 'resolved', updated_at = CURRENT_TIMESTAMP
+    WHERE paypal_capture_id = ? AND dispute_state = 'open'
   `).bind(captureId).run();
 }
 
 // ─── Operator reconciliation (minimal manual mechanism for this milestone) ───
 
 // Bounded, secret-gated operator entry point. Covers missing browser returns,
-// missing webhooks, pending captures, failed database writes, and expired local
-// checkouts. It processes a small batch per call and never requires the
-// checkout-enabled flag: reconciliation of existing money keeps working while
-// new checkout is disabled.
+// missing webhooks, pending captures, failed database writes, recoverable
+// failed webhook events, and expired local checkouts. It processes a small
+// batch per call and never requires the checkout-enabled flag: reconciliation
+// of existing money keeps working while new checkout is disabled.
+//
+// Fairness: every examined checkout has its updated_at bumped, so a persistently
+// failing row rotates to the back of the oldest-first ordering instead of
+// permanently starving later records; the 15-minute staleness filter doubles as
+// the retry backoff. No Cron or job framework is involved.
 export async function reconcilePaypalSupport({ env, fetchImplementation = fetch, batchSize = 10, now = Date.now() }) {
   if (!isPaypalWebhookConfigured(env)) throw new PaymentError('supportUnavailable', 503);
   const db = env.pure_link_db;
+  const batch = Math.max(1, Math.min(25, Math.trunc(Number(batchSize) || 10)));
   const stale = await db.prepare(`
     SELECT id, paypal_order_id, status, created_at FROM paypal_support_checkouts
     WHERE status IN ('pending', 'approved', 'capture_pending')
       AND updated_at <= datetime('now', '-15 minutes')
     ORDER BY updated_at LIMIT ?
-  `).bind(Math.max(1, Math.min(25, Math.trunc(Number(batchSize) || 10)))).all();
+  `).bind(batch).all();
   const outcomes = {};
   let expired = 0;
   for (const row of stale?.results || []) {
@@ -552,16 +582,88 @@ export async function reconcilePaypalSupport({ env, fetchImplementation = fetch,
       outcomes.error = (outcomes.error || 0) + 1;
       console.error('PayPal support reconciliation failed', { checkout: row.id, message: error?.message });
     }
+    // Rotate the examined row regardless of outcome so later records are always
+    // reached within bounded batches; the staleness filter spaces out retries.
+    await touchCheckout(db, row.id);
   }
+  // Durable recovery of failed webhook events: re-derive the financial outcome
+  // from the minimal stored identifiers using PayPal's authenticated lookup
+  // APIs — no stored payload and no browser return required.
   const failedEvents = await db.prepare(`
+    SELECT event_id, event_type, paypal_order_id, paypal_capture_id, paypal_refund_id
+    FROM paypal_support_webhook_events WHERE state = 'failed'
+    ORDER BY updated_at LIMIT ?
+  `).bind(batch).all();
+  let recoveredEvents = 0;
+  let stillFailedEvents = 0;
+  for (const event of failedEvents?.results || []) {
+    try {
+      const note = await reprocessFailedWebhookEvent({ env, db, event, fetchImplementation });
+      await db.prepare(`
+        UPDATE paypal_support_webhook_events SET state = 'processed', last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE event_id = ?
+      `).bind(sanitizeNote(note), event.event_id).run();
+      recoveredEvents += 1;
+    } catch (error) {
+      await db.prepare(`
+        UPDATE paypal_support_webhook_events SET state = 'failed', last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE event_id = ?
+      `).bind(sanitizeNote(error?.message || 'recovery failed'), event.event_id).run();
+      stillFailedEvents += 1;
+      console.error('PayPal support event recovery failed', { event: event.event_id, message: error?.message });
+    }
+  }
+  const remainingFailedEvents = await db.prepare(`
     SELECT COUNT(*) AS failed FROM paypal_support_webhook_events WHERE state = 'failed'
   `).bind().first();
   return {
     examined: (stale?.results || []).length,
     outcomes,
     expired,
-    failedWebhookEvents: Number(failedEvents?.failed || 0),
+    recoveredEvents,
+    stillFailedEvents,
+    failedWebhookEvents: Number(remainingFailedEvents?.failed || 0),
   };
+}
+
+// Re-derives one failed event's financial outcome from minimal identifiers plus
+// authoritative PayPal state. Dispute lifecycles are re-applied directly from
+// the stored capture identity; refund amounts are re-read from PayPal so the
+// original event payload is never needed.
+async function reprocessFailedWebhookEvent({ env, db, event, fetchImplementation }) {
+  const eventType = String(event.event_type || '');
+  if (event.paypal_refund_id) {
+    const refund = await getPaypalRefund({ env, refundId: event.paypal_refund_id, fetchImplementation });
+    const parsed = parseRefundEventResource(refund);
+    if (!parsed || parsed.status !== 'COMPLETED') throw new Error('refund not completed yet; retry scheduled');
+    return (await applyVerifiedRefund({ db, captureId: parsed.captureId, kind: 'refund', refundId: parsed.refundId, amountMinor: parsed.amountMinor })).outcome;
+  }
+  if (eventType === 'PAYMENT.CAPTURE.REVERSED' && event.paypal_capture_id) {
+    const capture = await getPaypalCapture({ env, captureId: event.paypal_capture_id, fetchImplementation });
+    const parsed = parseCaptureEventResource(capture);
+    if (!parsed || parsed.status !== 'REVERSED') throw new Error('reversal not confirmed yet; retry scheduled');
+    return (await applyVerifiedRefund({ db, captureId: parsed.captureId, kind: 'reversal', refundId: null, amountMinor: parsed.amountMinor })).outcome;
+  }
+  if (eventType === 'CUSTOMER.DISPUTE.CREATED' || eventType === 'CUSTOMER.DISPUTE.UPDATED') {
+    if (event.paypal_capture_id) {
+      await markContributionDisputed(db, event.paypal_capture_id);
+      return 'dispute open recorded';
+    }
+    throw new Error('unrecoverable without matching capture; use PayPal dashboard resend');
+  }
+  if (eventType === 'CUSTOMER.DISPUTE.RESOLVED') {
+    if (event.paypal_capture_id) {
+      await markContributionDisputeResolved(db, event.paypal_capture_id);
+      return 'dispute resolution recorded';
+    }
+    throw new Error('unrecoverable without matching capture; use PayPal dashboard resend');
+  }
+  if (event.paypal_order_id || event.paypal_capture_id) {
+    return (await processVerifiedCapture({ env, db, orderId: event.paypal_order_id, captureIdHint: event.paypal_capture_id, fetchImplementation })).outcome;
+  }
+  throw new Error('unrecoverable without resource identifiers; use PayPal dashboard resend');
+}
+
+async function touchCheckout(db, id) {
+  await db.prepare('UPDATE paypal_support_checkouts SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(id).run();
 }
 
 // ─── Public totals (consent-controlled) ──────────────────────────────────────
@@ -648,8 +750,37 @@ function parseDisputeCaptureIds(resource) {
     .filter(Boolean);
 }
 
-async function recordWebhookEvent(db, eventId, eventType) {
-  await db.prepare('INSERT OR IGNORE INTO paypal_support_webhook_events (event_id, event_type, state) VALUES (?, ?, \'verified\')').bind(eventId, eventType).run();
+async function recordWebhookEvent(db, eventId, eventType, identifiers = {}) {
+  await db.prepare(`
+    INSERT OR IGNORE INTO paypal_support_webhook_events (event_id, event_type, state, paypal_order_id, paypal_capture_id, paypal_refund_id)
+    VALUES (?, ?, 'verified', ?, ?, ?)
+  `).bind(eventId, eventType, identifiers.orderId || null, identifiers.captureId || null, identifiers.refundId || null).run();
+}
+
+// Minimal provider identifiers extracted from the verified payload before any
+// processing, purely for durable recovery.
+function extractEventIdentifiers(eventType, resource) {
+  const source = resource && typeof resource === 'object' && !Array.isArray(resource) ? resource : {};
+  if (eventType === 'CHECKOUT.ORDER.APPROVED' || eventType === 'CHECKOUT.ORDER.COMPLETED') {
+    return { orderId: validPaypalResourceId(source.id) };
+  }
+  if (eventType === 'PAYMENT.CAPTURE.REFUNDED') {
+    const refund = parseRefundEventResource(source);
+    return refund ? { refundId: refund.refundId, captureId: refund.captureId } : {};
+  }
+  if (eventType === 'PAYMENT.CAPTURE.REVERSED' || eventType === 'PAYMENT.CAPTURE.PENDING'
+    || eventType === 'PAYMENT.CAPTURE.DENIED' || eventType === 'PAYMENT.CAPTURE.DECLINED') {
+    const capture = parseCaptureEventResource(source);
+    return capture ? { captureId: capture.captureId, orderId: capture.orderId } : {};
+  }
+  if (eventType === 'CUSTOMER.DISPUTE.CREATED' || eventType === 'CUSTOMER.DISPUTE.UPDATED'
+    || eventType === 'CUSTOMER.DISPUTE.RESOLVED') {
+    // Dispute events keep the disputed capture identities (first one) for
+    // recovery; the dispute lifecycle is provider-evidenced by the signed event.
+    const captureId = parseDisputeCaptureIds(source)[0] || '';
+    return { captureId };
+  }
+  return {};
 }
 
 async function markCheckout(db, id, status) {

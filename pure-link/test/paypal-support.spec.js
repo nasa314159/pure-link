@@ -43,6 +43,7 @@ class SqliteD1 {
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec(readFileSync(new URL('../migrations/0000_legacy_base.sql', import.meta.url), 'utf8'));
     this.db.exec(readFileSync(new URL('../migrations/0016_paypal_support.sql', import.meta.url), 'utf8'));
+    this.db.exec(readFileSync(new URL('../migrations/0017_paypal_support_recovery.sql', import.meta.url), 'utf8'));
   }
 
   prepare(sql) {
@@ -122,6 +123,15 @@ function scriptedFetch(queue) {
 
 function paypalCalls(implementation) {
   return implementation.calls.filter((call) => !call.url.includes('/v1/oauth2/token') && !call.url.includes('verify-webhook-signature'));
+}
+
+// Completes a checkout through the browser-return convergence path.
+async function completedCapture(db) {
+  await pendingCheckout({ db });
+  const api = scriptedFetch([
+    jsonResponse(orderBody({ id: 'ORDER-1', status: 'COMPLETED', captures: [captureResource()] })),
+  ]);
+  await handlePaypalSupportBrowserReturn(new URL(`${CANONICAL_ORIGIN}/api/payment-return/paypal-support?token=ORDER-1&locale=en`), { ...env, pure_link_db: db }, api);
 }
 
 async function pendingCheckout({ db, amount = '5.00', input = {}, orderId = 'ORDER-1' } = {}) {
@@ -526,14 +536,6 @@ describe('PayPal webhook security and durable processing', () => {
 });
 
 describe('refunds, reversals, and late events', () => {
-  async function completedCapture(db) {
-    await pendingCheckout({ db });
-    const api = scriptedFetch([
-      jsonResponse(orderBody({ id: 'ORDER-1', status: 'COMPLETED', captures: [captureResource()] })),
-    ]);
-    await handlePaypalSupportBrowserReturn(new URL(`${CANONICAL_ORIGIN}/api/payment-return/paypal-support?token=ORDER-1&locale=en`), { ...env, pure_link_db: db }, api);
-  }
-
   it('applies a partial refund then a full refund, idempotently', async () => {
     const db = new SqliteD1();
     await completedCapture(db);
@@ -601,19 +603,29 @@ describe('refunds, reversals, and late events', () => {
       jsonResponse({ verification_status: 'SUCCESS' }),
       jsonResponse({ verification_status: 'SUCCESS' }),
       jsonResponse({ verification_status: 'SUCCESS' }),
+      jsonResponse({ verification_status: 'SUCCESS' }),
+      jsonResponse({ verification_status: 'SUCCESS' }),
     ]);
     await handlePaypalWebhook(webhookRequest(eventPayload('CUSTOMER.DISPUTE.CREATED', { disputed_transactions: [{ seller_transaction_id: 'CAPTURE-1' }] })), { ...env, pure_link_db: db }, implementation);
-    expect(rows(db, 'SELECT status FROM paypal_support_contributions')[0]).toEqual({ status: 'disputed' });
+    // Dispute lifecycle is tracked separately from the ledger-derived money status.
+    expect(rows(db, 'SELECT status, dispute_state FROM paypal_support_contributions')[0]).toEqual({ status: 'completed', dispute_state: 'open' });
+    // A refund arriving while the dispute is open must NOT clear the dispute.
+    await handlePaypalWebhook(webhookRequest(eventPayload('PAYMENT.CAPTURE.REFUNDED', refundResource({ refundId: 'REFUND-DISPUTE', amountMinor: '1.00' }))), { ...env, pure_link_db: db }, implementation);
+    expect(rows(db, 'SELECT status, dispute_state, refunded_amount_minor FROM paypal_support_contributions')[0]).toEqual({ status: 'partially_refunded', dispute_state: 'open', refunded_amount_minor: 100 });
     await handlePaypalWebhook(webhookRequest(eventPayload('PAYMENT.REFUND.PENDING', refundResource({ status: 'PENDING' }))), { ...env, pure_link_db: db }, implementation);
     await handlePaypalWebhook(webhookRequest(eventPayload('PAYMENT.REFUND.FAILED', refundResource({ status: 'FAILED' }))), { ...env, pure_link_db: db }, implementation);
     await handlePaypalWebhook(webhookRequest(eventPayload('BILLING.SUBSCRIPTION.CREATED', { id: 'SUB-1' })), { ...env, pure_link_db: db }, implementation);
     const notes = rows(db, "SELECT event_type, last_error, state FROM paypal_support_webhook_events ORDER BY event_type");
     expect(notes.every((row) => row.state === 'processed')).toBe(true);
     expect(notes.find((row) => row.event_type === 'BILLING.SUBSCRIPTION.CREATED').last_error).toContain('unsupported');
+    // Provider-evidenced resolution (PayPal-signed dispute event) clears only an
+    // open dispute; the ledger-derived money state is untouched.
+    await handlePaypalWebhook(webhookRequest(eventPayload('CUSTOMER.DISPUTE.RESOLVED', { disputed_transactions: [{ seller_transaction_id: 'CAPTURE-1' }] })), { ...env, pure_link_db: db }, implementation);
+    expect(rows(db, 'SELECT status, dispute_state FROM paypal_support_contributions')[0]).toEqual({ status: 'partially_refunded', dispute_state: 'resolved' });
     // An unreadable refund event is acknowledged but never applied.
     const unreadable = scriptedFetch([jsonResponse({ verification_status: 'SUCCESS' })]);
     expect((await handlePaypalWebhook(webhookRequest(eventPayload('PAYMENT.CAPTURE.REFUNDED', { id: 'REFUND-X', amount: { currency_code: 'USD', value: '1.00' } })), { ...env, pure_link_db: db }, unreadable)).status).toBe(200);
-    expect(rows(db, 'SELECT COUNT(*) AS n FROM paypal_support_refunds')[0].n).toBe(0);
+    expect(rows(db, 'SELECT COUNT(*) AS n FROM paypal_support_refunds')[0].n).toBe(1);
   });
 
   it('sums refunds across late, out-of-order, and pre-capture events without exceeding the capture', async () => {
@@ -751,5 +763,114 @@ describe('migration invariants at the SQLite edge', () => {
   it('preserves foreign-key integrity for checkout references', () => {
     const db = new SqliteD1();
     expect(() => db.db.exec("INSERT INTO paypal_support_contributions (paypal_capture_id, paypal_order_id, checkout_request_id, merchant_id, amount_minor, currency) VALUES ('CAP-1', 'ORDER-1', 'missing-checkout', 'MER1', 500, 'USD')")).toThrow(/FOREIGN KEY/);
+  });
+});
+
+describe('M1B targeted financial-correctness regressions', () => {
+  it('records a genuine verified late capture even when the local checkout was marked failed', async () => {
+    const db = new SqliteD1();
+    await pendingCheckout({ db });
+    // First a declined capture marks the checkout failed locally.
+    const declinedApi = scriptedFetch([
+      jsonResponse(orderBody({ id: 'ORDER-1', status: 'APPROVED' })),
+      jsonResponse(orderBody({ id: 'ORDER-1', status: 'COMPLETED', captures: [captureResource({ status: 'DECLINED' })] })),
+    ]);
+    await handlePaypalSupportBrowserReturn(new URL(`${CANONICAL_ORIGIN}/api/payment-return/paypal-support?token=ORDER-1&locale=en`), { ...env, pure_link_db: db }, declinedApi);
+    expect(rows(db, 'SELECT status FROM paypal_support_checkouts')[0]).toEqual({ status: 'failed' });
+    // Later PayPal authoritatively completes the capture (e.g. retry/async
+    // settlement): the late event must be recorded, not silently discarded.
+    const lateApi = scriptedFetch([
+      jsonResponse({ verification_status: 'SUCCESS' }),
+      jsonResponse(orderBody({ id: 'ORDER-1', status: 'COMPLETED', captures: [captureResource()] })),
+    ]);
+    const response = await handlePaypalWebhook(webhookRequest(eventPayload('CHECKOUT.ORDER.COMPLETED', orderBody({ id: 'ORDER-1', status: 'COMPLETED' }))), { ...env, pure_link_db: db }, lateApi);
+    expect(await response.json()).toEqual({ received: true });
+    expect(rows(db, 'SELECT COUNT(*) AS n FROM paypal_support_contributions')[0].n).toBe(1);
+    expect(rows(db, 'SELECT status FROM paypal_support_checkouts')[0]).toEqual({ status: 'completed' });
+  });
+
+  it('records a verified capture on an expired checkout and restores it to completed', async () => {
+    const db = new SqliteD1();
+    await pendingCheckout({ db });
+    db.db.exec("UPDATE paypal_support_checkouts SET status = 'expired'");
+    const api = scriptedFetch([
+      jsonResponse(orderBody({ id: 'ORDER-1', status: 'COMPLETED', captures: [captureResource()] })),
+    ]);
+    const response = await handlePaypalSupportBrowserReturn(new URL(`${CANONICAL_ORIGIN}/api/payment-return/paypal-support?token=ORDER-1&locale=en`), { ...env, pure_link_db: db }, api);
+    expect(response.headers.get('location')).toBe('/en/support?thanks=1');
+    expect(rows(db, 'SELECT status FROM paypal_support_checkouts')[0]).toEqual({ status: 'completed' });
+    expect(rows(db, 'SELECT COUNT(*) AS n FROM paypal_support_contributions')[0].n).toBe(1);
+  });
+
+  it('recovers a failed refund event from minimal identifiers via authenticated PayPal lookup', async () => {
+    const db = new SqliteD1();
+    await completedCapture(db);
+    // Simulate the documented crash point: the verified refund event was
+    // durably recorded (with its minimal identifiers) but processing failed.
+    db.db.exec(`INSERT INTO paypal_support_webhook_events (event_id, event_type, state, attempts, last_error, paypal_refund_id, paypal_capture_id)
+      VALUES ('WH-RECOVER-1', 'PAYMENT.CAPTURE.REFUNDED', 'failed', 1, 'processing crashed', 'REFUND-9', 'CAPTURE-1')`);
+    // Recovery re-reads the authoritative refund from PayPal (no payload, no
+    // browser return required) and completes the accounting.
+    const api = scriptedFetch([
+      jsonResponse(refundResource({ refundId: 'REFUND-9', captureId: 'CAPTURE-1', status: 'COMPLETED', amountMinor: '0.30' })),
+    ]);
+    const summary = await reconcilePaypalSupport({ env: { ...env, pure_link_db: db }, fetchImplementation: api });
+    expect(summary.recoveredEvents).toBe(1);
+    expect(rows(db, 'SELECT state, last_error FROM paypal_support_webhook_events WHERE event_id = \'WH-RECOVER-1\'')[0]).toEqual({ state: 'processed', last_error: 'refund-applied' });
+    expect(rows(db, 'SELECT status, refunded_amount_minor FROM paypal_support_contributions')[0]).toEqual({ status: 'partially_refunded', refunded_amount_minor: 30 });
+  });
+
+  it('recovers a failed order-approval event via reconcile without any browser return', async () => {
+    const db = new SqliteD1();
+    await pendingCheckout({ db });
+    db.db.exec(`INSERT INTO paypal_support_webhook_events (event_id, event_type, state, attempts, last_error, paypal_order_id)
+      VALUES ('WH-RECOVER-2', 'CHECKOUT.ORDER.APPROVED', 'failed', 1, 'processing crashed', 'ORDER-1')`);
+    const api = scriptedFetch([
+      jsonResponse(orderBody({ id: 'ORDER-1', status: 'APPROVED' })),
+      jsonResponse(orderBody({ id: 'ORDER-1', status: 'COMPLETED', captures: [captureResource()] })),
+    ]);
+    const summary = await reconcilePaypalSupport({ env: { ...env, pure_link_db: db }, fetchImplementation: api });
+    expect(summary.recoveredEvents).toBe(1);
+    expect(rows(db, 'SELECT COUNT(*) AS n FROM paypal_support_contributions')[0].n).toBe(1);
+    expect(rows(db, 'SELECT state FROM paypal_support_webhook_events WHERE event_id = \'WH-RECOVER-2\'')[0]).toEqual({ state: 'processed' });
+  });
+
+  it('keeps an unrecoverable event failed and reports the remaining count', async () => {
+    const db = new SqliteD1();
+    await pendingCheckout({ db });
+    db.db.exec(`INSERT INTO paypal_support_webhook_events (event_id, event_type, state, attempts, last_error)
+      VALUES ('WH-RECOVER-3', 'PAYMENT.REFUND.PENDING', 'failed', 1, 'processing crashed')`);
+    const summary = await reconcilePaypalSupport({ env: { ...env, pure_link_db: db }, fetchImplementation: scriptedFetch([]) });
+    expect(summary.recoveredEvents).toBe(0);
+    expect(summary.stillFailedEvents).toBe(1);
+    expect(summary.failedWebhookEvents).toBe(1);
+    expect(rows(db, "SELECT state FROM paypal_support_webhook_events WHERE event_id = 'WH-RECOVER-3'")[0]).toEqual({ state: 'failed' });
+  });
+
+  it('rotates examined checkouts so a failing batch cannot starve later records', async () => {
+    const db = new SqliteD1();
+    await pendingCheckout({ db, orderId: 'ORDER-1' });
+    await pendingCheckout({ db, orderId: 'ORDER-2', amount: '10.00' });
+    db.db.exec("UPDATE paypal_support_checkouts SET updated_at = datetime('now', '-30 minutes')");
+    db.db.exec("UPDATE paypal_support_checkouts SET updated_at = datetime('now', '-29 minutes') WHERE paypal_order_id = 'ORDER-2'");
+    // Batch of one examines only the oldest row, then rotates it forward.
+    const first = await reconcilePaypalSupport({ env: { ...env, pure_link_db: db }, fetchImplementation: scriptedFetch([]), batchSize: 1 });
+    expect(first.examined).toBe(1);
+    const second = await reconcilePaypalSupport({ env: { ...env, pure_link_db: db }, fetchImplementation: scriptedFetch([]), batchSize: 1 });
+    expect(second.examined).toBe(1);
+    // Both checkouts were examined exactly once across the two bounded calls.
+    expect(rows(db, 'SELECT COUNT(*) AS n FROM paypal_support_checkouts WHERE updated_at > datetime(\'now\', \'-5 minutes\')')[0].n).toBe(2);
+  });
+
+  it('stores minimal provider identifiers on recorded events and never payloads', async () => {
+    const db = new SqliteD1();
+    await pendingCheckout({ db });
+    const api = scriptedFetch([
+      jsonResponse({ verification_status: 'SUCCESS' }),
+      jsonResponse(orderBody({ id: 'ORDER-1', status: 'COMPLETED', captures: [captureResource()] })),
+    ]);
+    await handlePaypalWebhook(webhookRequest(eventPayload('CHECKOUT.ORDER.APPROVED', orderBody({ id: 'ORDER-1', status: 'APPROVED' }))), { ...env, pure_link_db: db }, api);
+    const event = rows(db, 'SELECT event_type, paypal_order_id, paypal_capture_id, paypal_refund_id FROM paypal_support_webhook_events')[0];
+    expect(event).toEqual({ event_type: 'CHECKOUT.ORDER.APPROVED', paypal_order_id: 'ORDER-1', paypal_capture_id: null, paypal_refund_id: null });
   });
 });

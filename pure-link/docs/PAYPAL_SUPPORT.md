@@ -45,11 +45,20 @@ Live checkout is additionally bound to the canonical public origin
 `paypal_support_checkouts.status`:
 `pending → approved → capture_pending → completed`, or `failed`, or `expired`
 (stale, record retained forever — financial records are never deleted).
-`paypal_support_contributions.status`:
-`completed → partially_refunded → refunded`, or `reversed`, or `disputed`
-(recognition only). Refund state is always recomputed from the append-only
-`paypal_support_refunds` ledger, so duplicate, late, and out-of-order events
-converge; the database refuses cumulative refunds above the capture.
+A locally `failed`/`expired` checkout never outranks authoritative settlement:
+a verified completed capture that matches the recorded identity, amount,
+currency, and merchant is always recorded.
+
+`paypal_support_contributions.status` (ledger-derived):
+`completed → partially_refunded → refunded`, or `reversed`. Refund state is
+always recomputed from the append-only `paypal_support_refunds` ledger, so
+duplicate, late, and out-of-order events converge; the database refuses
+cumulative refunds above the capture.
+
+`paypal_support_contributions.dispute_state` (provider-evidenced, separate from
+money state): `none → open → resolved`. Refund accounting can never silently
+clear an open dispute; only a PayPal-signed dispute-resolution event for that
+capture transitions it.
 
 All capture entry points (browser return, `CHECKOUT.ORDER.APPROVED/COMPLETED`,
 `PAYMENT.CAPTURE.COMPLETED`, operator reconciliation) converge on one
@@ -58,10 +67,16 @@ merchant, exact USD amount/currency, then `INSERT OR IGNORE` on unique
 capture/order/checkout identities. Captures reuse one stable per-checkout
 `PayPal-Request-Id`, so parallel callers get the same capture.
 
-Webhook events: verified → durably recorded (`paypal_support_webhook_events`) →
-processed → 2xx. Processing failures keep the event row (`failed`) and return
-5xx so PayPal retries; the operator reconciliation reprocesses them.
-Unsupported event types are acknowledged and retained without action.
+Webhook events: verified → durably recorded (`paypal_support_webhook_events`,
+with minimal order/capture/refund identifiers — never payloads or personal
+data) → processed → 2xx. Processing failures keep the event row (`failed`) and
+return 5xx so PayPal retries; the operator reconciliation reprocesses failed
+events from those identifiers using PayPal's authenticated lookup APIs
+(`GET /v2/checkout/orders/{id}`, `GET /v2/payments/captures/{id}`,
+`GET /v2/payments/refunds/{id}`) without requiring the original event payload
+or a browser return. Examined checkouts rotate forward on every pass, so a
+persistently failing record cannot starve later ones. Unsupported event types
+are acknowledged and retained without action.
 
 ## Amounts
 
