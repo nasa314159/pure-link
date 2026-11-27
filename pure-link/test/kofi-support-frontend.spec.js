@@ -19,7 +19,7 @@ const baseTotals = { netTwd: 0, netUsdMinor: 0, contributionCount: 0, publicSupp
 const LOCALES = ['en', 'zh-Hant'];
 const KOFI_TIP_LINK = `<a class="support-action support-action-kofi" href="${KOFI_DONATION_URL}" target="_blank" rel="noopener noreferrer">`;
 const KOFI_MEMBERSHIP_LINK = `<a class="support-action support-action-kofi support-action-kofi-membership" href="${KOFI_MEMBERSHIP_URL}" target="_blank" rel="noopener noreferrer">`;
-const ECPAY_SUBMIT = '<button type="submit" class="support-action support-action-ecpay" id="support-button">';
+const ECPAY_SUBMIT = '<button type="submit" class="support-action support-action-ecpay" id="support-button" data-provider-submit="ecpay">';
 const FALLBACK_SUBMIT = '<button class="create-button" id="support-button" type="submit">';
 const KOFI_SECTION_OPEN = '<section class="support-kofi" aria-labelledby="support-kofi-heading">';
 const FORM_OPEN = '<form id="support-form">';
@@ -184,7 +184,9 @@ describe('ECPay checkout behavior remains available and unchanged', () => {
     for (const preset of ['100', '300', '500', '1000']) expect(html).toContain(`data-support-amount="${preset}"`);
     expect(html).toContain('min="50" max="10000"');
     expect(html).toContain('id="support-ecpay-description"');
-    expect(html).toContain('id="support-ecpay-attribution"');
+    // ECPay and PayPal share one attribution section (renamed for the shared
+    // surface); the three publication consents are unchanged.
+    expect(html).toContain('id="support-attribution"');
     expect(html).toContain('data-action="support-checkout"');
     const form = extractForm(html);
     for (const name of ['publicName', 'publicMessage', 'publicAmount']) expect(form).toContain(`name="${name}"`);
@@ -195,8 +197,9 @@ describe('ECPay checkout behavior remains available and unchanged', () => {
   it('keeps the ECPay action a real submit wired to the existing checkout script', () => {
     const html = render('en');
     expect(html).toContain(ECPAY_SUBMIT);
-    const script = html.slice(html.indexOf('const supportMessages'), html.indexOf('supportForm.addEventListener(\'submit\'') + 1);
-    expect(script).toContain('const supportButton = document.getElementById(\'support-button\')');
+    expect(html).toContain('data-provider-submit="ecpay"');
+    const script = html.slice(html.indexOf('const supportMessages'), html.indexOf("supportForm.addEventListener('submit'") + 1);
+    expect(script).toContain('const submitButtons = supportForm ? Array.from(supportForm.querySelectorAll(\'button[type="submit"]\')) : [];');
     expect(script.slice(script.indexOf('const updateSupportMethod'))).toContain("provider === 'ecpay'");
   });
 
@@ -277,15 +280,31 @@ describe('privacy stays private-by-default and totals are untouched', () => {
 
 describe('payment-provider configuration is untouched in every deployment shape', () => {
   it('keeps the fallback single submit plus the separated Ko-fi section without ECPay', () => {
-    for (const providers of [{}, { lemon: true }, { ecpay: true, lemon: true }]) {
-      const html = render('en', providers);
-      expect(html).not.toContain(ECPAY_SUBMIT);
-      if (providers.ecpay || providers.lemon) expect(html).toContain(FALLBACK_SUBMIT);
-      else expect(html).toContain('Support checkout is not available yet.');
-      expect(html).toContain(KOFI_SECTION_OPEN);
-      const kofiSection = extractKofiSection(html);
-      expect(kofiSection).toContain(KOFI_TIP_LINK);
-      expect(kofiSection).toContain(KOFI_MEMBERSHIP_LINK);
+    const none = render('en', {});
+    expect(none).toContain('Support checkout is not available yet.');
+    expect(none).not.toContain(FORM_OPEN);
+    expect(none).toContain(KOFI_SECTION_OPEN);
+    const lemonOnly = render('en', { lemon: true });
+    expect(lemonOnly).not.toContain(ECPAY_SUBMIT);
+    expect(lemonOnly).not.toContain('id="support-paypal-button"');
+    expect(lemonOnly).toContain(FALLBACK_SUBMIT);
+    expect(extractKofiSection(lemonOnly)).toContain(KOFI_TIP_LINK);
+    expect(extractKofiSection(lemonOnly)).toContain(KOFI_MEMBERSHIP_LINK);
+  });
+
+  it('keeps each branded submit bound to its own provider rail in shared shapes', () => {
+    const withEcpayAndLemon = render('en', { ecpay: true, lemon: true });
+    expect(withEcpayAndLemon).toContain(ECPAY_SUBMIT);
+    expect(withEcpayAndLemon).toContain('data-provider-submit="ecpay"');
+    expect(withEcpayAndLemon).not.toContain('id="support-paypal-button"');
+    const withPaypalOnly = render('en', { paypal: true });
+    expect(withPaypalOnly).toContain('<button type="submit" class="support-action support-action-paypal" id="support-paypal-button" data-provider-submit="paypal">');
+    expect(withPaypalOnly).not.toContain(ECPAY_SUBMIT);
+    for (const html of [render('en', { ecpay: true, paypal: true, lemon: true }), render('en', { ecpay: true, paypal: true })]) {
+      expect(html).toContain(ECPAY_SUBMIT);
+      expect(html).toContain('data-provider-submit="paypal"');
+      expect((html.match(/data-provider-submit="(?:ecpay|paypal)"/g) || []).length).toBe(2);
     }
+    expect(extractKofiSection(render('en', { ecpay: true, paypal: true, lemon: true }))).toContain(KOFI_TIP_LINK);
   });
 });
