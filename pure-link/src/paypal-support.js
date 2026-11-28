@@ -347,7 +347,16 @@ async function processVerifiedCapture({ env, db, orderId, captureIdHint = '', fe
     await markCheckout(db, checkout.id, 'failed');
     return { outcome: 'voided' };
   }
-  if (orderCheck.outcome === 'mismatch') return { outcome: 'mismatch' };
+  if (orderCheck.outcome === 'mismatch') {
+    // Bounded operator diagnostic: the mismatch category and the PayPal-returned
+    // recipient identifier (our own merchant identity, never a payer value).
+    console.error('PayPal support verification mismatch', {
+      kind: 'order', orderId: checkout.paypal_order_id, reason: orderCheck.reason,
+      payeeMerchantId: orderCheck.payeeMerchantId || null, expectedMerchantId: checkout.merchant_id,
+      expectedAmountMinor: checkout.expected_amount_minor, paypalAmountValue: orderCheck.amountValue || null,
+    });
+    return { outcome: 'mismatch' };
+  }
 
   // Capture only when the buyer has approved. On an already-COMPLETED order the
   // capture identity comes from the order itself.
@@ -380,7 +389,14 @@ async function processVerifiedCapture({ env, db, orderId, captureIdHint = '', fe
     await markCheckout(db, checkout.id, 'failed');
     return { outcome: 'declined' };
   }
-  if (captureCheck.outcome === 'mismatch') return { outcome: 'mismatch' };
+  if (captureCheck.outcome === 'mismatch') {
+    console.error('PayPal support verification mismatch', {
+      kind: 'capture', captureId: capture.captureId, reason: captureCheck.reason,
+      payeeMerchantId: capture.payee?.merchant_id || null, expectedMerchantId: checkout.merchant_id,
+      expectedAmountMinor: checkout.expected_amount_minor, paypalAmountValue: captureCheck.amountValue || null,
+    });
+    return { outcome: 'mismatch' };
+  }
 
   await recordContribution(db, checkout, capture);
   await markCheckout(db, checkout.id, 'completed');
@@ -393,12 +409,13 @@ function verifyOrderAgainstCheckout(order, checkout) {
   if (status === 'VOIDED') return { outcome: 'voided' };
   if (!['APPROVED', 'COMPLETED'].includes(status)) return { outcome: 'not-approved' };
   const units = Array.isArray(order?.purchase_units) ? order.purchase_units : [];
-  if (units.length !== 1) return { outcome: 'mismatch' };
+  if (units.length !== 1) return { outcome: 'mismatch', reason: 'purchase-units' };
   const unit = units[0];
   const amount = unit?.amount || {};
-  if (String(amount.currency_code || '') !== PAYPAL_CURRENCY) return { outcome: 'mismatch' };
-  if (parseMinorUnits(amount.value) !== Number(checkout.expected_amount_minor)) return { outcome: 'mismatch' };
-  if (validPaypalResourceId(unit?.payee?.merchant_id) !== String(checkout.merchant_id)) return { outcome: 'mismatch' };
+  if (String(amount.currency_code || '') !== PAYPAL_CURRENCY) return { outcome: 'mismatch', reason: 'currency', amountValue: amount.value };
+  if (parseMinorUnits(amount.value) !== Number(checkout.expected_amount_minor)) return { outcome: 'mismatch', reason: 'amount', amountValue: amount.value };
+  const payeeMerchantId = validPaypalResourceId(unit?.payee?.merchant_id);
+  if (payeeMerchantId !== String(checkout.merchant_id)) return { outcome: 'mismatch', reason: 'merchant', payeeMerchantId, amountValue: amount.value };
   return { outcome: 'ok', status };
 }
 
@@ -406,13 +423,14 @@ function verifyCaptureAgainstCheckout(capture, checkout) {
   const status = String(capture.status || '');
   if (status === 'PENDING') return { outcome: 'pending' };
   if (['DECLINED', 'FAILED', 'DENIED'].includes(status)) return { outcome: 'declined' };
-  if (status !== 'COMPLETED') return { outcome: 'mismatch' };
-  if (parseMinorUnits(capture.amount?.value) !== Number(checkout.expected_amount_minor)) return { outcome: 'mismatch' };
-  if (String(capture.amount?.currency_code || '') !== PAYPAL_CURRENCY) return { outcome: 'mismatch' };
-  if (validPaypalResourceId(capture.payee?.merchant_id) !== String(checkout.merchant_id)) return { outcome: 'mismatch' };
+  if (status !== 'COMPLETED') return { outcome: 'mismatch', reason: 'status' };
+  if (parseMinorUnits(capture.amount?.value) !== Number(checkout.expected_amount_minor)) return { outcome: 'mismatch', reason: 'amount', amountValue: capture.amount?.value };
+  if (String(capture.amount?.currency_code || '') !== PAYPAL_CURRENCY) return { outcome: 'mismatch', reason: 'currency', amountValue: capture.amount?.value };
+  const payeeMerchantId = validPaypalResourceId(capture.payee?.merchant_id);
+  if (payeeMerchantId !== String(checkout.merchant_id)) return { outcome: 'mismatch', reason: 'merchant', payeeMerchantId, amountValue: capture.amount?.value };
   // A support capture is final; a non-final capture would imply a multi-capture
   // contract this rail does not use.
-  if (capture.final_capture === false) return { outcome: 'mismatch' };
+  if (capture.final_capture === false) return { outcome: 'mismatch', reason: 'not-final' };
   return { outcome: 'ok' };
 }
 
@@ -768,8 +786,9 @@ function extractEventIdentifiers(eventType, resource) {
     const refund = parseRefundEventResource(source);
     return refund ? { refundId: refund.refundId, captureId: refund.captureId } : {};
   }
-  if (eventType === 'PAYMENT.CAPTURE.REVERSED' || eventType === 'PAYMENT.CAPTURE.PENDING'
-    || eventType === 'PAYMENT.CAPTURE.DENIED' || eventType === 'PAYMENT.CAPTURE.DECLINED') {
+  if (eventType === 'PAYMENT.CAPTURE.COMPLETED' || eventType === 'PAYMENT.CAPTURE.REVERSED'
+    || eventType === 'PAYMENT.CAPTURE.PENDING' || eventType === 'PAYMENT.CAPTURE.DENIED'
+    || eventType === 'PAYMENT.CAPTURE.DECLINED') {
     const capture = parseCaptureEventResource(source);
     return capture ? { captureId: capture.captureId, orderId: capture.orderId } : {};
   }
