@@ -5,6 +5,7 @@ import { hashManagementToken } from './security.js';
 import { renderFormulaContent } from './formula.js';
 import { getMessages, localizedPath } from './i18n.js';
 import { KOFI_DONATION_URL, KOFI_MEMBERSHIP_URL } from './kofi.js';
+import { PAYPAL_SUPPORT_PRESET_AMOUNTS_MINOR } from './paypal-support.js';
 import { MESSAGE_LIMIT, countCodePoints, isOverLimit, overBy, interpolate as interpolateMessage, formatCounter, formatOverLimitMessage } from './support-message.js';
 
 const PLATFORM_NOTICE = '透過 PureLink 分享的內容與外部網站由建立者提供，不代表 PureLink 的立場、推薦、背書或安全保證。';
@@ -1576,6 +1577,10 @@ function supportEcpayIcon() {
   return `<svg class="support-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5.5" width="19" height="13" rx="2.2"/><line x1="2.5" y1="10" x2="21.5" y2="10"/><line x1="6" y1="15.4" x2="10.5" y2="15.4"/></svg>`;
 }
 
+function supportPaypalIcon() {
+  return `<svg class="support-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20.5 9.4 4.6a1 1 0 0 1 1-.9h5.2c2.9 0 4.9 2.3 4.4 5.2-.5 3.2-3 5.2-6.1 5.2h-2.6l-.9 6a1 1 0 0 1-1 .9H8a1 1 0 0 1-1-1.1z"/><path d="M5.5 20.5h8.1"/></svg>`;
+}
+
 function supportKofiIcon() {
   return `<svg class="support-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 7.5h12v4.4a4.6 4.6 0 0 1-4.6 4.6h-2.8a4.6 4.6 0 0 1-4.6-4.6z"/><path d="M16.5 10.2h1.3a2.3 2.3 0 0 1 0 4.6h-1.3"/><path d="M3.5 19.5h14"/><path d="M10.5 10.2c1.05-.95 2.5.05 2.5 1.15 0 1.15-2.5 2.3-2.5 2.3s-2.5-1.15-2.5-2.3c0-1.1 1.45-2.1 2.5-1.15z" fill="currentColor" stroke="none"/></svg>`;
 }
@@ -1586,38 +1591,53 @@ function supportKofiMembershipIcon() {
 
 export function renderSupportPage(totals, checkoutProviders = {}, returnState = '', nonce = '', locale = 'zh-Hant', turnstileSiteKey = '', googleSiteVerification = '') {
   const m = getMessages(locale);
-  const providers = typeof checkoutProviders === 'boolean' ? { ecpay: checkoutProviders, lemon: false } : checkoutProviders;
-  const checkoutConfigured = Boolean(providers?.ecpay || providers?.lemon);
+  const providers = typeof checkoutProviders === 'boolean' ? { ecpay: checkoutProviders, lemon: false, paypal: false } : { paypal: false, ...checkoutProviders };
+  const checkoutConfigured = Boolean(providers?.ecpay || providers?.lemon || providers?.paypal);
   const publicSupporters = (totals?.publicSupporters || []).map((supporter) => renderPublicSupporter(supporter, locale, m.support)).filter(Boolean);
   const turnstileWidget = checkoutConfigured && turnstileSiteKey
     ? `<div class="turnstile-wrap"><div class="cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}" data-action="support-checkout"></div></div>`
     : '';
-  const providerChoices = providers.ecpay && providers.lemon
-    ? `<fieldset class="provider-choices"><legend>${escapeHtml(m.billing.providerChoice)}</legend><label><input type="radio" name="provider" value="ecpay" checked> ${escapeHtml(m.support.ecpayMethod)}</label><label><input type="radio" name="provider" value="lemon"> ${escapeHtml(m.support.lemonMethod)}</label></fieldset>`
-    : providers.ecpay
-      ? `<input type="hidden" name="provider" value="ecpay"><p class="field-help">${escapeHtml(m.support.ecpayMethod)}</p>`
+  const providerOptions = [
+    providers.ecpay ? ['ecpay', m.support.ecpayMethod] : null,
+    providers.paypal ? ['paypal', m.support.paypalMethod] : null,
+    providers.lemon ? ['lemon', m.support.lemonMethod] : null,
+  ].filter(Boolean);
+  const providerChoices = providerOptions.length >= 2
+    ? `<fieldset class="provider-choices"><legend>${escapeHtml(m.billing.providerChoice)}</legend>${providerOptions.map(([value, label], index) => `<label><input type="radio" name="provider" value="${value}"${index === 0 ? ' checked' : ''}> ${escapeHtml(label)}</label>`).join('')}</fieldset>`
+    : providerOptions.length === 1
+      ? `<input type="hidden" name="provider" value="${providerOptions[0][0]}"><p class="field-help">${escapeHtml(providerOptions[0][1])}</p>`
       : `<input type="hidden" name="provider" value="lemon"><p class="field-help">${escapeHtml(m.support.lemonMethod)}</p>`;
   const amountControls = providers.ecpay ? `<section id="support-amount-controls"><p class="field-help" id="support-ecpay-description">${escapeHtml(m.support.ecpayDescription)}</p><label class="field-label" for="support-amount">${escapeHtml(m.support.amount)}</label><div class="support-presets" aria-label="${escapeHtml(m.support.amountPresets)}">${[100, 300, 500, 1000].map((amount) => `<button type="button" data-support-amount="${amount}" aria-pressed="${amount === 100 ? 'true' : 'false'}"${amount === 100 ? ' class="selected"' : ''}>NT$${amount}</button>`).join('')}</div><input id="support-amount" name="amount" type="number" min="50" max="10000" step="1" inputmode="numeric" value="100" required><p class="field-help">${escapeHtml(m.support.customAmount)}</p></section>` : '';
-  const ecpayAttribution = providers.ecpay ? `<section id="support-ecpay-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" rows="3" aria-describedby="support-message-help support-message-counter support-message-counter-error"></textarea><p class="field-help" id="support-message-help">${escapeHtml(m.support.optionalMessageHelp)}</p><p class="field-counter" id="support-message-counter" data-limit="${MESSAGE_LIMIT}" aria-live="polite" aria-atomic="true"></p><p class="field-counter-error" id="support-message-counter-error" role="alert" aria-live="assertive" hidden></p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
+  // PayPal USD section: presets and custom range are rendered in the page's
+  // exact USD figures; the supporter confirms this exact amount before the
+  // redirect to PayPal's own approval page. Never rendered while the checkout
+  // flag is off.
+  const paypalAmountControls = providers.paypal ? `<section id="support-paypal-amount-controls"><p class="field-help" id="support-paypal-description">${escapeHtml(m.support.paypalDescription)}</p><label class="field-label" for="support-paypal-amount">${escapeHtml(m.support.paypalAmount)}</label><div class="support-presets" aria-label="${escapeHtml(m.support.amountPresets)}">${PAYPAL_SUPPORT_PRESET_AMOUNTS_MINOR.map((minor) => { const major = Math.floor(minor / 100); const cents = minor - major * 100; const display = cents ? `${major}.${String(cents).padStart(2, '0')}` : `${major}`; return `<button type="button" data-support-paypal-amount="${display}" aria-pressed="${minor === 500 ? 'true' : 'false'}"${minor === 500 ? ' class="selected"' : ''}>US$${display}</button>`; }).join('')}</div><input id="support-paypal-amount" name="amount" type="number" min="3" max="300" step="0.01" inputmode="decimal" value="5" required><p class="field-help">${escapeHtml(m.support.paypalCustomAmount)}</p></section>` : '';
+  // ECPay and PayPal share the attribution fields (name/message and the three
+  // independent publication consents); amounts, currencies, and checkout
+  // states stay distinct per provider.
+  const checkoutAttribution = providers.ecpay || providers.paypal ? `<section id="support-attribution"><label class="field-label" for="support-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicName" value="true"><span>${escapeHtml(m.support.publicName)}</span></label><label class="field-label" for="support-message">${escapeHtml(m.support.optionalMessage)}</label><textarea id="support-message" name="message" rows="3" aria-describedby="support-message-help support-message-counter support-message-counter-error"></textarea><p class="field-help" id="support-message-help">${escapeHtml(m.support.optionalMessageHelp)}</p><p class="field-counter" id="support-message-counter" data-limit="${MESSAGE_LIMIT}" aria-live="polite" aria-atomic="true"></p><p class="field-counter-error" id="support-message-counter-error" role="alert" aria-live="assertive" hidden></p><label class="check-row"><input type="checkbox" name="publicMessage" value="true"><span>${escapeHtml(m.support.publicMessage)}</span></label><label class="check-row"><input type="checkbox" name="publicAmount" value="true"><span>${escapeHtml(m.support.publicAmount)}</span></label></section>` : '';
   const lemonAttribution = providers.lemon ? `<section id="support-lemon-attribution"><label class="field-label" for="support-lemon-display-name">${escapeHtml(m.support.optionalName)}</label><input id="support-lemon-display-name" name="displayName" maxlength="60" autocomplete="nickname"><p class="field-help">${escapeHtml(m.support.optionalNameHelp)}</p><label class="check-row"><input type="checkbox" name="publicAttribution" value="true"><span>${escapeHtml(m.support.attribute)}</span></label></section>` : '';
-  // Payment actions. Providers stay clearly separated so no ECPay-only form
-  // control can be mistaken for a Ko-fi input. The green ECPay submit button
-  // stays inside the checkout form; the blue Ko-fi actions live in their own
-  // section outside the form: a one-time tip link (supporter chooses the
-  // amount, name, and message on ko-fi.com — Ko-fi documents no amount- or
-  // currency-prefill contract, so the link never carries query parameters)
-  // and a membership link to the verified tiers page. The section renders in
-  // every configuration, so Ko-fi stays reachable even when no checkout rail
-  // is enabled, and it never submits the checkout form.
-  const ecpayActionCard = `<button type="submit" class="support-action support-action-ecpay" id="support-button">${supportEcpayIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.ecpayButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.ecpayMethod)}</span></span></button>`;
+  // Payment actions. Providers stay clearly separated so no checkout-only form
+  // control can be mistaken for a Ko-fi input. The ECPay and PayPal submit
+  // buttons stay inside the checkout form and select their own provider rail;
+  // the blue Ko-fi actions live in their own section outside the form: a
+  // one-time tip link (supporter chooses the amount, name, and message on
+  // ko-fi.com — Ko-fi documents no amount- or currency-prefill contract, so
+  // the link never carries query parameters) and a membership link to the
+  // verified tiers page. The section renders in every configuration, so Ko-fi
+  // stays reachable even when no checkout rail is enabled, and it never
+  // submits the checkout form.
+  const ecpayActionCard = providers.ecpay ? `<button type="submit" class="support-action support-action-ecpay" id="support-button" data-provider-submit="ecpay">${supportEcpayIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.ecpayButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.ecpayMethod)}</span></span></button>` : '';
+  const paypalActionCard = providers.paypal ? `<button type="submit" class="support-action support-action-paypal" id="support-paypal-button" data-provider-submit="paypal">${supportPaypalIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.paypalButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.paypalSubtitle)}</span></span></button>` : '';
   const kofiActionCard = `<a class="support-action support-action-kofi" href="${escapeHtml(KOFI_DONATION_URL)}" target="_blank" rel="noopener noreferrer">${supportKofiIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.kofiButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.kofiSubtitle)}</span></span></a>`;
   const kofiMembershipActionCard = `<a class="support-action support-action-kofi support-action-kofi-membership" href="${escapeHtml(KOFI_MEMBERSHIP_URL)}" target="_blank" rel="noopener noreferrer">${supportKofiMembershipIcon()}<span class="support-action-copy"><span class="support-action-label">${escapeHtml(m.support.kofiMembershipButton)}</span><span class="support-action-subtitle">${escapeHtml(m.support.kofiMembershipSubtitle)}</span></span></a>`;
   const kofiSection = `<section class="support-kofi" aria-labelledby="support-kofi-heading"><h2 class="support-kofi-heading" id="support-kofi-heading">${escapeHtml(m.support.kofiHeading)}</h2><p class="field-help support-kofi-intro">${escapeHtml(m.support.kofiIntro)}</p><div class="support-actions support-actions-kofi">${kofiActionCard}${kofiMembershipActionCard}</div><p class="field-help support-actions-membership">${escapeHtml(m.support.kofiMembershipNote)}</p><p class="field-help support-actions-privacy">${escapeHtml(m.support.kofiPrivacy)}</p></section>`;
-  const submitActions = providers.ecpay && !providers.lemon
-    ? `<div class="support-actions support-actions-submit">${ecpayActionCard}</div><p class="field-help support-actions-note">${escapeHtml(m.support.actionsNote)}</p>`
+  const submitActions = providers.ecpay || providers.paypal
+    ? `<div class="support-actions support-actions-submit">${ecpayActionCard}${paypalActionCard}</div><p class="field-help support-actions-note">${escapeHtml(m.support.actionsNote)}</p>`
     : `<button class="create-button" id="support-button" type="submit">${escapeHtml(m.support.button)}</button>`;
   const checkout = checkoutConfigured
-    ? `<form id="support-form">${providerChoices}${amountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${ecpayAttribution}${lemonAttribution}${turnstileWidget}${submitActions}<p class="billing-status" id="support-status" role="status" hidden></p></form>${kofiSection}`
+    ? `<form id="support-form">${providerChoices}${amountControls}${paypalAmountControls}<p class="field-help" id="support-international-amount" hidden>${escapeHtml(m.support.internationalAmount)}</p>${checkoutAttribution}${lemonAttribution}${turnstileWidget}${submitActions}<p class="billing-status" id="support-status" role="status" hidden></p></form>${kofiSection}`
     : `<p class="billing-status">${m.support.unavailable}</p>${kofiSection}`;
   const supportHistory = renderSupportHistory(totals?.history || [], m.support, locale);
   const returnNotice = returnState === 'pending'
@@ -1636,26 +1656,56 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       const ${formatCounter.name} = ${formatCounter.toString()};
       const ${formatOverLimitMessage.name} = ${formatOverLimitMessage.toString()};
       const supportForm = document.getElementById('support-form');
-      const supportButton = document.getElementById('support-button');
       const supportStatus = document.getElementById('support-status');
       const supportAmountControls = document.getElementById('support-amount-controls');
+      const supportPaypalAmountControls = document.getElementById('support-paypal-amount-controls');
       const supportInternationalAmount = document.getElementById('support-international-amount');
       const supportAmount = document.getElementById('support-amount');
-      const supportEcpayAttribution = document.getElementById('support-ecpay-attribution');
+      const supportPaypalAmount = document.getElementById('support-paypal-amount');
+      const supportAttribution = document.getElementById('support-attribution');
       const supportLemonAttribution = document.getElementById('support-lemon-attribution');
       const supportMessage = document.getElementById('support-message');
       const supportMessageCounter = document.getElementById('support-message-counter');
       const supportMessageCounterError = document.getElementById('support-message-counter-error');
+      const submitButtons = supportForm ? Array.from(supportForm.querySelectorAll('button[type="submit"]')) : [];
+      // A branded action card submits its own rail: it selects the matching
+      // provider before the form submit, so amount controls and currency can
+      // never disagree with the button the supporter pressed.
+      const selectProvider = (value) => {
+        if (!supportForm) return;
+        let matched = false;
+        supportForm.querySelectorAll('input[name="provider"]').forEach((input) => {
+          if (input.type === 'radio') { input.checked = input.value === value; if (input.checked) matched = true; }
+        });
+        if (!matched) {
+          const hidden = supportForm.querySelector('input[name="provider"][type="hidden"]');
+          if (hidden) hidden.value = value;
+        }
+        updateSupportMethod();
+      };
+      if (supportForm) supportForm.querySelectorAll('[data-provider-submit]').forEach((button) => button.addEventListener('click', () => selectProvider(button.dataset.providerSubmit)));
       const updateSupportMethod = () => {
         if (!supportForm) return;
         const providerInput = supportForm.querySelector('input[name="provider"]:checked') || supportForm.querySelector('input[name="provider"]');
         const provider = providerInput?.value;
         const ecpay = provider === 'ecpay';
+        const paypal = provider === 'paypal';
+        const paypalState = paypal === true;
         if (supportAmountControls) supportAmountControls.hidden = !ecpay;
-        if (supportInternationalAmount) supportInternationalAmount.hidden = ecpay;
-        if (supportAmount) supportAmount.required = ecpay;
-        if (supportEcpayAttribution) { supportEcpayAttribution.hidden = !ecpay; supportEcpayAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = !ecpay; }); }
-        if (supportLemonAttribution) { supportLemonAttribution.hidden = ecpay; supportLemonAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = ecpay; }); }
+        if (supportPaypalAmountControls) supportPaypalAmountControls.hidden = !paypalState;
+        if (supportInternationalAmount) supportInternationalAmount.hidden = ecpay || paypalState;
+        if (supportAmount) { supportAmount.required = ecpay; supportAmount.disabled = !ecpay; }
+        if (supportPaypalAmount) { supportPaypalAmount.required = paypalState; supportPaypalAmount.disabled = !paypalState; }
+        if (supportAttribution) {
+          const checkoutRail = ecpay || paypalState;
+          supportAttribution.hidden = !checkoutRail;
+          supportAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = !checkoutRail; });
+        }
+        if (supportLemonAttribution) {
+          const lemon = provider === 'lemon';
+          supportLemonAttribution.hidden = !lemon;
+          supportLemonAttribution.querySelectorAll('input, textarea').forEach((input) => { input.disabled = !lemon; });
+        }
       };
       if (supportForm) supportForm.querySelectorAll('input[name="provider"]').forEach((input) => input.addEventListener('change', updateSupportMethod));
       const updateSelectedPreset = () => {
@@ -1670,7 +1720,20 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
       };
       if (supportForm) supportForm.querySelectorAll('[data-support-amount]').forEach((button) => button.addEventListener('click', () => { if (supportAmount) { supportAmount.value = button.dataset.supportAmount; updateSelectedPreset(); } }));
       if (supportForm && supportAmount) { supportAmount.addEventListener('input', () => { const presetButtons = supportForm.querySelectorAll('[data-support-amount]'); presetButtons.forEach((button) => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); }); }); }
+      const updateSelectedPaypalPreset = () => {
+        if (!supportForm || !supportPaypalAmount) return;
+        const presetButtons = supportForm.querySelectorAll('[data-support-paypal-amount]');
+        const currentValue = supportPaypalAmount.value;
+        presetButtons.forEach((button) => {
+          const isSelected = button.dataset.supportPaypalAmount === currentValue;
+          button.classList.toggle('selected', isSelected);
+          button.setAttribute('aria-pressed', String(isSelected));
+        });
+      };
+      if (supportForm) supportForm.querySelectorAll('[data-support-paypal-amount]').forEach((button) => button.addEventListener('click', () => { if (supportPaypalAmount) { supportPaypalAmount.value = button.dataset.supportPaypalAmount; updateSelectedPaypalPreset(); } }));
+      if (supportForm && supportPaypalAmount) { supportPaypalAmount.addEventListener('input', () => { const presetButtons = supportForm.querySelectorAll('[data-support-paypal-amount]'); presetButtons.forEach((button) => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); }); }); }
       updateSelectedPreset();
+      updateSelectedPaypalPreset();
       updateSupportMethod();
       document.querySelectorAll('.supporter-message').forEach((msg) => {
         const button = msg.parentElement?.querySelector('.supporter-expand');
@@ -1733,7 +1796,9 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
         }
       };
       const DRAFT_KEY = 'purelink.supportDraft.v1';
-      const DRAFT_FIELDS = ['amount', 'displayName', 'message', 'publicName', 'publicMessage', 'publicAmount'];
+      // Only supporter-entered display fields are persisted; the provider
+      // choice, Turnstile token, and checkout responses never are.
+      const DRAFT_FIELDS = ['amount', 'paypalAmount', 'displayName', 'message', 'publicName', 'publicMessage', 'publicAmount'];
       const loadDraft = () => {
         try {
           const raw = sessionStorage.getItem(DRAFT_KEY);
@@ -1741,6 +1806,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
           const draft = JSON.parse(raw);
           if (!draft || typeof draft !== 'object') return;
           if (draft.amount && supportAmount) { supportAmount.value = draft.amount; updateSelectedPreset(); }
+          if (draft.paypalAmount && supportPaypalAmount) { supportPaypalAmount.value = draft.paypalAmount; updateSelectedPaypalPreset(); }
           const displayNameInput = document.getElementById('support-display-name') || document.getElementById('support-lemon-display-name');
           if (draft.displayName && displayNameInput) displayNameInput.value = draft.displayName;
           const messageInput = document.getElementById('support-message');
@@ -1754,6 +1820,7 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
         try {
           const draft = {};
           if (supportAmount?.value) draft.amount = supportAmount.value;
+          if (supportPaypalAmount?.value) draft.paypalAmount = supportPaypalAmount.value;
           const displayNameInput = document.getElementById('support-display-name') || document.getElementById('support-lemon-display-name');
           if (displayNameInput?.value) draft.displayName = displayNameInput.value;
           const messageInput = document.getElementById('support-message');
@@ -1787,7 +1854,15 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
           supportMessage?.focus();
           return;
         }
-        supportButton.disabled = true; delete supportStatus.dataset.error; supportStatus.hidden = false; supportStatus.textContent = supportMessages.opening;
+        const providerInput = supportForm.querySelector('input[name="provider"]:checked') || supportForm.querySelector('input[name="provider"]');
+        const isPaypal = providerInput?.value === 'paypal';
+        submitButtons.forEach((button) => { button.disabled = true; });
+        delete supportStatus.dataset.error; supportStatus.hidden = false;
+        // PayPal redirect copy shows the exact USD amount the supporter is
+        // about to approve, before any navigation to paypal.com happens.
+        supportStatus.textContent = isPaypal && supportPaypalAmount?.value
+          ? interpolate(supportMessages.paypalOpening, { amount: formatExactUsd(supportPaypalAmount.value) })
+          : supportMessages.opening;
         try {
           const data = Object.fromEntries(new FormData(supportForm));
           data.turnstileToken = window.turnstile?.getResponse() || '';
@@ -1800,8 +1875,15 @@ export function renderSupportPage(totals, checkoutProviders = {}, returnState = 
             Object.entries(payload.fields).forEach(([name, value]) => { const field = document.createElement('input'); field.type = 'hidden'; field.name = name; field.value = value; form.append(field); });
             document.body.append(form); form.submit();
           } else throw new Error(supportMessages.failed);
-        } catch (error) { window.turnstile?.reset(); supportStatus.textContent = error.message; supportStatus.dataset.error = 'true'; supportButton.disabled = false; }
+        } catch (error) { window.turnstile?.reset(); supportStatus.textContent = error.message; supportStatus.dataset.error = 'true'; submitButtons.forEach((button) => { button.disabled = false; }); }
         });
+      }
+      // Exact string formatting for the pre-redirect PayPal status line; no
+      // floating-point arithmetic touches the displayed amount.
+      function formatExactUsd(value) {
+        const match = /^([0-9]{1,3})(?:\.([0-9]{1,2}))?$/.exec(String(value ?? '').trim());
+        if (!match) return String(value ?? '');
+        return 'US$' + match[1] + '.' + ((match[2] || '') + '00').slice(0, 2);
       }
     `,
     nonce,
@@ -2218,6 +2300,8 @@ function documentShell({ title, description, body, robots = 'noindex, nofollow',
     .support-action-subtitle { font-size: .72rem; font-weight: 600; opacity: .9; }
     .support-action-ecpay { background: var(--green); }
     .support-action-ecpay:hover, .support-action-ecpay:focus-visible { background: var(--ink); }
+    .support-action-paypal { background: #14357f; }
+    .support-action-paypal:hover, .support-action-paypal:focus-visible { background: var(--ink); }
     .support-action-kofi { background: #1f7fa6; }
     .support-action-kofi:hover, .support-action-kofi:focus-visible { background: #16628a; }
     .support-action-kofi-membership { background: white; color: #1f7fa6; border: 1px solid #1f7fa6; }

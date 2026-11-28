@@ -25,7 +25,16 @@
 		// remain Worker secrets, managed out-of-band and never printed.
 		"AI_CREDIT_PURCHASES_ENABLED": "true",
 		"ECPAY_CHECKOUT_ENABLED": "true",
-		"ECPAY_ENVIRONMENT": "production"
+		"ECPAY_ENVIRONMENT": "production",
+		// PayPal voluntary support (USD, one-time). The enable flag
+		// (PAYPAL_SUPPORT_CHECKOUT_ENABLED), credentials (PAYPAL_CLIENT_ID,
+		// PAYPAL_CLIENT_SECRET), PAYPAL_WEBHOOK_ID, PAYPAL_MERCHANT_ID, and
+		// PAYPAL_RECONCILE_TOKEN remain Worker secrets, managed out-of-band.
+		// Production PayPal checkout stays disabled (flag secret unset).
+		// PAYPAL_ENVIRONMENT only selects the hardcoded API origin allowlist
+		// (src/paypal-client.js): sandbox can never fall back to Live, and no
+		// PayPal surface runs without its own credential checks.
+		"PAYPAL_ENVIRONMENT": "production"
 	},
 	// Binary module import rules (imported in src/index.js) for the Formula OG
 	// image feature (src/formula-og.js): the wordmark font is imported as Data
@@ -86,9 +95,14 @@
 				// Fail-closed payment gates: purchases and ECPay Donate are
 				// disabled on staging, and ECPay points at its stage endpoint
 				// instead of production (src/ecpay.js ecpayEndpoint()).
+				// PayPal support checkout stays disabled by default too (the
+				// PAYPAL_SUPPORT_CHECKOUT_ENABLED secret is unset); when staging
+				// PayPal is later enabled it can only ever reach the Sandbox
+				// origins hardcoded in src/paypal-client.js — never Live.
 				"AI_CREDIT_PURCHASES_ENABLED": "false",
 				"ECPAY_CHECKOUT_ENABLED": "false",
-				"ECPAY_ENVIRONMENT": "stage"
+				"ECPAY_ENVIRONMENT": "stage",
+				"PAYPAL_ENVIRONMENT": "sandbox"
 			},
 			// Define is not inherited from the top level either; workerd would
 			// crash on mathjax-full's package-version require() fallback

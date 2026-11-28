@@ -297,6 +297,38 @@ describe('PureLink worker', () => {
     }
   });
 
+  it('refuses PayPal support checkout while its fail-closed flag is off and rejects foreign origins', async () => {
+    Object.assign(env, {
+      APP_ENV: 'test',
+      RATE_LIMIT_SECRET: 'rate-limit-test-secret',
+      TURNSTILE_SECRET_KEY: 'turnstile-test-secret',
+      TURNSTILE_SITE_KEY: 'site-key',
+      PAYPAL_ENVIRONMENT: 'sandbox',
+      PAYPAL_CLIENT_ID: 'paypal-client-id-0000000001',
+      PAYPAL_CLIENT_SECRET: 'paypal-client-secret-00000000001',
+      PAYPAL_MERCHANT_ID: 'X5XAHHCG636FA',
+      // PAYPAL_SUPPORT_CHECKOUT_ENABLED deliberately absent: production default.
+    });
+    const db = new MemoryD1();
+    const paypalEnv = { ...env, pure_link_db: db };
+    const disabled = await worker.fetch(new Request('https://pure.test/api/support/checkout', {
+      method: 'POST',
+      headers: { origin: 'https://pure.test', 'content-type': 'application/json', 'x-purelink-locale': 'en' },
+      body: JSON.stringify({ provider: 'paypal', amount: '5' }),
+    }), paypalEnv);
+    expect(disabled.status).toBe(503);
+    await expect(disabled.json()).resolves.toMatchObject({ error: 'Support checkout is not available yet.' });
+    expect(db.paypalCheckoutRequests).toBe(0);
+    // Foreign origins are rejected before any provider dispatch.
+    const foreign = await worker.fetch(new Request('https://pure.test/api/support/checkout', {
+      method: 'POST',
+      headers: { origin: 'https://evil.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'paypal', amount: '5' }),
+    }), paypalEnv);
+    expect(foreign.status).toBe(403);
+    expect(db.paypalCheckoutRequests).toBe(0);
+  });
+
   it('uses the page locale for billing API notices without affecting access checks', async () => {
     const response = await worker.fetch(new Request('https://pure.test/api/billing/checkout', {
       method: 'POST', headers: { origin: 'https://pure.test', 'content-type': 'application/json', 'x-purelink-locale': 'en' }, body: JSON.stringify({ provider: 'ecpay', packId: 'small' }),
@@ -1328,6 +1360,7 @@ class MemoryD1 {
     this.lemonCheckoutRequests = 0;
     this.ecpayOrders = [];
     this.ecpayCheckoutRequests = [];
+    this.paypalCheckoutRequests = 0;
   }
 
   prepare(sql) {
@@ -1376,6 +1409,9 @@ class MemoryStatement {
     if (this.sql.startsWith('SELECT COALESCE(SUM') && this.sql.includes('lemon_support_contributions')) {
       return { net_usd_minor: 0, contribution_count: 0, unconverted_count: 0 };
     }
+    if (this.sql.startsWith('SELECT COALESCE(SUM') && this.sql.includes('paypal_support_contributions')) {
+      return { net_usd_minor: 0, contribution_count: 0 };
+    }
     if (this.sql.startsWith('SELECT COALESCE(SUM') && this.sql.includes('ecpay_support_contributions')) {
       return { net_twd: 0, contribution_count: 0 };
     }
@@ -1389,6 +1425,7 @@ class MemoryStatement {
   async all() {
     if (this.sql.startsWith('SELECT public_display_name FROM lemon_support_contributions')) return { results: [] };
     if (this.sql.startsWith('SELECT contribution.public_name,') && this.sql.includes('ecpay_support_contributions')) return { results: [] };
+    if (this.sql.startsWith('SELECT contribution.public_name,') && this.sql.includes('paypal_support_contributions')) return { results: [] };
     if (this.sql.startsWith('SELECT donation.public_name') && this.sql.includes('kofi_donations')) return { results: [] };
     if (this.sql.startsWith('SELECT day, SUM(amount)')) return { results: [] };
     if (this.sql.startsWith('SELECT slug, content_type')) {
@@ -1459,6 +1496,13 @@ class MemoryStatement {
       this.db.ecpayCheckoutRequests.push({
         id, merchant_trade_no: merchantTradeNo, user_id: userId, pack_id: packId, expected_amount: expectedAmount, expected_credits: expectedCredits,
       });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith('INSERT INTO paypal_support_checkouts')) {
+      this.db.paypalCheckoutRequests += 1;
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (this.sql.startsWith('UPDATE paypal_support_checkouts')) {
       return { success: true, meta: { changes: 1 } };
     }
     if (this.sql.startsWith('DELETE FROM user_sessions')) {

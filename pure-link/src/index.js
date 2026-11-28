@@ -21,6 +21,7 @@ import { handleEcpayBrowserReturn, handleEcpayCallback } from './ecpay.js';
 import { createEcpaySupportCheckout, getEcpaySupportTotals, handleEcpaySupportBrowserReturn, handleEcpaySupportCallback, isEcpaySupportCheckoutConfigured } from './ecpay-support.js';
 import { createLemonSupportCheckout, getSupportTotals, handleLemonSqueezyWebhook, isLemonSupportConfigured } from './lemon-squeezy.js';
 import { getKofiSupportTotals, handleKofiWebhook } from './kofi.js';
+import { createPaypalSupportCheckout, getPaypalSupportTotals, handlePaypalSupportBrowserReturn, handlePaypalWebhook, isPaypalSupportCheckoutConfigured, reconcilePaypalSupport } from './paypal-support.js';
 import { createCreditCheckout, enabledPaymentProviders, isAiCreditPurchasesEnabled, PaymentError } from './payments.js';
 import { getMessages, localeCookie, localizedPath, normalizeLocale, parseLocaleRoute, resolveLocale, resolveResponseLocale } from './i18n.js';
 import { cleanupExpiredNativeCreateTokens, consumeNativeCreateToken, issueNativeCreateToken, readNativeCardInput } from './native-cards.js';
@@ -119,19 +120,24 @@ export async function routeRequest(request, env, context) {
     const supportProviders = {
       ecpay: isEcpaySupportCheckoutConfigured(env),
       lemon: isLemonSupportConfigured(env),
+      paypal: isPaypalSupportCheckoutConfigured(env),
     };
-    const checkoutConfigured = (supportProviders.ecpay || supportProviders.lemon) && isPublicWriteProtectionConfigured(env);
-    const [lemonTotals, ecpayTotals, kofiTotals] = await Promise.all([
-      getSupportTotals(env.pure_link_db), getEcpaySupportTotals(env.pure_link_db), getKofiSupportTotals(env.pure_link_db),
+    const checkoutConfigured = (supportProviders.ecpay || supportProviders.lemon || supportProviders.paypal) && isPublicWriteProtectionConfigured(env);
+    const [lemonTotals, ecpayTotals, kofiTotals, paypalTotals] = await Promise.all([
+      getSupportTotals(env.pure_link_db), getEcpaySupportTotals(env.pure_link_db), getKofiSupportTotals(env.pure_link_db), getPaypalSupportTotals(env.pure_link_db),
     ]);
     return publicReadResponse(request, html(renderSupportPage(
       {
         ...lemonTotals,
         netTwd: ecpayTotals.netTwd,
-        contributionCount: Number(lemonTotals.contributionCount || 0) + Number(ecpayTotals.contributionCount || 0),
+        // USD totals stay within one currency: Lemon Squeezy and PayPal both
+        // report verified USD amounts in integer minor units, so they are added
+        // only to each other and never to the TWD figure.
+        netUsdMinor: Number(lemonTotals.netUsdMinor || 0) + Number(paypalTotals.netUsdMinor || 0),
+        contributionCount: Number(lemonTotals.contributionCount || 0) + Number(ecpayTotals.contributionCount || 0) + Number(paypalTotals.contributionCount || 0),
         // Ko-fi receipts are private until an operator records attribution;
         // render only operator-authorized entries in provider currency.
-        publicSupporters: [...ecpayTotals.publicSupporters, ...kofiTotals.publicSupporters, ...lemonTotals.publicSupporters],
+        publicSupporters: [...ecpayTotals.publicSupporters, ...kofiTotals.publicSupporters, ...lemonTotals.publicSupporters, ...paypalTotals.publicSupporters],
         history: ecpayTotals.history,
       },
       checkoutConfigured ? supportProviders : {}, requestUrl.searchParams.get('support') === 'pending' ? 'pending' : requestUrl.searchParams.get('thanks') === '1' ? 'thanks' : '', nonce, locale, checkoutConfigured ? env.TURNSTILE_SITE_KEY : '', env.GOOGLE_SITE_VERIFICATION || '',
@@ -169,6 +175,14 @@ export async function routeRequest(request, env, context) {
   if (request.method === 'POST' && path === 'api/webhooks/ecpay-support') return handleEcpaySupportCallback(request, env);
   if (request.method === 'POST' && path === 'api/payment-return/ecpay-support') return handleEcpaySupportBrowserReturn(requestUrl);
   if (request.method === 'POST' && path === 'api/webhooks/kofi') return handleKofiWebhook(request, env);
+  if (request.method === 'POST' && path === 'api/webhooks/paypal-support') return handlePaypalWebhook(request, env);
+  // PayPal's buyer return is a browser GET redirect (token/PayerID query
+  // parameters). It is informational only: the handler re-verifies the order
+  // server-side before anything is recorded.
+  if (request.method === 'GET' && path === 'api/payment-return/paypal-support') return handlePaypalSupportBrowserReturn(requestUrl, env);
+  // Secret-gated operator reconciliation for the PayPal support rail; works
+  // even while new PayPal checkout is disabled.
+  if (request.method === 'POST' && path === 'api/support/paypal/reconcile') return handlePaypalSupportReconcile(request, env);
   if (request.method === 'GET' && path === 'account') {
     if (!localeRoute) return redirect(localizedPath(locale, 'account'), 302);
     const user = await getCurrentUser(request, env);
@@ -226,6 +240,7 @@ export async function routeRequest(request, env, context) {
     if (protectionResponse) return protectionResponse;
     const provider = String(input.provider || '');
     if (provider === 'ecpay') return json(await createEcpaySupportCheckout({ requestUrl, locale: resolveResponseLocale(request), input, env }));
+    if (provider === 'paypal') return json(await createPaypalSupportCheckout({ requestUrl, locale: resolveResponseLocale(request), input, env }));
     if (provider === 'lemon') return json(await createLemonSupportCheckout({
       requestUrl, locale: resolveResponseLocale(request), env,
       displayName: input.displayName, publicAttribution: input.publicAttribution || input.publicName,
@@ -629,6 +644,28 @@ async function submitReport(request, requestUrl, env, context) {
   sendReportNotification({ report: savedReport, env, context });
   return json({ received: true, reference: report.id }, { status: 201 });
 }
+
+// Secret-gated operator reconciliation for the PayPal support rail. This is a
+// minimal manual mechanism for this milestone (no Cron): an operator POSTs a
+// bounded batch trigger. It works regardless of the checkout-enabled flag so
+// disabling new checkout never strands existing payments.
+async function handlePaypalSupportReconcile(request, env) {
+  if (!String(env?.PAYPAL_RECONCILE_TOKEN || '').length || String(env.PAYPAL_RECONCILE_TOKEN).length < 32) {
+    return json({ error: 'Reconciliation is not configured.' }, { status: 503 });
+  }
+  const authorization = request.headers.get('authorization') || '';
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  const provided = match ? match[1] : '';
+  if (!provided || !constantTimeEqual(provided, String(env.PAYPAL_RECONCILE_TOKEN))) {
+    return json({ error: 'A valid reconciliation token is required.' }, { status: 401 });
+  }
+  let body = {};
+  try { body = await request.json(); } catch { body = {}; }
+  const summary = await reconcilePaypalSupport({ env, batchSize: Number(body?.batchSize) || 10 });
+  return json({ reconciled: true, ...summary });
+}
+
+function constantTimeEqual(left, right) { if (left.length !== right.length) return false; let result = 0; for (let i = 0; i < left.length; i += 1) result |= left.charCodeAt(i) ^ right.charCodeAt(i); return result === 0; }
 
 async function deleteLink(request, slug, repository, env) {
   const authorization = request.headers.get('authorization') || '';

@@ -129,6 +129,12 @@ function makeElement(tag, attrs = {}) {
     else if (key === 'checked') el.checked = Boolean(value);
     else el.attributes[key] = String(value);
   }
+  // Mirror the DOM value attribute reflection: reading .value returns the
+  // attribute (or ''), and writing .value updates it.
+  Object.defineProperty(el, 'value', {
+    get() { return el.attributes.value ?? ''; },
+    set(newValue) { el.attributes.value = String(newValue); },
+  });
   Object.defineProperty(el, 'focused', { get() { return el.__focused; } });
   el.setAttribute = (name, value) => { el.attributes[name] = String(value); };
   el.getAttribute = (name) => (name in el.attributes ? el.attributes[name] : null);
@@ -195,6 +201,10 @@ export function createSupportHarness({
   form.appendChild(status);
   const amount = makeElement('input', { id: 'support-amount', name: 'amount', type: 'number', value: '100' });
   form.appendChild(amount);
+  const paypalAmount = makeElement('input', { id: 'support-paypal-amount', name: 'amount', type: 'number', value: '5' });
+  paypalAmount.disabled = true;
+  form.appendChild(paypalAmount);
+  form.appendChild(amount);
   const message = makeElement('textarea', { id: 'support-message', name: 'message', rows: '3' });
   message.value = initialMessage;
   form.appendChild(message);
@@ -220,12 +230,14 @@ export function createSupportHarness({
     ['support-button', button],
     ['support-status', status],
     ['support-amount', amount],
+    ['support-paypal-amount', paypalAmount],
     ['support-message', message],
     ['support-message-counter', counter],
     ['support-message-counter-error', counterError],
     ['support-amount-controls', null],
+    ['support-paypal-amount-controls', null],
     ['support-international-amount', null],
-    ['support-ecpay-attribution', null],
+    ['support-attribution', null],
     ['support-lemon-attribution', null],
   ]) elementsById.set(el[0], el[1]);
 
@@ -258,6 +270,8 @@ export function createSupportHarness({
     walk(root, (el) => {
       const name = el.attributes.name;
       if (!name) return;
+      // Mirror real FormData: disabled controls are never submitted.
+      if (el.disabled) return;
       if (el.tagName === 'INPUT' && (el.attributes.type === 'checkbox' || el.attributes.type === 'radio')) {
         if (el.checked) data[name] = el.attributes.value ?? 'on';
       } else {
@@ -295,6 +309,7 @@ export function createSupportHarness({
     counter,
     counterError,
     button,
+    paypalAmount,
     status,
     publicMessageCb,
     publicAmountCb,
